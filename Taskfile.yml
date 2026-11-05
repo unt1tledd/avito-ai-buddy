@@ -1,0 +1,14 @@
+version: '3'
+tasks:
+  deps:
+    cmds: [make deps]
+  verify:
+    cmds: [make verify]
+  fmt:
+    cmds: [make fmt]
+  lint:
+    cmds: [make lint]
+  test:
+    cmds: [make test]
+  vet:
+    cmds: [make vet]

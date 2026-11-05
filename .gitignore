@@ -1,0 +1,80 @@
+# Local environment and secrets (keep shareable examples)
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.template
+secrets/
+*.key
+
+# Local tools and build output
+bin/
+dist/
+build/
+*.exe
+*.test
+
+# Go test and profiling output
+coverage/
+coverage.out
+coverage.txt
+*.coverprofile
+*.pprof
+
+# Python environments, caches and packaging
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+
+# Frontend dependencies and caches
+node_modules/
+.vite/
+.next/
+*.tsbuildinfo
+.npm/
+.pnpm-store/
+
+# Test and load-test reports
+playwright-report/
+test-results/
+/load-tests/results/
+/integration-tests/results/
+
+# Local database and monitoring data
+/backups/
+/sre/backups/
+/sre/data/
+/postgres-data/
+/prometheus-data/
+/grafana-data/
+/loki-data/
+*.dump
+*.sql.gz
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+
+# OS and local IDE settings
+.DS_Store
+._*
+Thumbs.db
+.idea/
+.vscode/
+
+# Keep go.mod/go.sum, go.work/go.work.sum, easyp.lock and package lockfiles.
+# Generated API code and API specifications are not ignored.

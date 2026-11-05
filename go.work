@@ -1,0 +1,10 @@
+go 1.27.0
+
+use (
+	./user
+	./onboarding
+	./task
+	./chat
+	./pkg
+	./integration-tests
+)
