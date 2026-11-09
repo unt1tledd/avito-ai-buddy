@@ -1,7 +1,10 @@
 import httpx
 from pydantic import ValidationError
 
-from .contracts import Actor
+from ..schemas.contracts import Actor
+
+
+USER_LOOKUP_TIMEOUT_SECONDS = 5
 
 
 class UserError(Exception):
@@ -19,7 +22,7 @@ class HttpUser:
             response = await self.http.get(
                 f"{self.base_url}/v1/users/{user_id}",
                 headers={"Authorization": f"Bearer {self.token}"},
-                timeout=5,
+                timeout=USER_LOOKUP_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
             actor = Actor.model_validate_json(response.content)

@@ -3,8 +3,10 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StringConstraints
 
 
+MAX_CHAT_MESSAGE_LENGTH = 4000
+
 Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
-MessageText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
+MessageText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_CHAT_MESSAGE_LENGTH)]
 
 
 class Payload(BaseModel):
@@ -25,16 +27,6 @@ class Message(Payload):
     content: MessageText
 
 
-class ChatRequest(Payload):
-    conversation_id: Identifier | None = Field(
-        default=None, description="Stable chat ID. Required when the user service is configured."
-    )
-    actor: Actor | ActorRef
-    message: MessageText
-    history: list[Message] = Field(default_factory=list, max_length=12)
-    confirmed_step_id: Identifier | None = None
-
-
 class Source(Payload):
     id: Identifier
     title: str
@@ -43,6 +35,15 @@ class Source(Payload):
 
 class SearchHit(Source):
     text: str
+
+
+class Document(SearchHit):
+    roles: set[Identifier] = Field(min_length=1)
+    teams: set[Identifier] = Field(default_factory=set)
+    keywords: list[str] = Field(default_factory=list)
+
+    def embedding_text(self) -> str:
+        return "\n".join([self.title, self.text, *self.keywords])
 
 
 class SearchResult(Payload):

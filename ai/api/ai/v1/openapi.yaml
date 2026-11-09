@@ -107,7 +107,7 @@ components:
             pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
           - type: 'null'
           title: Conversation Id
-          description: Stable chat ID. Required when the user service is configured.
+          description: Stable chat ID. Required in integration mode.
         actor:
           anyOf:
           - "$ref": "#/components/schemas/Actor"
@@ -124,6 +124,7 @@ components:
           type: array
           maxItems: 12
           title: History
+          description: Accepted for compatibility. Each answer uses the current message and current search results.
         confirmed_step_id:
           anyOf:
           - type: string

@@ -12,6 +12,7 @@ dependencies = [
     "mcp>=2,<3",
     "psycopg[binary]>=3.2,<4",
     "pydantic>=2,<3",
+    "pydantic-settings>=2.10,<3",
     "uvicorn>=0.34,<1",
 ]
 
@@ -19,7 +20,7 @@ dependencies = [
 dev = ["pytest>=8,<10", "pytest-cov>=6,<8"]
 
 [tool.setuptools.package-data]
-ai_buddy = ["prompts/*.txt"]
+"ai_service.agents" = ["prompts/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
