@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package user.v1;
+
+import "google/api/annotations.proto";
+import "validate/validate.proto";
+
+option go_package = "avito-ai-buddy/pkg/generated/user/v1;userv1";
+
+service UserService {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (google.api.http) = { post: "/v1/user" body: "*" };
+  }
+
+  rpc GetMetadata(GetMetadataRequest) returns (GetMetadataResponse) {
+    option (google.api.http) = { get: "/v1/user/{user_id}/metadata" };
+  }
+}
+
+message CreateRequest {
+  int64 user_id = 1 [(validate.rules).int64.gt = 0];
+  string last_name = 2 [(validate.rules).string.min_len = 1];
+  string first_name = 3 [(validate.rules).string.min_len = 1];
+  optional string middle_name = 4;
+  int64 team_id = 5 [(validate.rules).int64.gt = 0];
+  optional int64 mentor_user_id = 6 [(validate.rules).int64.gt = 0];
+  string track = 7 [(validate.rules).string.min_len = 1];
+  string start_date = 8 [(validate.rules).string.min_len = 1]; // YYYY-MM-DD
+  string planned_end_date = 9 [(validate.rules).string.min_len = 1]; // YYYY-MM-DD
+  optional string actual_end_date = 10 [(validate.rules).string.min_len = 1]; // YYYY-MM-DD
+}
+
+message CreateResponse {
+  int64 internship_id = 1;
+}
+
+message GetMetadataRequest {
+  int64 user_id = 1 [(validate.rules).int64.gt = 0];
+}
+
+message GetMetadataResponse {
+  message Profile {
+    int64 user_id = 1;
+    string last_name = 2;
+    string first_name = 3;
+    optional string middle_name = 4;
+  }
+
+  message Team {
+    int64 team_id = 1;
+    string name = 2;
+  }
+
+  int64 internship_id = 1;
+  Profile intern = 2;
+  Team team = 3;
+  Profile mentor = 4;
+  string track = 5;
+  string start_date = 6;
+  string planned_end_date = 7;
+  optional string actual_end_date = 8;
+  int32 planned_duration_days = 9;
+  optional int32 actual_duration_days = 10;
+}
