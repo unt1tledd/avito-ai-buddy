@@ -18,10 +18,10 @@ paths:
                   type: string
                 type: object
                 title: Response Health Healthz Get
-  "/v1/chat":
+  "/api/v1/chat":
     post:
       summary: Chat
-      operationId: chat_v1_chat_post
+      operationId: chat_api_v1_chat_post
       requestBody:
         content:
           application/json:
@@ -38,7 +38,7 @@ paths:
         '401':
           description: Invalid or missing chat service token
         '502':
-          description: Model or tool orchestration error
+          description: User, embeddings, knowledge base, model or tool orchestration error
         '503':
           description: AI service configuration is incomplete
         '422':
@@ -88,10 +88,31 @@ components:
       - team
       - role
       title: Actor
+    ActorRef:
+      properties:
+        user_id:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          title: User Id
+      additionalProperties: false
+      type: object
+      required:
+      - user_id
+      title: ActorRef
     ChatRequest:
       properties:
+        conversation_id:
+          anyOf:
+          - type: string
+            pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          - type: 'null'
+          title: Conversation Id
+          description: Stable chat ID. Required when the user service is configured.
         actor:
-          "$ref": "#/components/schemas/Actor"
+          anyOf:
+          - "$ref": "#/components/schemas/Actor"
+          - "$ref": "#/components/schemas/ActorRef"
+          title: Actor
         message:
           type: string
           maxLength: 4000

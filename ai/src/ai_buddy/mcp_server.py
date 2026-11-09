@@ -6,7 +6,7 @@ from pydantic import StringConstraints
 
 from .contracts import ActionResult, Actor, Identifier, SearchResult
 from .onboarding_client import Onboarding, OnboardingError
-from .rag import Knowledge
+from .rag import Knowledge, KnowledgeError
 
 
 def build_server(
@@ -15,11 +15,14 @@ def build_server(
     server = MCPServer("AI-buddy")
 
     @server.tool()
-    def find_instruction(
+    async def find_instruction(
         query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=400)]
     ) -> SearchResult:
         """Ищет доступные стажёру инструкции. Передавай ключевые слова, например «окружение»."""
-        return knowledge.search(query, actor)
+        try:
+            return await knowledge.search(query, actor)
+        except KnowledgeError as error:
+            raise ToolError(str(error)) from error
 
     if confirmed_step_id is not None:
         @server.tool()

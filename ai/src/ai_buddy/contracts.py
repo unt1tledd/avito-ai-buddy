@@ -11,8 +11,11 @@ class Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class Actor(Payload):
+class ActorRef(Payload):
     user_id: Identifier
+
+
+class Actor(ActorRef):
     team: Identifier
     role: Identifier
 
@@ -23,7 +26,10 @@ class Message(Payload):
 
 
 class ChatRequest(Payload):
-    actor: Actor
+    conversation_id: Identifier | None = Field(
+        default=None, description="Stable chat ID. Required when the user service is configured."
+    )
+    actor: Actor | ActorRef
     message: MessageText
     history: list[Message] = Field(default_factory=list, max_length=12)
     confirmed_step_id: Identifier | None = None

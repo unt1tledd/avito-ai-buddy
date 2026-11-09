@@ -5,7 +5,7 @@ from mcp import Client, MCPError
 from mcp.types import TextContent
 from pydantic import ValidationError
 
-from .contracts import ActionResult, ChatRequest, ChatResponse, SearchHit, SearchResult
+from .contracts import ActionResult, Actor, ChatRequest, ChatResponse, SearchHit, SearchResult
 from .llm import LanguageModel, ModelError
 from .mcp_server import build_server
 from .onboarding_client import Onboarding
@@ -28,14 +28,22 @@ class Agent:
         self.onboarding = onboarding
         self.prompt = prompt
 
-    async def answer(self, request: ChatRequest) -> ChatResponse:
-        turn = Turn()
+    async def answer(self, request: ChatRequest, actor: Actor) -> ChatResponse:
+        retrieved = await self.knowledge.search(request.message, actor)
+        turn = Turn(sources={hit.id: hit for hit in retrieved.hits})
+        context = {
+            "profile": {"team": actor.team, "role": actor.role},
+            "sources": retrieved.model_dump(mode="json")["hits"],
+        }
         messages = [message.model_dump() for message in request.history]
-        messages.append({"role": "user", "content": request.message})
+        messages.extend([
+            {"role": "user", "content": "Справочный контекст:\n" + json.dumps(context, ensure_ascii=False)},
+            {"role": "user", "content": request.message},
+        ])
         instructions = self.prompt
         if request.confirmed_step_id:
             instructions += f"\nПользователь подтвердил шаг с ID {request.confirmed_step_id}."
-        server = build_server(self.knowledge, self.onboarding, request.actor, request.confirmed_step_id)
+        server = build_server(self.knowledge, self.onboarding, actor, request.confirmed_step_id)
 
         failure: ModelError | MCPError
         try:
