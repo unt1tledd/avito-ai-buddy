@@ -9,7 +9,31 @@ tasks:
   lint:
     cmds: [make lint]
   test:
-    cmds: [make test]
+    silent: true
+    cmds:
+      - |
+        set -o pipefail
+        make test | awk -F '\t' '
+          $1 ~ /^[?] *$/ && $3 == "[no test files]" { next }
+          NF >= 3 && $1 ~ /^(ok|FAIL) *$/ && $2 != "" {
+            packages[NR] = $2
+            if (length($2) > width) width = length($2)
+            sub(/ +$/, "", $1)
+            results[NR] = $1 "  " $3
+            next
+          }
+          { diagnostics[NR] = $0 }
+          END {
+            if (width > 0) printf "%-*s  %s\n", width, "PACKAGE", "TEST RESULT"
+            for (line = 1; line <= NR; line++) {
+              if (line in packages) {
+                printf "%-*s  %s\n", width, packages[line], results[line]
+              } else if (line in diagnostics) {
+                print diagnostics[line]
+              }
+            }
+          }
+        '
   vet:
     cmds: [make vet]
   coverage:
@@ -20,10 +44,15 @@ tasks:
         set -e
         set -o pipefail
         packages=$(go list ./...)
-        packages=$(printf '%s\n' "$packages" | awk '$0 !~ /\/(mocks|sqlc)$/')
+        packages=$(printf '%s\n' "$packages" | awk '
+          $0 !~ /\/(mock|mocks|sqlc|entity|errors|port|adapter|adapters|config|migrations)(\/|$)/ &&
+          $0 !~ /\/(cmd\/app|internal\/(app|controller|controller\/converter))$/
+        ')
         if [ -n "$packages" ]; then
           width=$(printf '%s\n' "$packages" | awk 'length > width { width = length } END { print width }')
-          printf '%s\n' "$packages" | xargs go test -cover | awk -v width="$width" '
+          profile=$(mktemp "${TMPDIR:-/tmp}/go-coverage.XXXXXX")
+          trap 'rm -f "$profile"' EXIT
+          go test -coverprofile="$profile" $packages | awk -v width="$width" '
             BEGIN {
               if (width < length("PACKAGE")) width = length("PACKAGE")
               printf "%-*s  %8s\n", width, "PACKAGE", "COVERAGE"
@@ -38,6 +67,9 @@ tasks:
               next
             }
             { print }
+          '
+          go tool cover -func="$profile" | awk -v width="$width" '
+            $1 == "total:" { printf "%-*s  %8s\n", width, "TOTAL", $NF }
           '
         fi
   mocks:
