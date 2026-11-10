@@ -1,0 +1,22 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations/migrations
+    queries: internal/repository/plan/queries.sql
+    gen:
+      go:
+        package: plan
+        out: internal/repository/plan/sqlc
+        sql_package: pgx/v5
+        emit_interface: true
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/migrations
+    queries: internal/repository/step/queries.sql
+    gen:
+      go:
+        package: step
+        out: internal/repository/step/sqlc
+        sql_package: pgx/v5
+        emit_interface: true
+        omit_unused_structs: true
