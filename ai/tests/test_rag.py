@@ -93,8 +93,8 @@ def migration_sql(version, up=True):
 
 def migrate(dsn):
     with psycopg.connect(dsn) as db:
+        db.execute(migration_sql(1))
         db.execute(migration_sql(2))
-        db.execute(migration_sql(3))
 
 
 def pool_for(dsn):
@@ -206,28 +206,28 @@ def test_qwen_import_query_and_atomic_reindex(pg_schema, tmp_path, monkeypatch):
 
 def test_profile_migration_preserves_legacy_and_blocks_unsafe_rollback(pg_schema):
     with psycopg.connect(pg_schema, autocommit=True) as db:
-        db.execute(migration_sql(2))
+        db.execute(migration_sql(1))
         document_id = db.execute("INSERT INTO documents (title) VALUES ('legacy') RETURNING id").fetchone()[0]
         db.execute(
             """INSERT INTO document_chunks (document_id, source_id, body, embedding_model, embedding)
                VALUES (%s, 'legacy', 'text', 'legacy-model', %s::vector)""", (document_id, json.dumps(VECTOR)),
         )
-        db.execute(migration_sql(3))
+        db.execute(migration_sql(2))
         assert db.execute("SELECT embedding_profile, vector_dims(embedding) FROM document_chunks").fetchone() == (None, 1536)
         with db.transaction():
-            db.execute(migration_sql(3, up=False))
+            db.execute(migration_sql(2, up=False))
         assert db.execute("SELECT vector_dims(embedding) FROM document_chunks").fetchone() == (1536,)
-        db.execute(migration_sql(3))
+        db.execute(migration_sql(2))
         db.execute("UPDATE document_chunks SET embedding_profile = %s, embedding = %s::vector",
                    (PROFILE, json.dumps(VECTOR[:1024])))
         with pytest.raises(psycopg.errors.CheckViolation), db.transaction():
-            db.execute(migration_sql(3, up=False))
+            db.execute(migration_sql(2, up=False))
         assert db.execute("SELECT embedding_profile, vector_dims(embedding) FROM document_chunks").fetchone() == (PROFILE, 1024)
 
 
 def test_readiness_detects_unapplied_profile_migration(pg_schema):
     with psycopg.connect(pg_schema) as db:
-        db.execute(migration_sql(2))
+        db.execute(migration_sql(1))
 
     async def run():
         async with pool_for(pg_schema) as pool:

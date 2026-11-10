@@ -25,7 +25,7 @@ async def benchmark() -> None:
         await admin.execute(sql.SQL("CREATE SCHEMA {}").format(identifier))
         try:
             async with await AsyncConnection.connect(scoped) as db:
-                for version in (2, 3):
+                for version in (1, 2):
                     await db.execute(migration_sql(version))
             async with pool_for(scoped) as pool:
                 repository = KnowledgeRepository(scoped, pool)
