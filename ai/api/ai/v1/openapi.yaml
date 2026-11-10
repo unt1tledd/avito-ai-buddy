@@ -65,8 +65,8 @@ paths:
           description: User, onboarding, embeddings, knowledge base, model or tool
             orchestration error
         '503':
-          description: AI service configuration is incomplete or only confirmations
-            are enabled
+          description: AI service configuration is incomplete or the requested capability
+            is disabled
         '504':
           description: Chat deadline expired
         '422':
@@ -229,6 +229,7 @@ components:
           type: string
           enum:
           - chat
+          - questions
           - confirmations
           title: Capability
         reason:

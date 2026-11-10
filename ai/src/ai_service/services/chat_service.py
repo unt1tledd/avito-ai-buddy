@@ -24,7 +24,7 @@ class InvalidChat(Exception):
 class ChatService:
     agent: Agent | None
     user: HttpUser | None
-    onboarding: Onboarding
+    onboarding: Onboarding | None
     integration: bool
     unavailable_reason: str | None
 
@@ -51,6 +51,8 @@ class ChatService:
             with operation("chat.confirm" if confirmed_step_id is not None else "chat.answer"):
                 async with asyncio.timeout_at(deadline):
                     if confirmed_step_id is not None:
+                        if self.onboarding is None:
+                            raise ChatUnavailable("Завершение шагов адаптации недоступно.")
                         return await complete_step(self.onboarding, actor, confirmed_step_id)
                     if self.agent is None:
                         raise ChatUnavailable("Чат с базой знаний недоступен.")

@@ -40,12 +40,13 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
         async with AsyncExitStack() as stack:
             http = await stack.enter_async_context(httpx.AsyncClient(timeout=HTTP_CLIENT_TIMEOUT_SECONDS))
             user: HttpUser | None = None
-            onboarding: Onboarding
+            onboarding: Onboarding | None = None
             if settings.mode == "integration":
-                if settings.user_url and not settings.confirmations_only:
+                if not settings.confirmations_only:
                     user = HttpUser(http, settings.user_url, settings.user_token)
-                onboarding = HttpOnboarding(http, settings.onboarding_url, settings.onboarding_token)
-            else:
+                if not settings.questions_only:
+                    onboarding = HttpOnboarding(http, settings.onboarding_url, settings.onboarding_token)
+            elif not settings.questions_only:
                 onboarding = DemoOnboarding(settings.demo_db_path)
 
             agent = None
@@ -85,7 +86,7 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
 
     app = FastAPI(title="AI-buddy internal API", version="1.0.0", lifespan=lifespan)
     app.add_middleware(RequestBoundary, chat_timeout=settings.chat_timeout_seconds)
-    app.include_router(create_router(settings.service_token, settings.confirmations_only))
+    app.include_router(create_router(settings.service_token, settings.capability))
 
     @app.exception_handler(RequestValidationError)
     async def invalid_body(_request: Request, error: RequestValidationError) -> Response:

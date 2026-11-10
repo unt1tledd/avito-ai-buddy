@@ -13,6 +13,7 @@ def test_loads_existing_environment_names_and_types(monkeypatch):
         "AI_SERVICE_TOKEN": "chat-test-token",
         "USER_SERVICE_TOKEN": "user-test-token",
         "ONBOARDING_SERVICE_TOKEN": "onboarding-test-token",
+        "QUESTIONS_ONLY": "true",
         "LLM_MODEL": "configured-model",
         "KNOWLEDGE_MIN_SIMILARITY": "0.45",
         "DEMO_DB_PATH": "demo/state.sqlite3",
@@ -24,6 +25,7 @@ def test_loads_existing_environment_names_and_types(monkeypatch):
     assert settings.service_token == "chat-test-token"
     assert settings.user_token == "user-test-token"
     assert settings.onboarding_token == "onboarding-test-token"
+    assert settings.questions_only is True
     assert settings.llm_model == "configured-model"
     assert settings.knowledge_min_similarity == 0.45
     assert settings.demo_db_path == Path("demo/state.sqlite3")

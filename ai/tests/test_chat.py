@@ -183,6 +183,13 @@ def test_unknown_mode_does_not_start(settings):
             pytest.fail("Unknown mode started")
 
 
+def test_questions_and_confirmations_only_cannot_both_start(integration_settings):
+    configured = integration_settings.model_copy(update={"questions_only": True, "confirmations_only": True})
+    with pytest.raises(RuntimeError, match="QUESTIONS_ONLY and CONFIRMATIONS_ONLY cannot both be enabled"):
+        with TestClient(create_app(configured)):
+            pytest.fail("Conflicting capabilities started")
+
+
 def ask(client, message, actor=ACTOR, **extra):
     return client.post("/api/v1/chat", headers=AUTH, json={"actor": actor, "message": message, **extra})
 
@@ -246,6 +253,38 @@ def test_user_profile_and_sources_are_sent_with_first_llm_request(integration_se
     assert set(context) == {"hits"}
     assert [source["id"] for source in context["hits"]] == ["demo-dev-environment"]
     assert response.json()["sources"] == context["hits"]
+
+
+def test_questions_only_uses_user_without_onboarding(integration_settings, monkeypatch, use_mock_http):
+    requests = []
+
+    def handler(request):
+        requests.append((request.method, str(request.url), request.headers["authorization"]))
+        return httpx.Response(200, json={"intern": {"user_id": "42"}, "team": {"team_id": "51"}})
+
+    async def check_ready(self, profile):
+        assert len(profile) == 64
+
+    use_mock_http(handler)
+    monkeypatch.setattr(KnowledgeRepository, "check_ready", check_ready)
+    configured = integration_settings.model_copy(update={
+        "questions_only": True, "onboarding_url": "", "onboarding_token": "",
+    })
+    payload = {
+        "conversation_id": "123", "actor": {"user_id": "42"}, "message": QUESTION,
+    }
+    with TestClient(create_app(configured, model=ScriptedModel(answer("Ответ.")))) as client:
+        readiness = client.get("/readyz")
+        reply = client.post("/api/v1/chat", headers=AUTH, json=payload)
+        confirmation = client.post("/v1/chat", headers=AUTH, json={**payload, "confirmed_step_id": "setup"})
+
+    assert readiness.status_code == 200
+    assert readiness.json() == {"status": "ready", "capability": "questions", "reason": None}
+    assert reply.status_code == 200
+    assert [source["id"] for source in reply.json()["sources"]] == ["demo-dev-environment"]
+    assert reply.json()["action"] is None
+    assert confirmation.status_code == 503
+    assert requests == [("GET", "https://user.example/v1/user/42/metadata", "Bearer user-test-token")]
 
 
 def test_chat_uses_current_profile_and_excludes_history_after_role_change(integration_settings, monkeypatch):

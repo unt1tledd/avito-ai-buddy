@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+from ..core.config import Capability
 from ..core.diagnostics import UpstreamError
 from ..schemas.contracts import ChatResponse
 from ..services.chat_service import ChatService, ChatUnavailable, InvalidChat
@@ -16,11 +17,11 @@ from .schemas import ChatRequest
 
 class Readiness(BaseModel):
     status: Literal["ready", "unavailable"]
-    capability: Literal["chat", "confirmations"]
+    capability: Capability
     reason: str | None = None
 
 
-def create_router(service_token: str, confirmations_only: bool) -> APIRouter:
+def create_router(service_token: str, capability: Capability) -> APIRouter:
     router = APIRouter()
     bearer = HTTPBearer(auto_error=False)
 
@@ -43,7 +44,6 @@ def create_router(service_token: str, confirmations_only: bool) -> APIRouter:
     @router.get("/readyz", responses={503: {"model": Readiness, "description": "Required configuration or index unavailable"}})
     async def readiness(request: Request, response: Response) -> Readiness:
         service: ChatService = request.app.state.chat_service
-        capability = "confirmations" if confirmations_only else "chat"
         reason = "service_token_missing" if not service_token else service.unavailable_reason
         if reason is None and service.agent is not None:
             try:
@@ -72,7 +72,7 @@ def create_router(service_token: str, confirmations_only: bool) -> APIRouter:
             HTTPStatus.REQUEST_TIMEOUT: {"description": "Request body deadline expired"},
             HTTPStatus.REQUEST_ENTITY_TOO_LARGE: {"description": "Request body exceeds 256 KiB"},
             HTTPStatus.BAD_GATEWAY: {"description": "User, onboarding, embeddings, knowledge base, model or tool orchestration error"},
-            HTTPStatus.SERVICE_UNAVAILABLE: {"description": "AI service configuration is incomplete or only confirmations are enabled"},
+            HTTPStatus.SERVICE_UNAVAILABLE: {"description": "AI service configuration is incomplete or the requested capability is disabled"},
             HTTPStatus.GATEWAY_TIMEOUT: {"description": "Chat deadline expired"},
         },
     )

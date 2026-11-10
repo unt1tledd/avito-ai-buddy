@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -7,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 DEFAULT_KNOWLEDGE_MIN_SIMILARITY = 0.3
+Capability = Literal["chat", "questions", "confirmations"]
 
 
 def validate_base_url(name: str, value: str) -> None:
@@ -43,6 +45,7 @@ class Settings(BaseModel):
     knowledge_db_dsn: str = ""
     knowledge_processing_approved: bool = False
     confirmations_only: bool = False
+    questions_only: bool = False
     chat_timeout_seconds: float = Field(default=15, gt=0, le=25)
     knowledge_min_similarity: float = DEFAULT_KNOWLEDGE_MIN_SIMILARITY
     embedding_model: str = "text-embedding-3-small"
@@ -56,7 +59,17 @@ class Settings(BaseModel):
     user_token: str = ""
     mode: str = "integration"
 
+    @property
+    def capability(self) -> Capability:
+        if self.questions_only:
+            return "questions"
+        if self.confirmations_only:
+            return "confirmations"
+        return "chat"
+
     def validate_mode(self) -> None:
+        if self.questions_only and self.confirmations_only:
+            raise RuntimeError("QUESTIONS_ONLY and CONFIRMATIONS_ONLY cannot both be enabled")
         integration = {
             "USER_URL": self.user_url,
             "USER_SERVICE_TOKEN": self.user_token,
@@ -72,6 +85,8 @@ class Settings(BaseModel):
             raise RuntimeError("AI_MODE must be integration or demo")
         if self.confirmations_only and not (self.user_url or self.user_token):
             del integration["USER_URL"], integration["USER_SERVICE_TOKEN"]
+        if self.questions_only:
+            del integration["ONBOARDING_URL"], integration["ONBOARDING_SERVICE_TOKEN"]
         missing = [name for name, value in integration.items() if not value.strip()]
         if missing:
             raise RuntimeError(f"AI_MODE=integration requires {', '.join(missing)}")
