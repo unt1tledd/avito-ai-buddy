@@ -1,5 +1,4 @@
 GO_MODULES := auth user onboarding task chat pkg integration-tests
-GO_PACKAGES := $(foreach module,$(GO_MODULES),./$(module)/...)
 .PHONY: deps verify fmt lint test vet tools-check
 deps:
 	@set -e; for module in $(GO_MODULES); do (cd $$module && GOWORK=off go mod download all); done
@@ -20,7 +19,7 @@ test:
 		if [ -n "$$packages" ]; then go test -race -count=1 ./...; fi \
 	); done
 vet:
-	go vet $(GO_PACKAGES)
+	@set -e; for module in $(GO_MODULES); do (cd $$module && go vet ./...); done
 tools-check:
 	go version
 	golangci-lint version
