@@ -1,5 +1,5 @@
-from ..clients.embeddings import EmbeddingError, Embeddings
-from ..repositories.knowledge import KnowledgeError, KnowledgeRepository
+from ..clients.embeddings import Embeddings
+from ..repositories.knowledge import KnowledgeRepository
 from ..schemas.contracts import Actor, SearchResult
 
 
@@ -12,8 +12,8 @@ class Retriever:
         self.min_similarity = min_similarity
 
     async def search(self, query: str, actor: Actor) -> SearchResult:
-        try:
-            [embedding] = await self.embeddings.embed([query])
-        except EmbeddingError as error:
-            raise KnowledgeError(str(error)) from error
-        return await self.repository.search(embedding, self.embeddings.model, actor, self.min_similarity)
+        [embedding] = await self.embeddings.embed([query])
+        return await self.repository.search(embedding, self.embeddings.profile, actor, self.min_similarity)
+
+    async def check_ready(self) -> None:
+        await self.repository.check_ready(self.embeddings.profile)

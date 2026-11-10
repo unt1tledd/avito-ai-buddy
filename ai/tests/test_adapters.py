@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, EmbeddingError, Embeddings
+from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, SILICONFLOW_DIMENSIONS, EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ResponsesModel
 from ai_service.clients.onboarding import HttpOnboarding, OnboardingRejected, OnboardingUnknown
 from ai_service.clients.user import HttpUser, UserError
@@ -51,28 +51,81 @@ def test_embeddings_request(status, items, expected):
         assert asyncio.run(run()) == expected
 
 
-@pytest.mark.parametrize(("status", "profile", "error"), [
-    (200, ACTOR.model_dump(), None),
-    (200, {**ACTOR.model_dump(), "user_id": "different-user"}, "другого пользователя"),
-    (200, {"user_id": ACTOR.user_id}, "получить профиль"),
-    (404, {}, "получить профиль"),
+def test_qwen_embeddings_use_separate_credentials_and_database_dimensions(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_BASE_URL", "https://api.siliconflow.cn/v1")
+    monkeypatch.setenv("EMBEDDING_API_KEY", "qwen-test-key")
+    monkeypatch.setenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
+    monkeypatch.setenv("EMBEDDING_DIMENSIONS", str(SILICONFLOW_DIMENSIONS))
+    monkeypatch.setenv("LLM_API_KEY", "different-llm-key")
+
+    qwen_vector = FIRST_VECTOR[:SILICONFLOW_DIMENSIONS]
+
+    def handler(request):
+        assert request.url == "https://api.siliconflow.cn/v1/embeddings"
+        assert request.headers["authorization"] == "Bearer qwen-test-key"
+        assert json.loads(request.content) == {
+            "model": "Qwen/Qwen3-Embedding-8B",
+            "input": ["Вопрос"],
+            "encoding_format": "float",
+            "dimensions": SILICONFLOW_DIMENSIONS,
+        }
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": qwen_vector}]})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            return await Embeddings(http, Settings.from_env()).embed(["Вопрос"])
+
+    assert asyncio.run(run()) == [qwen_vector]
+
+
+
+def test_siliconflow_rejects_1536_before_network():
+    settings = Settings(
+        embedding_model="Qwen/Qwen3-Embedding-8B",
+        embedding_base_url="https://api.siliconflow.com/v1",
+        embedding_dimensions=1536,
+    )
+    with pytest.raises(RuntimeError, match="1024"):
+        Embeddings(None, settings)
+
+
+PROFILE = {
+    "internship_id": "7",
+    "intern": {"user_id": "42", "first_name": "Synthetic"},
+    "team": {"team_id": "51", "name": "Backend Platform"},
+    "track": "infra",
+}
+
+
+@pytest.mark.parametrize(("status", "profile", "reason"), [
+    (200, PROFILE, None),
+    (200, {**PROFILE, "intern": {"user_id": "43"}}, "wrong_user"),
+    (200, {**PROFILE, "intern": None, "mentor": {"user_id": "42"}}, "invalid_profile"),
+    (200, {**PROFILE, "team": {"team_id": "0"}}, "invalid_team"),
+    (200, {**PROFILE, "actual_end_date": "2026-03-01"}, "internship_ended"),
+    (404, {}, "profile_missing"),
+    (401, {}, "http_401"),
+    (None, {}, "transport"),
 ])
-def test_user_request(status, profile, error):
+def test_user_request(status, profile, reason):
     def handler(request):
         assert request.method == "GET"
-        assert request.url == "https://user.example/v1/users/test-user"
+        assert request.url == "https://user.example/v1/user/42/metadata"
         assert request.headers["authorization"] == "Bearer user-key"
+        if status is None:
+            raise httpx.ConnectError("Connection refused", request=request)
         return httpx.Response(status, json=profile)
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await HttpUser(http, "https://user.example/", "user-key").get_actor(ACTOR.user_id)
+            return await HttpUser(http, "https://user.example/", "user-key").get_actor("42")
 
-    if error:
-        with pytest.raises(UserError, match=error):
+    if reason:
+        with pytest.raises(UserError) as error:
             asyncio.run(run())
+        assert error.value.reason == reason
     else:
-        assert asyncio.run(run()) == ACTOR
+        assert asyncio.run(run()) == Actor(user_id="42", role="intern", team="51")
 
 
 @pytest.mark.parametrize(("status", "response_fields"), [(200, {}), (200, {"status": "completed"}), (429, {})])
@@ -175,3 +228,42 @@ def test_onboarding_request(status, body, error, message):
             asyncio.run(run())
     else:
         assert asyncio.run(run()).status == "completed"
+
+
+def test_openrouter_requires_pinned_embedding_provider():
+    settings = Settings(
+        embedding_model="qwen/qwen3-embedding-8b",
+        embedding_base_url="https://openrouter.ai/api/v1",
+        embedding_dimensions=1536,
+    )
+    with pytest.raises(RuntimeError, match="EMBEDDING_PROVIDER"):
+        Embeddings(None, settings)
+
+
+def test_openrouter_provider_is_sent_and_changes_index_profile():
+    settings = Settings(
+        embedding_model="qwen/qwen3-embedding-8b",
+        embedding_base_url="https://openrouter.ai/api/v1",
+        embedding_provider="deepinfra",
+        embedding_api_key="test-key",
+        embedding_dimensions=1536,
+    )
+
+    def handler(request):
+        payload = json.loads(request.content)
+        assert payload["dimensions"] == 1536
+        assert payload["provider"] == {"only": ["deepinfra"], "allow_fallbacks": False, "require_parameters": True}
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": FIRST_VECTOR}]})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = Embeddings(http, settings)
+            other = Embeddings(http, settings.model_copy(update={
+                "embedding_provider": "siliconflow", "embedding_dimensions": 1024,
+            }))
+            with pytest.raises(RuntimeError, match="supported OpenRouter Qwen providers"):
+                Embeddings(http, settings.model_copy(update={"embedding_provider": "nebius"}))
+            assert other.profile != client.profile
+            assert await client.embed(["synthetic"]) == [FIRST_VECTOR]
+
+    asyncio.run(run())

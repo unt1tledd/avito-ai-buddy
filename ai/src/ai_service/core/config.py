@@ -2,7 +2,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,10 +41,16 @@ class Settings(BaseModel):
     onboarding_url: str = ""
     onboarding_token: str = ""
     knowledge_db_dsn: str = ""
+    knowledge_processing_approved: bool = False
+    confirmations_only: bool = False
+    chat_timeout_seconds: float = Field(default=15, gt=0, le=25)
     knowledge_min_similarity: float = DEFAULT_KNOWLEDGE_MIN_SIMILARITY
     embedding_model: str = "text-embedding-3-small"
     embedding_base_url: str = ""
     embedding_api_key: str = ""
+    embedding_dimensions: int | None = None
+    embedding_provider: str = Field(default="", pattern=r"^[a-z0-9/_-]{0,100}$")
+    embedding_index_version: str = Field(default="1", pattern=r"^[A-Za-z0-9._-]{1,64}$")
     demo_db_path: Path = Path(".data/onboarding.sqlite3")
     user_url: str = ""
     user_token: str = ""
@@ -64,12 +70,14 @@ class Settings(BaseModel):
             return
         if self.mode != "integration":
             raise RuntimeError("AI_MODE must be integration or demo")
+        if self.confirmations_only and not (self.user_url or self.user_token):
+            del integration["USER_URL"], integration["USER_SERVICE_TOKEN"]
         missing = [name for name, value in integration.items() if not value.strip()]
         if missing:
             raise RuntimeError(f"AI_MODE=integration requires {', '.join(missing)}")
-        for name in ("USER_URL", "ONBOARDING_URL"):
+        for name in integration.keys() & {"USER_URL", "ONBOARDING_URL"}:
             validate_base_url(name, integration[name])
-        for name in ("USER_SERVICE_TOKEN", "ONBOARDING_SERVICE_TOKEN"):
+        for name in integration.keys() & {"USER_SERVICE_TOKEN", "ONBOARDING_SERVICE_TOKEN"}:
             validate_bearer_token(name, integration[name])
 
     @classmethod

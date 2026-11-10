@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sqlite3
 from contextlib import closing
@@ -7,16 +8,19 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from ai_service.agents.agent import NO_KNOWLEDGE
 from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ModelResponse
 from ai_service.clients.user import HttpUser, UserError
 from ai_service.core.config import Settings
 from ai_service.main import create_app
+from ai_service.repositories.knowledge import KnowledgeRepository
+from ai_service.schemas.contracts import SearchHit, SearchResult
 from ai_service.schemas.contracts import Actor
 
 
 AUTH = {"Authorization": "Bearer chat-test-token"}
-ACTOR = {"user_id": "test-user", "team": "backend", "role": "intern"}
+ACTOR = {"user_id": "42", "team": "backend", "role": "intern"}
 QUESTION = "Как настроить окружение?"
 EMBEDDING = [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1)
 
@@ -34,10 +38,10 @@ class ScriptedModel:
         return ModelResponse(output=output)
 
 
-def call(name, **arguments):
+def call(name, *, call_id=None, **arguments):
     return [{
         "type": "function_call",
-        "call_id": f"call-{name}",
+        "call_id": call_id or f"call-{name}",
         "name": name,
         "arguments": json.dumps(arguments),
     }]
@@ -53,38 +57,27 @@ def settings(tmp_path, monkeypatch):
         assert len(texts) == 1
         return [EMBEDDING]
 
-    class TestConnection:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_):
-            pass
-
-        async def execute(self, sql, parameters):
-            model, role, team, vector, limit, distance = parameters
-            assert model == "text-embedding-3-small"
-            assert json.loads(vector) == EMBEDDING
-            assert distance == 0.7
-            assert limit == 3
-            assert "<=>" in sql
-            self.rows = {
-                ("intern", "backend"): ["demo-dev-environment"],
-                ("mentor", "backend"): ["demo-mentor-environment", "demo-dev-environment"],
-            }.get((role, team), [])
-            return self
-
-        async def fetchall(self):
-            return [{"id": key, "title": key, "text": "Фрагмент инструкции"} for key in self.rows]
-
-    async def connect(*args, **kwargs):
-        return TestConnection()
+    async def search(self, vector, profile, actor, min_similarity):
+        assert len(profile) == 64
+        assert vector == EMBEDDING
+        assert min_similarity == 0.3
+        rows = {
+            ("intern", "backend"): ["demo-dev-environment"],
+            ("intern", "51"): ["demo-dev-environment"],
+            ("mentor", "backend"): ["demo-mentor-environment", "demo-dev-environment"],
+        }.get((actor.role, actor.team), [])
+        return SearchResult(hits=[
+            SearchHit(id=key, title=key, text="Фрагмент инструкции") for key in rows
+        ])
 
     monkeypatch.setattr(Embeddings, "embed", embed)
-    monkeypatch.setattr(psycopg.AsyncConnection, "connect", connect)
+    monkeypatch.setattr(KnowledgeRepository, "search", search)
     return Settings(
         mode="demo",
         service_token="chat-test-token",
         knowledge_db_dsn="postgresql://knowledge.test/knowledge",
+        knowledge_processing_approved=True,
+        embedding_api_key="test-embedding-token",
         demo_db_path=tmp_path / "steps.sqlite3",
     )
 
@@ -212,9 +205,9 @@ def test_chat_forwards_accessible_sources_from_search(settings, actor, ids):
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION, actor)
     assert response.status_code == 200, response.text
-    assert response.json()["answer"] == "Ответ."
+    assert response.json()["answer"] == ("Ответ." if ids else NO_KNOWLEDGE)
     assert sorted(source["id"] for source in response.json()["sources"]) == sorted(ids)
-    assert sorted(source["id"] for source in first_context(model)["sources"]) == sorted(ids)
+    assert sorted(source["id"] for source in first_context(model)["hits"]) == sorted(ids)
     assert sorted(hit["id"] for hit in tool_output(model)["hits"]) == sorted(ids)
     assert response.json()["action"] is None
     assert [tool["name"] for tool in model.requests[0][2]] == ["find_instruction"]
@@ -224,12 +217,17 @@ def test_chat_forwards_accessible_sources_from_search(settings, actor, ids):
     {"user_id": ACTOR["user_id"]},
     {**ACTOR, "role": "mentor", "team": "design"},
 ])
-def test_user_profile_and_sources_are_sent_with_first_llm_request(integration_settings, monkeypatch, actor):
-    async def get_actor(self, user_id):
-        assert user_id == ACTOR["user_id"]
-        return Actor.model_validate(ACTOR)
+def test_user_profile_and_sources_are_sent_with_first_llm_request(integration_settings, monkeypatch, use_mock_http, actor):
+    def handler(request):
+        assert request.url == "https://user.example/v1/user/42/metadata"
+        assert request.headers["authorization"] == "Bearer user-test-token"
+        return httpx.Response(200, json={
+            "intern": {"user_id": "42", "first_name": "Synthetic"},
+            "team": {"team_id": "51", "name": "Backend Platform"},
+            "track": "design",
+        })
 
-    monkeypatch.setattr(HttpUser, "get_actor", get_actor)
+    use_mock_http(handler)
     model = ScriptedModel(answer("Ответ с первого вызова."))
     async def embed(self, texts):
         assert texts == [QUESTION]
@@ -245,9 +243,9 @@ def test_user_profile_and_sources_are_sent_with_first_llm_request(integration_se
     assert "Отвечай кратко, по-русски." in instructions
     assert messages[-1] == {"role": "user", "content": QUESTION}
     context = first_context(model)
-    assert context["profile"] == {"team": "backend", "role": "intern"}
-    assert [source["id"] for source in context["sources"]] == ["demo-dev-environment"]
-    assert response.json()["sources"] == context["sources"]
+    assert set(context) == {"hits"}
+    assert [source["id"] for source in context["hits"]] == ["demo-dev-environment"]
+    assert response.json()["sources"] == context["hits"]
 
 
 def test_chat_uses_current_profile_and_excludes_history_after_role_change(integration_settings, monkeypatch):
@@ -276,8 +274,8 @@ def test_chat_uses_current_profile_and_excludes_history_after_role_change(integr
         (2, second, "intern", ["demo-dev-environment"]),
     ):
         context = first_context(model, index)
-        assert context["profile"] == {"team": "backend", "role": role}
-        assert [source["id"] for source in context["sources"]] == expected
+        assert set(context) == {"hits"}
+        assert [source["id"] for source in context["hits"]] == expected
         assert [source["id"] for source in tool_output(model, index + 1)["hits"]] == expected
         assert [source["id"] for source in response.json()["sources"]] == expected
     for _, messages, _ in model.requests[2:]:
@@ -320,10 +318,12 @@ def test_user_lookup_failure_cannot_reuse_previous_profile(integration_settings,
 
 
 def test_knowledge_failure_prevents_llm_call(settings, monkeypatch):
-    async def connect(*args, **kwargs):
-        raise psycopg.OperationalError("connection failed")
+    from ai_service.repositories.knowledge import KnowledgeError
 
-    monkeypatch.setattr(psycopg.AsyncConnection, "connect", connect)
+    async def search(*args, **kwargs):
+        raise KnowledgeError("Search failed", reason="connection")
+
+    monkeypatch.setattr(KnowledgeRepository, "search", search)
     model = ScriptedModel()
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
@@ -349,7 +349,9 @@ def test_wrong_embedding_dimension_returns_gateway_error_before_search(monkeypat
         pytest.fail("Search attempted with an incompatible embedding")
 
     settings = Settings(
-        mode="demo", service_token="chat-test-token", knowledge_db_dsn="postgresql://knowledge.test/knowledge"
+        mode="demo", service_token="chat-test-token", knowledge_processing_approved=True,
+        embedding_api_key="test-embedding-token",
+        knowledge_db_dsn="postgresql://knowledge.test/knowledge"
     )
     use_mock_http(lambda request: httpx.Response(200, json={"data": [{"index": 0, "embedding": [1, 0]}]}))
     monkeypatch.setattr(psycopg.AsyncConnection, "connect", unexpected_connect)
@@ -381,7 +383,7 @@ def test_confirmed_step_is_saved_without_search_or_llm_and_repeat_is_safe(settin
 
     with closing(sqlite3.connect(settings.demo_db_path)) as db:
         assert db.execute("SELECT user_id, step_id FROM completed_steps").fetchall() == [
-            ("test-user", "dev-environment"),
+            ("42", "dev-environment"),
         ]
 
 
@@ -427,19 +429,16 @@ def test_integrated_confirmation_reports_the_write_outcome(
     integration_settings, use_mock_http, monkeypatch, outcome, model_text, expected, saved
 ):
     step_id = "confirmed-step"
-    path = f"/v1/users/test-user/onboarding/steps/{step_id}/completion"
+    path = f"/v1/users/42/onboarding/steps/{step_id}/completion"
     calls = []
     completed_steps = []
 
     def handler(request):
         calls.append((request.method, str(request.url)))
-        if request.method == "GET":
-            assert request.headers["authorization"] == "Bearer user-test-token"
-            return httpx.Response(200, json=ACTOR)
         assert request.method == "PUT"
         assert request.url.path == path
         assert request.headers["authorization"] == "Bearer onboarding-test-token"
-        assert len(calls) == 2
+        assert len(calls) == 1
         if outcome == "denied":
             return httpx.Response(403)
         if outcome == "accepted":
@@ -468,7 +467,7 @@ def test_integrated_confirmation_reports_the_write_outcome(
     assert result["sources"] == []
     assert result["action"] == ({"step_id": step_id, "status": "completed"} if outcome == "success" else None)
     assert completed_steps == ([(ACTOR["user_id"], step_id)] if saved else [])
-    assert calls == [("GET", "https://user.example/v1/users/test-user"), ("PUT", f"https://onboarding.example{path}")]
+    assert calls == [("PUT", f"https://onboarding.example{path}")]
     assert not model.requests
     assert not integration_settings.demo_db_path.exists()
 
@@ -542,7 +541,7 @@ def test_final_model_round_receives_search_results_with_tools_disabled(settings,
         return [EMBEDDING]
 
     monkeypatch.setattr(Embeddings, "embed", embed)
-    tool_calls = [call("find_instruction", query=f"поиск {i}") for i in range(1, 5)]
+    tool_calls = [call("find_instruction", call_id=f"call-{i}", query=f"поиск {i}") for i in range(1, 5)]
     final_output = tool_calls[3] if final_tool_call else answer("Итоговый ответ.")
     model = ScriptedModel(*tool_calls[:3], final_output)
     with TestClient(create_app(settings, model=model)) as client:
@@ -588,3 +587,238 @@ def test_llm_tool_follow_up_preserves_provider_items_and_call_id(settings, use_m
     assert output["type"] == "function_call_output"
     assert output["call_id"] == "provider-call-id"
     assert [hit["id"] for hit in json.loads(output["output"])["hits"]] == ["demo-dev-environment"]
+
+
+@pytest.mark.parametrize("path", ["/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("body", [
+    b'{"message":NaN,"actor":{"user_id":"42"}}',
+    b'{"message":"hi","actor":{"user_id":"42"},"extra":{"value":Infinity}}',
+    b'{"message":"\\ud800","actor":{"user_id":"42"}}',
+])
+def test_invalid_json_values_return_serializable_validation_errors(settings, path, body):
+    with TestClient(create_app(settings), raise_server_exceptions=False) as client:
+        response = client.post(path, headers={**AUTH, "content-type": "application/json"}, content=body)
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"][0]["type"], str)
+
+
+@pytest.mark.parametrize("chunked", [False, True])
+def test_chat_body_limit(settings, chunked):
+    chunks = [b" " * (128 * 1024)] * 3
+    with TestClient(create_app(settings)) as client:
+        response = client.post("/v1/chat", headers={**AUTH, "content-type": "application/json"},
+                               content=iter(chunks) if chunked else b"".join(chunks))
+    assert response.status_code == 413
+
+
+def test_readiness_reports_configuration_and_confirmation_mode(settings):
+    for overrides, code, capability, reason in [
+        ({"service_token": ""}, 503, "chat", "service_token_missing"),
+        ({"knowledge_db_dsn": ""}, 503, "chat", "knowledge_dsn_missing"),
+        ({"knowledge_processing_approved": False}, 503, "chat", "knowledge_processing_unapproved"),
+        ({"knowledge_db_dsn": "", "confirmations_only": True}, 200, "confirmations", None),
+    ]:
+        with TestClient(create_app(settings.model_copy(update=overrides), model=ScriptedModel())) as client:
+            assert client.get("/healthz").status_code == 200
+            response = client.get("/readyz")
+            assert response.status_code == code
+            assert response.json()["capability"] == capability
+            assert response.json()["reason"] == reason
+
+
+def test_chat_discards_unverified_answer_after_empty_search(settings):
+    model = ScriptedModel(answer("Внутренний адрес https://invented.example"))
+    with TestClient(create_app(settings, model=model)) as client:
+        result = ask(client, QUESTION, {**ACTOR, "team": "design"}).json()
+    assert result == {"answer": NO_KNOWLEDGE, "sources": [], "action": None}
+
+
+@pytest.mark.parametrize("outcome", ["recover", "search-error", "bad-citation", "refusal"])
+def test_rag_after_empty_initial_search(settings, monkeypatch, outcome):
+    from ai_service.repositories.knowledge import KnowledgeError
+
+    async def embed(self, texts):
+        return [[2.0] if texts == ["окружение"] else [1.0]]
+
+    async def search(self, vector, profile, actor, min_similarity):
+        if vector == [1.0]:
+            return SearchResult(hits=[])
+        if outcome == "search-error":
+            raise KnowledgeError("Поиск недоступен.", reason="connection")
+        return SearchResult(hits=[SearchHit(id="visible", title="Guide", text="Instructions")])
+
+    monkeypatch.setattr(Embeddings, "embed", embed)
+    monkeypatch.setattr(KnowledgeRepository, "search", search)
+    text = "Ответ [source:hidden]" if outcome == "bad-citation" else "Ответ [source:visible]"
+    outputs = answer(text) if outcome != "refusal" else [
+        {"type": "message", "content": [{"type": "refusal", "refusal": "Refused"}]}
+    ]
+    model = ScriptedModel(call("find_instruction", query="окружение"), outputs)
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION)
+    if outcome == "recover":
+        assert response.status_code == 200
+        assert response.json()["sources"][0]["id"] == "visible"
+    else:
+        assert response.status_code == 502
+        assert {"search-error": "Поиск", "bad-citation": "источник", "refusal": "отказалась"}[outcome] in response.json()["detail"]
+
+
+def test_multiple_tool_calls_are_paired_and_share_normalized_search(settings, monkeypatch):
+    queries = []
+
+    async def embed(self, texts):
+        queries.extend(texts)
+        return [EMBEDDING]
+
+    monkeypatch.setattr(Embeddings, "embed", embed)
+    calls = []
+    for index, query in enumerate(["  КАК  настроить окружение? ", "настройка", "НАСТРОЙКА", "другой"]):
+        calls.extend(call("find_instruction", call_id=f"call-{index}", query=query))
+    model = ScriptedModel(calls, answer("Ответ."))
+    with TestClient(create_app(settings, model=model)) as client:
+        assert ask(client, QUESTION).status_code == 200
+    assert queries == [QUESTION, "настройка"]
+    _, messages, tools = model.requests[1]
+    assert tools == []
+    outputs = [item for item in messages if item.get("type") == "function_call_output"]
+    assert [item["call_id"] for item in outputs] == [item["call_id"] for item in calls]
+    assert "лимит" in json.loads(outputs[-1]["output"])["error"]
+
+
+def test_duplicate_call_id_across_rounds(settings):
+    same_call = call("find_instruction", query="окружение")
+    model = ScriptedModel(same_call, same_call)
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION)
+    assert response.status_code == 502
+    assert "повторяющиеся" in response.json()["detail"]
+
+
+def test_chat_deadline_cancels_model(settings):
+    cancellations = []
+
+    class SlowModel:
+        async def respond(self, **_):
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                cancellations.append("cancelled")
+                raise
+
+    with TestClient(create_app(settings.model_copy(update={"chat_timeout_seconds": 0.05}), model=SlowModel())) as client:
+        response = ask(client, QUESTION)
+    assert response.status_code == 504
+    assert cancellations == ["cancelled"]
+
+
+def test_disconnected_client_cancels_in_flight_request(settings):
+    async def run():
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        class SlowModel:
+            async def respond(self, **_):
+                started.set()
+                try:
+                    await asyncio.sleep(30)
+                finally:
+                    cancelled.set()
+
+        app = create_app(settings, model=SlowModel())
+        events = iter([{
+            "type": "http.request", "more_body": False,
+            "body": json.dumps({"message": QUESTION, "actor": ACTOR}).encode(),
+        }])
+
+        async def receive():
+            if event := next(events, None):
+                return event
+            await started.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(_):
+            pass
+
+        async with app.router.lifespan_context(app):
+            await asyncio.wait_for(app({
+                "type": "http", "http_version": "1.1", "method": "POST", "path": "/v1/chat",
+                "root_path": "", "query_string": b"", "headers": [
+                    (b"authorization", AUTH["Authorization"].encode()), (b"content-type", b"application/json"),
+                ],
+            }, receive, send), timeout=1)
+        assert cancelled.is_set()
+
+    asyncio.run(run())
+
+
+def test_confirmation_deadline_is_unknown_and_never_retries(integration_settings, use_mock_http, caplog):
+    sent = []
+
+    async def handler(request):
+        sent.append(request.method)
+        await asyncio.sleep(30)
+        raise AssertionError("expected cancellation")
+
+    use_mock_http(handler)
+    settings = integration_settings.model_copy(update={
+        "chat_timeout_seconds": 0.05, "confirmations_only": True, "user_url": "", "user_token": "",
+    })
+    with TestClient(create_app(settings)) as client:
+        response = ask(client, "PRIVATE CHAT", {"user_id": "42"},
+                       conversation_id="conversation-1", confirmed_step_id="dev-environment")
+    assert response.status_code == 200
+    assert response.json()["action"] is None
+    assert "неизвестен" in response.json()["answer"]
+    assert sent == ["PUT"]
+    assert f"request_id={response.headers['x-request-id']}" in caplog.text
+    assert "operation=chat.confirm result=timeout" in caplog.text
+    assert "PRIVATE CHAT" not in caplog.text
+    assert "onboarding-test-token" not in caplog.text
+
+
+@pytest.mark.parametrize("outcome", ["connection", "auth", "ambiguous"])
+def test_onboarding_distinguishes_unavailable_from_unknown(integration_settings, use_mock_http, outcome):
+    def handler(request):
+        if outcome == "connection":
+            raise httpx.ConnectError("failed", request=request)
+        return httpx.Response(401 if outcome == "auth" else 503)
+
+    use_mock_http(handler)
+    with TestClient(create_app(integration_settings)) as client:
+        response = ask(client, "Подтверждаю", conversation_id="conversation-1", confirmed_step_id="dev-environment")
+    assert response.status_code == (200 if outcome == "ambiguous" else 502)
+
+
+def test_chat_deadline_includes_reading_body(settings):
+    async def run():
+        app = create_app(settings.model_copy(update={"chat_timeout_seconds": 0.05}))
+        statuses = []
+
+        async def receive():
+            await asyncio.sleep(30)
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                statuses.append(message["status"])
+
+        async with app.router.lifespan_context(app):
+            await asyncio.wait_for(app({
+                "type": "http", "http_version": "1.1", "method": "POST", "path": "/v1/chat",
+                "root_path": "", "query_string": b"", "headers": [(b"content-type", b"application/json")],
+            }, receive, send), timeout=1)
+        assert statuses == [408]
+
+    asyncio.run(run())
+
+
+def test_chat_rejects_oversized_replay_before_follow_up(settings):
+    model = ScriptedModel(
+        [{"type": "reasoning", "encrypted_content": "x" * (64 * 1024)}]
+        + call("find_instruction", query="окружение")
+    )
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION)
+    assert response.status_code == 502
+    assert "бюджет" in response.json()["detail"]
+    assert len(model.requests) == 1

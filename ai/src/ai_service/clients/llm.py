@@ -4,12 +4,13 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..core.config import validate_base_url, validate_bearer_token
+from ..core.diagnostics import UpstreamError, http_failure, operation
 
 
 MAX_MODEL_OUTPUT_TOKENS = 1500
 
 
-class ModelError(Exception):
+class ModelError(UpstreamError):
     pass
 
 
@@ -40,9 +41,9 @@ class OutputMessage(ResponseItem):
 
 class FunctionCall(ResponseItem):
     type: Literal["function_call"]
-    name: str = Field(pattern=r"\S")
-    arguments: str
-    call_id: str = Field(pattern=r"\S")
+    name: str = Field(pattern=r"\S", max_length=128)
+    arguments: str = Field(max_length=4096)
+    call_id: str = Field(pattern=r"\S", max_length=128)
     status: ItemStatus = "completed"
 
 
@@ -100,6 +101,10 @@ class ResponsesModel:
     async def respond(
         self, *, instructions: str, messages: list[dict], tools: list[dict]
     ) -> ModelResponse:
+        with operation("llm.respond"):
+            return await self._respond(instructions=instructions, messages=messages, tools=tools)
+
+    async def _respond(self, *, instructions: str, messages: list[dict], tools: list[dict]) -> ModelResponse:
         try:
             response = await self.http.post(
                 self.url,
@@ -116,21 +121,21 @@ class ResponsesModel:
             )
             response.raise_for_status()
         except httpx.HTTPError as error:
-            raise ModelError("Модель временно недоступна.") from error
+            raise ModelError("Модель временно недоступна.", reason=http_failure(error)) from error
         try:
             result = ModelResponse.model_validate_json(response.content)
         except ValidationError as error:
-            raise ModelError("Модель вернула ответ в неизвестном формате.") from error
+            raise ModelError("Модель вернула ответ в неизвестном формате.", reason="invalid_response") from error
         if result.status == "incomplete" or any(
             isinstance(item, (OutputMessage, FunctionCall)) and item.status != "completed"
             for item in result.output
         ):
-            raise ModelError("Модель вернула неполный ответ.")
+            raise ModelError("Модель вернула неполный ответ.", reason="incomplete")
         if result.status != "completed":
-            raise ModelError("Модель не завершила обработку запроса.")
+            raise ModelError("Модель не завершила обработку запроса.", reason="bad_status")
         if result.refused:
-            raise ModelError("Модель отказалась отвечать на запрос.")
+            raise ModelError("Модель отказалась отвечать на запрос.", reason="refusal")
         call_ids = [call.call_id for call in result.calls]
         if len(set(call_ids)) != len(call_ids):
-            raise ModelError("Модель вернула повторяющиеся идентификаторы вызовов инструментов.")
+            raise ModelError("Модель вернула повторяющиеся идентификаторы вызовов инструментов.", reason="duplicate_call_id")
         return result

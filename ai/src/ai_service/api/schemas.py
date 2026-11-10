@@ -10,7 +10,10 @@ class ChatRequest(Payload):
     conversation_id: Identifier | None = Field(
         default=None, description="Stable chat ID. Required in integration mode."
     )
-    actor: Actor | ActorRef
+    actor: Actor | ActorRef = Field(
+        description="Integration requires a canonical positive int64 user ID as a decimal string. "
+        "Role and team in the request are used only in demo mode.",
+    )
     message: MessageText
     history: list[Message] = Field(
         default_factory=list,

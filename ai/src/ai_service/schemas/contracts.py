@@ -1,12 +1,28 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints
 
 
 MAX_CHAT_MESSAGE_LENGTH = 4000
+MAX_DOCUMENT_TEXT = 4000
+MAX_SOURCE_TEXT = 1200
+MAX_RESPONSE_SOURCES = 6
 
 Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
-MessageText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_CHAT_MESSAGE_LENGTH)]
+
+
+def valid_utf8(value: str) -> str:
+    try:
+        value.encode()
+    except UnicodeEncodeError as error:
+        raise ValueError("Expected valid Unicode text.") from error
+    return value
+
+
+MessageText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_CHAT_MESSAGE_LENGTH),
+    AfterValidator(valid_utf8),
+]
 
 
 class Payload(BaseModel):
@@ -29,18 +45,21 @@ class Message(Payload):
 
 class Source(Payload):
     id: Identifier
-    title: str
+    title: str = Field(min_length=1, max_length=160)
     url: HttpUrl | None = None
 
 
 class SearchHit(Source):
-    text: str
+    text: str = Field(min_length=1, max_length=MAX_SOURCE_TEXT)
 
 
-class Document(SearchHit):
-    roles: set[Identifier] = Field(min_length=1)
-    teams: set[Identifier] = Field(default_factory=set)
-    keywords: list[str] = Field(default_factory=list)
+class Document(Source):
+    text: str = Field(min_length=1, max_length=MAX_DOCUMENT_TEXT)
+    roles: set[Identifier] = Field(min_length=1, max_length=16)
+    teams: set[Identifier] = Field(default_factory=set, max_length=32)
+    keywords: list[Annotated[str, StringConstraints(min_length=1, max_length=80)]] = Field(
+        default_factory=list, max_length=16
+    )
 
     def embedding_text(self) -> str:
         return "\n".join([self.title, self.text, *self.keywords])
@@ -57,5 +76,5 @@ class ActionResult(Payload):
 
 class ChatResponse(Payload):
     answer: str
-    sources: list[SearchHit]
+    sources: list[SearchHit] = Field(max_length=MAX_RESPONSE_SOURCES)
     action: ActionResult | None = None
