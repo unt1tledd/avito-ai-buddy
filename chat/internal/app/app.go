@@ -1,0 +1,263 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"time"
+
+	aiadapter "avito-ai-buddy/chat/internal/adapter/ai/http"
+	authadapter "avito-ai-buddy/chat/internal/adapter/auth/http"
+	onboardingadapter "avito-ai-buddy/chat/internal/adapter/onboarding/grpc"
+	taskkafka "avito-ai-buddy/chat/internal/adapter/task/kafka"
+	useradapter "avito-ai-buddy/chat/internal/adapter/user/grpc"
+	"avito-ai-buddy/chat/internal/config"
+	actionapi "avito-ai-buddy/chat/internal/controller/action"
+	chatapi "avito-ai-buddy/chat/internal/controller/chat"
+	"avito-ai-buddy/chat/internal/controller/events"
+	"avito-ai-buddy/chat/internal/entity"
+	"avito-ai-buddy/chat/internal/outbox"
+	"avito-ai-buddy/chat/internal/port"
+	actionrepo "avito-ai-buddy/chat/internal/repository/action"
+	conversationrepo "avito-ai-buddy/chat/internal/repository/conversation"
+	messagerepo "avito-ai-buddy/chat/internal/repository/message"
+	outboxrepo "avito-ai-buddy/chat/internal/repository/outbox"
+	"avito-ai-buddy/chat/internal/usecase/action"
+	"avito-ai-buddy/chat/internal/usecase/conversation"
+	"avito-ai-buddy/chat/internal/usecase/message"
+	"avito-ai-buddy/chat/migrations"
+	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
+	"avito-ai-buddy/pkg/transactor"
+
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
+	authClient := authadapter.NewClient(&http.Client{
+		Timeout:       cfg.Auth.Timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}, cfg.Auth.BaseURL, cfg.Auth.ValidatePath)
+	opts := grpc.WithTransportCredentials(insecure.NewCredentials())
+	grpcServer, messages, closeDependencies, err := newChatServer(ctx, logger, cfg, opts, authClient)
+	if err != nil {
+		return err
+	}
+	defer closeDependencies()
+	defer grpcServer.Stop()
+
+	grpcListener, err := net.Listen("tcp", ":"+cfg.GRPC.Port)
+	if err != nil {
+		return fmt.Errorf("listen for gRPC: %w", err)
+	}
+	defer func() { _ = grpcListener.Close() }()
+
+	gatewayConn, err := connectGateway(grpcListener, opts)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = gatewayConn.Close() }()
+
+	socketCtx, cancelSockets := context.WithCancel(ctx)
+	defer cancelSockets()
+	httpServer, err := newHTTPServer(ctx, socketCtx, cfg, gatewayConn, messages)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = httpServer.Close() }()
+
+	httpListener, err := net.Listen("tcp", ":"+cfg.GRPC.GatewayPort)
+	if err != nil {
+		return fmt.Errorf("listen for HTTP: %w", err)
+	}
+	defer func() { _ = httpListener.Close() }()
+
+	err = serveUntilStopped(ctx, logger, grpcServer, httpServer, grpcListener, httpListener)
+	cancelSockets()
+	if err != nil {
+		return err
+	}
+	return shutdownServers(grpcServer, httpServer)
+}
+
+type sessionService interface {
+	GetSession(ctx context.Context, token string) (userID string, expiresAt time.Time, err error)
+}
+
+func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, opts grpc.DialOption, authClient port.TokenValidator) (_ *grpc.Server, _ sessionService, _ func(), err error) {
+	db, err := pgxpool.New(ctx, cfg.PG.URL)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("configure postgres pool: %w", err)
+	}
+
+	var connections []*grpc.ClientConn
+	closeDependencies := func() {
+		for _, conn := range connections {
+			_ = conn.Close()
+		}
+		db.Close()
+	}
+	defer func() {
+		if err != nil {
+			closeDependencies()
+		}
+	}()
+
+	if err := migrations.Migrate(ctx, db); err != nil {
+		return nil, nil, nil, fmt.Errorf("migrate chat database: %w", err)
+	}
+
+	connect := func(service, addr string) (*grpc.ClientConn, error) {
+		conn, err := grpc.NewClient(addr, opts)
+		if err != nil {
+			return nil, fmt.Errorf("configure %s client: %w", service, err)
+		}
+		connections = append(connections, conn)
+		return conn, nil
+	}
+
+	userConn, err := connect("User", cfg.Clients.UserGRPCAddr)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	planConn, err := connect("Onboarding", cfg.Clients.OnboardingGRPCAddr)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	brokers := cfg.Kafka.BrokerAddrs()
+	if len(brokers) == 0 {
+		return nil, nil, nil, errors.New("no Kafka brokers configured (KAFKA_BROKERS)")
+	}
+	publisher := taskkafka.NewPublisher(brokers, cfg.Kafka.TaskCommandsTopic)
+	tx := transactor.NewTransactor(db)
+	outboxRepository := outboxrepo.NewPostgresRepository(db)
+	worker := outbox.New(logger, outboxRepository, func(kind int32) (outbox.KindHandler, error) {
+		if kind != entity.OutboxKindCreateAccessRequest {
+			return nil, fmt.Errorf("unknown outbox message kind %d", kind)
+		}
+		return func(ctx context.Context, data []byte) error {
+			var command port.CreateAccessRequest
+			if err := json.Unmarshal(data, &command); err != nil {
+				return fmt.Errorf("decode access request: %w", err)
+			}
+			return publisher.PublishCreateAccessRequest(ctx, command)
+		}, nil
+	}, cfg, tx)
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		worker.Start(workerCtx, 1, cfg.Outbox.BatchSize, cfg.Outbox.PollInterval, cfg.Outbox.InProgressTTL)
+	}()
+	closeServerDependencies := func() {
+		stopWorker()
+		<-workerDone
+		_ = publisher.Close()
+		closeDependencies()
+	}
+
+	actions := actionrepo.NewPostgresRepository(db)
+	conversations := conversation.NewService(conversationrepo.NewPostgresRepository(db))
+	messages := message.NewService(
+		conversations,
+		messagerepo.NewPostgresRepository(db),
+		actions,
+		useradapter.NewClient(userConn),
+		onboardingadapter.NewClient(planConn),
+		aiadapter.NewClient(&http.Client{Timeout: 30 * time.Second}, cfg.Clients.AIBaseURL),
+		authClient,
+		tx,
+	)
+	chatController := chatapi.NewServer(messages, logger)
+	actionController := actionapi.NewServer(action.NewService(actions, outboxRepository, authClient, tx), logger)
+
+	server := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		return handler(messagerepo.WithHistoryPageSize(ctx, cfg.App.HistoryPageSize), req)
+	}))
+	chatpb.RegisterChatServiceServer(server, chatController)
+	chatpb.RegisterActionServiceServer(server, actionController)
+	return server, messages, closeServerDependencies, nil
+}
+
+func connectGateway(listener net.Listener, opts grpc.DialOption) (*grpc.ClientConn, error) {
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		return nil, fmt.Errorf("resolve gRPC listener port: %w", err)
+	}
+	conn, err := grpc.NewClient(net.JoinHostPort("localhost", port), opts)
+	if err != nil {
+		return nil, fmt.Errorf("configure HTTP gateway: %w", err)
+	}
+	return conn, nil
+}
+
+func newHTTPServer(ctx, socketCtx context.Context, cfg *config.Config, gatewayConn *grpc.ClientConn, messages sessionService) (*http.Server, error) {
+	mux := runtime.NewServeMux()
+	if err := chatpb.RegisterChatServiceHandler(ctx, mux, gatewayConn); err != nil {
+		return nil, fmt.Errorf("register Chat HTTP routes: %w", err)
+	}
+
+	if err := chatpb.RegisterActionServiceHandler(ctx, mux, gatewayConn); err != nil {
+		return nil, fmt.Errorf("register Action HTTP routes: %w", err)
+	}
+
+	eventHandler := events.NewHandler(events.NewHub(), messages, cfg.App.TaskEventsToken)
+	httpMux := http.NewServeMux()
+	httpMux.HandleFunc("GET /v1/chat/events", func(w http.ResponseWriter, r *http.Request) {
+		requestCtx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		stop := context.AfterFunc(socketCtx, cancel)
+		defer stop()
+
+		eventHandler.Subscribe(w, r.WithContext(requestCtx))
+	})
+	httpMux.HandleFunc("POST /internal/v1/chat/task-events", eventHandler.Publish)
+	httpMux.Handle("/", mux)
+
+	return &http.Server{
+		Handler:           httpMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}, nil
+}
+
+func serveUntilStopped(ctx context.Context, logger *zap.Logger, grpcServer *grpc.Server, httpServer *http.Server, grpcListener, httpListener net.Listener) error {
+	errs := make(chan error, 2)
+	go func() { errs <- grpcServer.Serve(grpcListener) }()
+	go func() { errs <- httpServer.Serve(httpListener) }()
+	logger.Info("chat servers listening", zap.String("grpc", grpcListener.Addr().String()), zap.String("http", httpListener.Addr().String()))
+
+	select {
+	case <-ctx.Done():
+	case err := <-errs:
+		if !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, grpc.ErrServerStopped) {
+			return err
+		}
+	}
+	return nil
+}
+
+func shutdownServers(grpcServer *grpc.Server, httpServer *http.Server) error {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shut down HTTP gateway: %w", err)
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		return nil
+	case <-shutdownCtx.Done():
+		return fmt.Errorf("shut down gRPC: %w", shutdownCtx.Err())
+	}
+}
