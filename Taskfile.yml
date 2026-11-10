@@ -12,3 +12,50 @@ tasks:
     cmds: [make test]
   vet:
     cmds: [make vet]
+  coverage:
+    dir: '{{.USER_WORKING_DIR}}'
+    silent: true
+    cmds:
+      - |
+        set -e
+        set -o pipefail
+        packages=$(go list ./...)
+        packages=$(printf '%s\n' "$packages" | awk '$0 !~ /\/(mocks|sqlc)$/')
+        if [ -n "$packages" ]; then
+          width=$(printf '%s\n' "$packages" | awk 'length > width { width = length } END { print width }')
+          printf '%s\n' "$packages" | xargs go test -cover | awk -v width="$width" '
+            BEGIN {
+              if (width < length("PACKAGE")) width = length("PACKAGE")
+              printf "%-*s  %8s\n", width, "PACKAGE", "COVERAGE"
+            }
+            NF >= 5 && $(NF - 3) == "coverage:" {
+              package = $1 == "ok" ? $2 : $1
+              printf "%-*s  %8s\n", width, package, $(NF - 2)
+              next
+            }
+            $1 == "?" && /\[no test files\]$/ {
+              printf "%-*s  %8s\n", width, $2, "-"
+              next
+            }
+            { print }
+          '
+        fi
+  mocks:
+    dir: '{{.USER_WORKING_DIR}}'
+    silent: true
+    cmds:
+      - |
+        set -e
+        if ! command -v mockgen >/dev/null 2>&1; then
+          bin=$(go env GOBIN)
+          if [ -z "$bin" ]; then
+            gopath=$(go env GOPATH)
+            bin="${gopath%%:*}/bin"
+          fi
+          export PATH="$bin:$PATH"
+        fi
+        if ! command -v mockgen >/dev/null 2>&1; then
+          printf '%s\n' 'Install mockgen: go install go.uber.org/mock/mockgen@v0.6.0' >&2
+          exit 1
+        fi
+        GOWORK=off go generate ./...
