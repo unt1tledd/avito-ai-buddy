@@ -7,9 +7,17 @@ verify:
 fmt:
 	@set -e; for module in $(GO_MODULES); do (cd $$module && golangci-lint fmt --config ../.golangci.yaml); done
 lint:
-	@set -e; for module in $(GO_MODULES); do (cd $$module && golangci-lint run --config ../.golangci.yaml ./...); done
+	@set -e; for module in $(GO_MODULES); do ( \
+		cd $$module; \
+		packages=$$(go list ./...); \
+		if [ -n "$$packages" ]; then golangci-lint run --config ../.golangci.yaml ./...; fi \
+	); done
 test:
-	@set -e; for module in $(GO_MODULES); do (cd $$module && go test -race -count=1 ./...); done
+	@set -e; for module in $(GO_MODULES); do ( \
+		cd $$module; \
+		packages=$$(go list ./...); \
+		if [ -n "$$packages" ]; then go test -race -count=1 ./...; fi \
+	); done
 vet:
 	@set -e; for module in $(GO_MODULES); do (cd $$module && go vet ./...); done
 tools-check:
