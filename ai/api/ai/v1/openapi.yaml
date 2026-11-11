@@ -4,7 +4,7 @@ info:
   title: AI-buddy internal API
   version: 1.0.0
 paths:
-  "/healthz":
+  /healthz:
     get:
       summary: Health
       operationId: health_healthz_get
@@ -18,15 +18,33 @@ paths:
                   type: string
                 type: object
                 title: Response Health Healthz Get
-  "/api/v1/chat":
+  /readyz:
+    get:
+      summary: Readiness
+      operationId: readiness_readyz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+        '503':
+          description: Required configuration or index unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+  /api/v1/chat:
     post:
       summary: Chat
+      description: Internal chat endpoint. Maximum request body is 256 KiB.
       operationId: chat_api_v1_chat_post
       requestBody:
         content:
           application/json:
             schema:
-              "$ref": "#/components/schemas/ChatRequest"
+              $ref: '#/components/schemas/ChatRequest'
         required: true
       responses:
         '200':
@@ -34,19 +52,29 @@ paths:
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/ChatResponse"
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Malformed request body
         '401':
           description: Invalid or missing chat service token
+        '408':
+          description: Request body deadline expired
+        '413':
+          description: Request body exceeds 256 KiB
         '502':
-          description: User, embeddings, knowledge base, model or tool orchestration error
+          description: User, onboarding, embeddings, knowledge base, model or tool
+            orchestration error
         '503':
-          description: AI service configuration is incomplete
+          description: AI service configuration is incomplete or the requested capability
+            is disabled
+        '504':
+          description: Chat deadline expired
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/HTTPValidationError"
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
 components:
@@ -55,7 +83,7 @@ components:
       properties:
         step_id:
           type: string
-          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
           title: Step Id
         status:
           type: string
@@ -71,15 +99,15 @@ components:
       properties:
         user_id:
           type: string
-          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
           title: User Id
         team:
           type: string
-          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
           title: Team
         role:
           type: string
-          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
           title: Role
       additionalProperties: false
       type: object
@@ -92,7 +120,7 @@ components:
       properties:
         user_id:
           type: string
-          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
           title: User Id
       additionalProperties: false
       type: object
@@ -104,15 +132,17 @@ components:
         conversation_id:
           anyOf:
           - type: string
-            pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
           - type: 'null'
           title: Conversation Id
-          description: Stable chat ID. Required when the user service is configured.
+          description: Stable chat ID. Required in integration mode.
         actor:
           anyOf:
-          - "$ref": "#/components/schemas/Actor"
-          - "$ref": "#/components/schemas/ActorRef"
+          - $ref: '#/components/schemas/Actor'
+          - $ref: '#/components/schemas/ActorRef'
           title: Actor
+          description: Integration requires a canonical positive int64 user ID as
+            a decimal string. Role and team in the request are used only in demo mode.
         message:
           type: string
           maxLength: 4000
@@ -120,14 +150,16 @@ components:
           title: Message
         history:
           items:
-            "$ref": "#/components/schemas/Message"
+            $ref: '#/components/schemas/Message'
           type: array
           maxItems: 12
           title: History
+          description: Accepted for compatibility. Each answer uses the current message
+            and current search results.
         confirmed_step_id:
           anyOf:
           - type: string
-            pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
           - type: 'null'
           title: Confirmed Step Id
       additionalProperties: false
@@ -143,12 +175,13 @@ components:
           title: Answer
         sources:
           items:
-            "$ref": "#/components/schemas/SearchHit"
+            $ref: '#/components/schemas/SearchHit'
           type: array
+          maxItems: 6
           title: Sources
         action:
           anyOf:
-          - "$ref": "#/components/schemas/ActionResult"
+          - $ref: '#/components/schemas/ActionResult'
           - type: 'null'
       additionalProperties: false
       type: object
@@ -160,7 +193,7 @@ components:
       properties:
         detail:
           items:
-            "$ref": "#/components/schemas/ValidationError"
+            $ref: '#/components/schemas/ValidationError'
           type: array
           title: Detail
       type: object
@@ -184,14 +217,41 @@ components:
       - role
       - content
       title: Message
+    Readiness:
+      properties:
+        status:
+          type: string
+          enum:
+          - ready
+          - unavailable
+          title: Status
+        capability:
+          type: string
+          enum:
+          - chat
+          - questions
+          - confirmations
+          title: Capability
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - status
+      - capability
+      title: Readiness
     SearchHit:
       properties:
         id:
           type: string
-          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
           title: Id
         title:
           type: string
+          maxLength: 160
+          minLength: 1
           title: Title
         url:
           anyOf:
@@ -203,6 +263,8 @@ components:
           title: Url
         text:
           type: string
+          maxLength: 1200
+          minLength: 1
           title: Text
       additionalProperties: false
       type: object
