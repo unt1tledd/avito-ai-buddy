@@ -45,6 +45,12 @@ func (r *PostgresRepository) TryInsert(ctx context.Context, message entity.Inbox
 	return err == nil, err
 }
 
+// Delete rolls back the processed marker after a failed delivery, so the next
+// redelivery processes the event again.
+func (r *PostgresRepository) Delete(ctx context.Context, idempotencyKey string) error {
+	return r.getQueries(ctx).DeleteInboxMessage(ctx, idempotencyKey)
+}
+
 func (r *PostgresRepository) CleanupOlderThan(ctx context.Context, retention time.Duration) error {
 	return r.getQueries(ctx).CleanupInboxMessages(ctx, pgtype.Interval{
 		Microseconds: retention.Microseconds(),

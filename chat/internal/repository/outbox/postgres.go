@@ -93,3 +93,19 @@ func (r *PostgresRepository) MarkAsRetryable(ctx context.Context, keys []string)
 func (r *PostgresRepository) MarkAsFailed(ctx context.Context, keys []string) error {
 	return r.getQueries(ctx).MarkOutboxMessagesAsFailed(ctx, keys)
 }
+
+// GetMessageStatus returns the dispatch status and attempt count of a single
+// outbox message by its idempotency key.
+func (r *PostgresRepository) GetMessageStatus(ctx context.Context, idempotencyKey string) (string, int32, error) {
+	row, err := r.getQueries(ctx).GetOutboxMessage(ctx, idempotencyKey)
+	if err != nil {
+		return "", 0, err
+	}
+	return string(row.Status), row.Attempts, nil
+}
+
+// ResetMessage returns a FAILED message back to CREATED with a clean attempt
+// counter, so the next worker poll dispatches it again.
+func (r *PostgresRepository) ResetMessage(ctx context.Context, idempotencyKey string) error {
+	return r.getQueries(ctx).ResetOutboxMessage(ctx, idempotencyKey)
+}

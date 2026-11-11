@@ -14,14 +14,24 @@ import (
 // fakeQuerier implements sqlc.Querier with call expectations defined per test.
 type fakeQuerier struct {
 	sendOutboxMessage func(context.Context, sqlc.SendOutboxMessageParams) error
+	getOutboxMessage  func(context.Context, string) (sqlc.GetOutboxMessageRow, error)
 	getOutboxMessages func(context.Context, sqlc.GetOutboxMessagesParams) ([]sqlc.GetOutboxMessagesRow, error)
 	markAsProcessed   func(context.Context, []string) error
 	markAsRetryable   func(context.Context, []string) error
 	markAsFailed      func(context.Context, []string) error
+	resetMessage      func(context.Context, string) error
 }
 
 func (q *fakeQuerier) SendOutboxMessage(ctx context.Context, params sqlc.SendOutboxMessageParams) error {
 	return q.sendOutboxMessage(ctx, params)
+}
+
+func (q *fakeQuerier) GetOutboxMessage(ctx context.Context, idempotencyKey string) (sqlc.GetOutboxMessageRow, error) {
+	return q.getOutboxMessage(ctx, idempotencyKey)
+}
+
+func (q *fakeQuerier) ResetOutboxMessage(ctx context.Context, idempotencyKey string) error {
+	return q.resetMessage(ctx, idempotencyKey)
 }
 
 func (q *fakeQuerier) GetOutboxMessages(ctx context.Context, params sqlc.GetOutboxMessagesParams) ([]sqlc.GetOutboxMessagesRow, error) {
@@ -132,6 +142,31 @@ func TestMarkAsFailed(t *testing.T) {
 
 	if err := (&PostgresRepository{queries: queries}).MarkAsFailed(ctx, []string{"42"}); err != nil {
 		t.Fatalf("MarkAsFailed() = %v, want nil", err)
+	}
+}
+
+func TestGetMessageStatusAndReset(t *testing.T) {
+	ctx := t.Context()
+	dbErr := errors.New("database unavailable")
+	queries := &fakeQuerier{
+		getOutboxMessage: func(context.Context, string) (sqlc.GetOutboxMessageRow, error) {
+			return sqlc.GetOutboxMessageRow{Status: sqlc.ChatOutboxStatusFAILED, Attempts: 5}, nil
+		},
+		resetMessage: func(_ context.Context, key string) error {
+			if key != "42" {
+				t.Errorf("reset key = %q, want 42", key)
+			}
+			return dbErr
+		},
+	}
+	repository := &PostgresRepository{queries: queries}
+
+	status, attempts, err := repository.GetMessageStatus(ctx, "42")
+	if err != nil || status != entity.OutboxStatusFailed || attempts != 5 {
+		t.Fatalf("GetMessageStatus() = %q, %d, %v, want FAILED, 5, nil", status, attempts, err)
+	}
+	if err := repository.ResetMessage(ctx, "42"); !errors.Is(err, dbErr) {
+		t.Fatalf("ResetMessage() = %v, want %v", err, dbErr)
 	}
 }
 

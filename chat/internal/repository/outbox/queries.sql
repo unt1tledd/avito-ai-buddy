@@ -8,6 +8,11 @@ VALUES (
        )
 ON CONFLICT (idempotency_key) DO NOTHING;
 
+-- name: GetOutboxMessage :one
+SELECT status, attempts
+FROM chat.outbox
+WHERE idempotency_key = sqlc.arg(idempotency_key);
+
 -- name: GetOutboxMessages :many
 UPDATE chat.outbox
 SET status = 'IN_PROGRESS'::chat.outbox_status
@@ -44,3 +49,10 @@ SET status = 'FAILED'::chat.outbox_status,
     attempts = attempts + 1,
     processed_at = now()
 WHERE idempotency_key = ANY(sqlc.arg(idempotency_keys)::text[]);
+
+-- name: ResetOutboxMessage :exec
+UPDATE chat.outbox
+SET status = 'CREATED'::chat.outbox_status,
+    attempts = 0,
+    processed_at = NULL
+WHERE idempotency_key = sqlc.arg(idempotency_key);

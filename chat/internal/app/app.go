@@ -201,7 +201,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 		<-cleanupDone
 		closeDependencies()
 	}
-	taskNotifier := inboxsvc.New(inboxRepository, tx, hub)
+	taskNotifier := inboxsvc.New(inboxRepository, hub)
 
 	actions := actionrepo.NewPostgresRepository(db)
 	conversations := conversation.NewService(conversationrepo.NewPostgresRepository(db))
