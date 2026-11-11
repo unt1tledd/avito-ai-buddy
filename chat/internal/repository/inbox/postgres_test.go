@@ -15,16 +15,11 @@ import (
 
 type fakeQuerier struct {
 	tryInsert func(context.Context, sqlc.TryInsertInboxMessageParams) (string, error)
-	remove    func(context.Context, string) error
 	cleanup   func(context.Context, pgtype.Interval) error
 }
 
 func (q *fakeQuerier) TryInsertInboxMessage(ctx context.Context, params sqlc.TryInsertInboxMessageParams) (string, error) {
 	return q.tryInsert(ctx, params)
-}
-
-func (q *fakeQuerier) DeleteInboxMessage(ctx context.Context, idempotencyKey string) error {
-	return q.remove(ctx, idempotencyKey)
 }
 
 func (q *fakeQuerier) CleanupInboxMessages(ctx context.Context, retention pgtype.Interval) error {
@@ -78,25 +73,6 @@ func TestTryInsertPropagatesDatabaseFailure(t *testing.T) {
 	inserted, err := (&PostgresRepository{queries: queries}).TryInsert(ctx, entity.InboxMessage{IdempotencyKey: "42"})
 	if inserted || !errors.Is(err, dbErr) {
 		t.Fatalf("TryInsert() = %v, %v, want false, %v", inserted, err, dbErr)
-	}
-}
-
-func TestDeleteInboxMessage(t *testing.T) {
-	ctx := t.Context()
-	dbErr := errors.New("database unavailable")
-	var got string
-	queries := &fakeQuerier{
-		remove: func(_ context.Context, key string) error {
-			got = key
-			return dbErr
-		},
-	}
-
-	if err := (&PostgresRepository{queries: queries}).Delete(ctx, "access-42"); !errors.Is(err, dbErr) {
-		t.Fatalf("Delete() = %v, want %v", err, dbErr)
-	}
-	if got != "access-42" {
-		t.Fatalf("Delete() key = %q, want access-42", got)
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 
 type Querier interface {
 	CleanupInboxMessages(ctx context.Context, retention pgtype.Interval) error
-	DeleteInboxMessage(ctx context.Context, idempotencyKey string) error
 	TryInsertInboxMessage(ctx context.Context, arg TryInsertInboxMessageParams) (string, error)
 }
 

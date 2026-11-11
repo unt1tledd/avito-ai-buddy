@@ -21,16 +21,6 @@ func (q *Queries) CleanupInboxMessages(ctx context.Context, retention pgtype.Int
 	return err
 }
 
-const deleteInboxMessage = `-- name: DeleteInboxMessage :exec
-DELETE FROM chat.inbox
-WHERE idempotency_key = $1
-`
-
-func (q *Queries) DeleteInboxMessage(ctx context.Context, idempotencyKey string) error {
-	_, err := q.db.Exec(ctx, deleteInboxMessage, idempotencyKey)
-	return err
-}
-
 const tryInsertInboxMessage = `-- name: TryInsertInboxMessage :one
 INSERT INTO chat.inbox (idempotency_key, kind, payload)
 VALUES ($1, $2, $3)

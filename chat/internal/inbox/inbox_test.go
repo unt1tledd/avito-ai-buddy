@@ -3,7 +3,6 @@ package inbox
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 
 	"avito-ai-buddy/chat/internal/entity"
@@ -11,16 +10,12 @@ import (
 )
 
 type fakeQueue struct {
-	mu     sync.Mutex
 	seen   map[string]struct{}
 	insert []entity.InboxMessage
-	delete []string
 	fail   error
 }
 
 func (q *fakeQueue) TryInsert(_ context.Context, message entity.InboxMessage) (bool, error) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
 	if q.fail != nil {
 		return false, q.fail
 	}
@@ -35,41 +30,65 @@ func (q *fakeQueue) TryInsert(_ context.Context, message entity.InboxMessage) (b
 	return true, nil
 }
 
-func (q *fakeQueue) Delete(_ context.Context, idempotencyKey string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	delete(q.seen, idempotencyKey)
-	q.delete = append(q.delete, idempotencyKey)
-	return nil
+type transactorFunc func(context.Context, func(context.Context) error) error
+
+func (f transactorFunc) WithTx(ctx context.Context, fn func(context.Context) error) error {
+	return f(ctx, fn)
 }
 
-type fakeNotifier struct {
-	events []port.TaskEvent
-	err    error
-	calls  int
+func runTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
 }
 
-func (n *fakeNotifier) PublishTaskStatus(_ context.Context, event port.TaskEvent) error {
-	n.calls++
-	if n.err != nil {
-		return n.err
+type fakeTaskStatus struct {
+	events    []port.TaskEvent
+	published []entity.Message
+	saveErr   error
+	onPublish func()
+}
+
+func (n *fakeTaskStatus) SaveTaskStatus(_ context.Context, event port.TaskEvent) (*entity.Message, error) {
+	if n.saveErr != nil {
+		return nil, n.saveErr
 	}
 	n.events = append(n.events, event)
-	return nil
+	return &entity.Message{Text: event.Status}, nil
+}
+
+func (n *fakeTaskStatus) PublishSavedTaskStatus(_ context.Context, _ port.TaskEvent, message entity.Message) {
+	if n.onPublish != nil {
+		n.onPublish()
+	}
+	n.published = append(n.published, message)
 }
 
 func TestFirstDeliveryIsProcessed(t *testing.T) {
 	ctx := context.Background()
 	queue := &fakeQueue{}
-	notifier := &fakeNotifier{}
-	inbox := New(queue, notifier)
+	committed := false
+	notifier := &fakeTaskStatus{onPublish: func() {
+		if !committed {
+			t.Fatal("published before the transaction committed")
+		}
+	}}
+	tx := transactorFunc(func(ctx context.Context, fn func(context.Context) error) error {
+		if err := fn(ctx); err != nil {
+			return err
+		}
+		if len(queue.insert) != 1 || len(notifier.events) != 1 {
+			t.Fatal("inbox marker and message must be saved before commit")
+		}
+		committed = true
+		return nil
+	})
+	inbox := New(queue, notifier, tx)
 
 	event := port.TaskEvent{UserID: "7", TaskID: "task-42", ExternalRequestID: "access-42", Status: "approved"}
 	if err := inbox.PublishTaskStatus(ctx, event); err != nil {
 		t.Fatalf("PublishTaskStatus() = %v, want nil", err)
 	}
-	if notifier.calls != 1 || len(notifier.events) != 1 || notifier.events[0] != event {
-		t.Fatalf("notifier deliveries = %+v, want single delivery of %+v", notifier.events, event)
+	if notifier.events[0] != event || len(notifier.published) != 1 || notifier.published[0].Text != event.Status {
+		t.Fatalf("saved events = %+v, published messages = %+v", notifier.events, notifier.published)
 	}
 	if len(queue.insert) != 1 || queue.insert[0].IdempotencyKey != "access-42" {
 		t.Fatalf("inserted keys = %+v, want [access-42]", queue.insert)
@@ -79,8 +98,8 @@ func TestFirstDeliveryIsProcessed(t *testing.T) {
 func TestRedeliveredEventIsSkipped(t *testing.T) {
 	ctx := context.Background()
 	queue := &fakeQueue{}
-	notifier := &fakeNotifier{}
-	inbox := New(queue, notifier)
+	notifier := &fakeTaskStatus{}
+	inbox := New(queue, notifier, transactorFunc(runTransaction))
 
 	event := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
 	for i := 0; i < 3; i++ {
@@ -89,35 +108,45 @@ func TestRedeliveredEventIsSkipped(t *testing.T) {
 		}
 	}
 
-	if notifier.calls != 1 {
-		t.Fatalf("notifier called %d times, want 1 (duplicates must be skipped)", notifier.calls)
+	if len(notifier.events) != 1 || len(notifier.published) != 1 {
+		t.Fatalf("saved %d messages and published %d, want 1 each", len(notifier.events), len(notifier.published))
 	}
 	if key := queue.insert[0].IdempotencyKey; key != "task-42|approved" {
 		t.Fatalf("idempotency key = %q, want task-42|approved", key)
 	}
 }
 
-func TestFailedDeliveryRollsMarkerBack(t *testing.T) {
-	ctx := context.Background()
-	queue := &fakeQueue{}
-	notifier := &fakeNotifier{err: errors.New("hub unavailable")}
-	inbox := New(queue, notifier)
-
-	event := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
-	if err := inbox.PublishTaskStatus(ctx, event); err == nil {
-		t.Fatal("PublishTaskStatus() = nil, want delivery error")
-	}
-	if len(queue.delete) != 1 || queue.delete[0] != "task-42|approved" {
-		t.Fatalf("rolled back keys = %v, want [task-42|approved]", queue.delete)
-	}
-
-	// The next redelivery processes the event again.
-	notifier.err = nil
-	if err := inbox.PublishTaskStatus(ctx, event); err != nil {
-		t.Fatalf("retry after failed delivery = %v, want nil", err)
-	}
-	if notifier.calls != 2 {
-		t.Fatalf("notifier called %d times, want 2", notifier.calls)
+func TestFailedTransactionDoesNotPublish(t *testing.T) {
+	dbErr := errors.New("database unavailable")
+	for _, tc := range []struct {
+		name      string
+		saveErr   error
+		commitErr error
+	}{
+		{name: "save fails", saveErr: dbErr},
+		{name: "commit fails", commitErr: dbErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			notifier := &fakeTaskStatus{saveErr: tc.saveErr}
+			tx := transactorFunc(func(ctx context.Context, fn func(context.Context) error) error {
+				err := fn(ctx)
+				if !errors.Is(err, tc.saveErr) {
+					t.Fatalf("transaction body error = %v, want %v", err, tc.saveErr)
+				}
+				if err != nil {
+					return err
+				}
+				return tc.commitErr
+			})
+			inbox := New(&fakeQueue{}, notifier, tx)
+			event := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
+			if err := inbox.PublishTaskStatus(t.Context(), event); !errors.Is(err, dbErr) {
+				t.Fatalf("PublishTaskStatus() = %v, want %v", err, dbErr)
+			}
+			if len(notifier.published) != 0 {
+				t.Fatal("published a message from a failed transaction")
+			}
+		})
 	}
 }
 
@@ -125,7 +154,7 @@ func TestQueueFailurePropagates(t *testing.T) {
 	ctx := context.Background()
 	dbErr := errors.New("database unavailable")
 	queue := &fakeQueue{fail: dbErr}
-	inbox := New(queue, &fakeNotifier{})
+	inbox := New(queue, &fakeTaskStatus{}, transactorFunc(runTransaction))
 
 	event := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
 	if err := inbox.PublishTaskStatus(ctx, event); !errors.Is(err, dbErr) {

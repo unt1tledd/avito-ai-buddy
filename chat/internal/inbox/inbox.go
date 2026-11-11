@@ -1,13 +1,9 @@
-// Package inbox makes delivery of incoming events idempotent: the event key
-// is recorded before delivery, so Kafka redeliveries are skipped. When the
-// delivery fails, the marker is removed and the event is processed again on
-// the next redelivery.
+// Package inbox records incoming events and their effects in one transaction.
 package inbox
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"avito-ai-buddy/chat/internal/entity"
@@ -22,26 +18,27 @@ type (
 	// Queue stores the processed event markers.
 	Queue interface {
 		TryInsert(ctx context.Context, message entity.InboxMessage) (bool, error)
-		Delete(ctx context.Context, idempotencyKey string) error
 	}
 
-	// Inbox decorates a notifier with idempotent delivery.
+	taskStatusHandler interface {
+		SaveTaskStatus(ctx context.Context, event port.TaskEvent) (*entity.Message, error)
+		PublishSavedTaskStatus(ctx context.Context, event port.TaskEvent, message entity.Message)
+	}
+
+	// Inbox processes task status events idempotently.
 	Inbox struct {
-		queue Queue
-		next  port.TaskEventsNotifier
+		queue      Queue
+		taskStatus taskStatusHandler
+		tx         port.Transactor
 	}
 )
 
-// New wraps the next notifier with idempotent delivery backed by the queue.
-func New(queue Queue, next port.TaskEventsNotifier) *Inbox {
-	return &Inbox{queue: queue, next: next}
+func New(queue Queue, taskStatus taskStatusHandler, tx port.Transactor) *Inbox {
+	return &Inbox{queue: queue, taskStatus: taskStatus, tx: tx}
 }
 
-// PublishTaskStatus skips already processed events and delivers new ones. If
-// the delivery fails, the marker is rolled back so the next redelivery can
-// process the event again. The rollback is best effort: a crash between the
-// delivery and the rollback may lose the event, which is acceptable for
-// ephemeral WebSocket notifications.
+// PublishTaskStatus saves the inbox marker and the chat message atomically.
+// It pushes a newly saved message to subscribers after commit.
 func (i *Inbox) PublishTaskStatus(ctx context.Context, event port.TaskEvent) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -53,20 +50,24 @@ func (i *Inbox) PublishTaskStatus(ctx context.Context, event port.TaskEvent) err
 		Kind:           inboxKindTaskStatusChange,
 	}
 
-	inserted, err := i.queue.TryInsert(ctx, message)
-	if err != nil {
-		return fmt.Errorf("mark event as processed: %w", err)
-	}
-	if !inserted {
-		// Kafka redelivery of an already processed event.
-		return nil
-	}
-
-	if err := i.next.PublishTaskStatus(ctx, event); err != nil {
-		if delErr := i.queue.Delete(ctx, message.IdempotencyKey); delErr != nil {
-			return errors.Join(err, fmt.Errorf("roll back processed marker: %w", delErr))
+	var saved *entity.Message
+	err = i.tx.WithTx(ctx, func(txCtx context.Context) error {
+		inserted, err := i.queue.TryInsert(txCtx, message)
+		if err != nil {
+			return fmt.Errorf("mark event as processed: %w", err)
 		}
+		if !inserted {
+			return nil
+		}
+
+		saved, err = i.taskStatus.SaveTaskStatus(txCtx, event)
 		return err
+	})
+	if err != nil {
+		return err
+	}
+	if saved != nil {
+		i.taskStatus.PublishSavedTaskStatus(ctx, event, *saved)
 	}
 	return nil
 }

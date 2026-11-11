@@ -45,17 +45,17 @@ func New(logger *zap.Logger, conversations conversationService, messages message
 	return &Service{logger: logger, conversations: conversations, messages: messages, hub: hub}
 }
 
-// PublishTaskStatus implements port.TaskEventsNotifier. It makes Hub satisfy
-// the same interface for live subscribers; this service adds persistence.
-func (s *Service) PublishTaskStatus(ctx context.Context, event port.TaskEvent) error {
+// SaveTaskStatus stores the message in the caller's transaction. A nil message
+// means the event is already in the chat history.
+func (s *Service) SaveTaskStatus(ctx context.Context, event port.TaskEvent) (*entity.Message, error) {
 	userID, err := strconv.ParseInt(event.UserID, 10, 64)
 	if err != nil || userID <= 0 {
-		return fmt.Errorf("invalid user id %q", event.UserID)
+		return nil, fmt.Errorf("invalid user id %q", event.UserID)
 	}
 
 	conversation, err := s.conversations.GetOrCreate(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("get conversation: %w", err)
+		return nil, fmt.Errorf("get conversation: %w", err)
 	}
 
 	message := entity.Message{
@@ -66,15 +66,16 @@ func (s *Service) PublishTaskStatus(ctx context.Context, event port.TaskEvent) e
 	}
 	created, err := s.messages.CreateIdempotent(ctx, message, numericKey(event.IdempotencyKey()))
 	if err != nil {
-		return fmt.Errorf("save task status message: %w", err)
+		return nil, fmt.Errorf("save task status message: %w", err)
 	}
 	if !created {
-		// A redelivered event whose message is already in the history.
-		return nil
+		return nil, nil
 	}
+	return &message, nil
+}
 
-	// Fire and forget: the message is already persisted, so a failed push
-	// only delays the live update, the history is always up to date.
+// PublishSavedTaskStatus pushes a committed message to live subscribers.
+func (s *Service) PublishSavedTaskStatus(ctx context.Context, event port.TaskEvent, message entity.Message) {
 	if err := s.hub.PublishMessage(ctx, event.UserID, message); err != nil {
 		s.logger.Error("push task status message to websocket subscribers",
 			zap.Error(err),
@@ -82,7 +83,6 @@ func (s *Service) PublishTaskStatus(ctx context.Context, event port.TaskEvent) e
 			zap.String("task_id", event.TaskID),
 		)
 	}
-	return nil
 }
 
 func statusText(event port.TaskEvent) string {

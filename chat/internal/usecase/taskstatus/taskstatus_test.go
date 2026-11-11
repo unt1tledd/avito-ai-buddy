@@ -3,6 +3,7 @@ package taskstatus
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"avito-ai-buddy/chat/internal/entity"
@@ -57,7 +58,7 @@ func (h *fakeHub) PublishMessage(_ context.Context, _ string, message entity.Mes
 	return nil
 }
 
-func TestPublishTaskStatusSavesMessageAndPushes(t *testing.T) {
+func TestSaveTaskStatus(t *testing.T) {
 	ctx := context.Background()
 	conversations := &fakeConversations{id: 21}
 	messages := &fakeMessages{}
@@ -65,17 +66,17 @@ func TestPublishTaskStatusSavesMessageAndPushes(t *testing.T) {
 	service := New(zap.NewNop(), conversations, messages, hub)
 
 	event := port.TaskEvent{UserID: "7", TaskID: "task-42", ExternalRequestID: "access-42", Status: "approved"}
-	if err := service.PublishTaskStatus(ctx, event); err != nil {
-		t.Fatalf("PublishTaskStatus() = %v, want nil", err)
+	got, err := service.SaveTaskStatus(ctx, event)
+	if err != nil || got == nil {
+		t.Fatalf("SaveTaskStatus() = %+v, %v, want a saved message", got, err)
 	}
 
 	if len(messages.keys) != 1 || messages.keys[0] <= 0 {
 		t.Fatalf("saved idempotency keys = %v, want a single positive key", messages.keys)
 	}
-	if len(hub.messages) != 1 {
-		t.Fatalf("hub deliveries = %d, want 1", len(hub.messages))
+	if len(hub.messages) != 0 {
+		t.Fatal("saving a message must not publish it")
 	}
-	got := hub.messages[0]
 	if got.ConversationID != 21 || got.Role != entity.MessageRoleAssistant {
 		t.Fatalf("message = %+v, want an assistant message in conversation 21", got)
 	}
@@ -87,7 +88,7 @@ func TestPublishTaskStatusSavesMessageAndPushes(t *testing.T) {
 	}
 }
 
-func TestPublishTaskStatusSkipsRedeliveredEvents(t *testing.T) {
+func TestSaveTaskStatusSkipsRedeliveredEvents(t *testing.T) {
 	ctx := context.Background()
 	conversations := &fakeConversations{id: 21}
 	messages := &fakeMessages{}
@@ -95,23 +96,19 @@ func TestPublishTaskStatusSkipsRedeliveredEvents(t *testing.T) {
 	service := New(zap.NewNop(), conversations, messages, hub)
 
 	event := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
-	for i := 0; i < 2; i++ {
-		if err := service.PublishTaskStatus(ctx, event); err != nil {
-			t.Fatalf("PublishTaskStatus() #%d = %v, want nil", i+1, err)
-		}
+	if message, err := service.SaveTaskStatus(ctx, event); err != nil || message == nil {
+		t.Fatalf("SaveTaskStatus() = %+v, %v, want a saved message", message, err)
+	}
+	if message, err := service.SaveTaskStatus(ctx, event); err != nil || message != nil {
+		t.Fatalf("SaveTaskStatus() on redelivery = %+v, %v, want nil, nil", message, err)
 	}
 
-	// The second delivery is deduplicated by the message idempotency key:
-	// neither a second message nor a second push is produced.
 	if len(messages.keys) != 1 {
 		t.Fatalf("saved messages = %d, want 1", len(messages.keys))
 	}
-	if len(hub.messages) != 1 {
-		t.Fatalf("hub deliveries = %d, want 1", len(hub.messages))
-	}
 }
 
-func TestPublishTaskStatusKeepsStableKeyPerEvent(t *testing.T) {
+func TestSaveTaskStatusKeepsStableKeyPerEvent(t *testing.T) {
 	ctx := context.Background()
 	conversations := &fakeConversations{id: 21}
 	messages := &fakeMessages{}
@@ -121,8 +118,8 @@ func TestPublishTaskStatusKeepsStableKeyPerEvent(t *testing.T) {
 	first := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
 	second := port.TaskEvent{UserID: "7", TaskID: "task-43", Status: "approved"}
 	for _, event := range []port.TaskEvent{first, second, first} {
-		if err := service.PublishTaskStatus(ctx, event); err != nil {
-			t.Fatalf("PublishTaskStatus(%s) = %v, want nil", event.TaskID, err)
+		if _, err := service.SaveTaskStatus(ctx, event); err != nil {
+			t.Fatalf("SaveTaskStatus(%s) = %v, want nil", event.TaskID, err)
 		}
 	}
 
@@ -132,34 +129,42 @@ func TestPublishTaskStatusKeepsStableKeyPerEvent(t *testing.T) {
 	}
 }
 
-func TestPublishTaskStatusRejectsInvalidUser(t *testing.T) {
+func TestSaveTaskStatusRejectsInvalidUser(t *testing.T) {
 	ctx := context.Background()
 	service := New(zap.NewNop(), &fakeConversations{}, &fakeMessages{}, &fakeHub{})
 
 	for _, userID := range []string{"", "abc", "0", "-7"} {
-		if err := service.PublishTaskStatus(ctx, port.TaskEvent{UserID: userID, TaskID: "task-42", Status: "approved"}); err == nil {
-			t.Fatalf("PublishTaskStatus(user %q) = nil, want an error", userID)
+		if _, err := service.SaveTaskStatus(ctx, port.TaskEvent{UserID: userID, TaskID: "task-42", Status: "approved"}); err == nil {
+			t.Fatalf("SaveTaskStatus(user %q) = nil, want an error", userID)
 		}
 	}
 }
 
-func TestPublishTaskStatusKeepsMessageWhenPushFails(t *testing.T) {
+func TestPublishSavedTaskStatus(t *testing.T) {
 	ctx := context.Background()
 	conversations := &fakeConversations{id: 21}
 	messages := &fakeMessages{}
-	hub := &fakeHub{err: errors.New("no live subscribers")}
+	hub := &fakeHub{}
 	service := New(zap.NewNop(), conversations, messages, hub)
 
 	event := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
-	if err := service.PublishTaskStatus(ctx, event); err != nil {
-		t.Fatalf("PublishTaskStatus() = %v, want nil: a failed push must not lose the message", err)
+	message, err := service.SaveTaskStatus(ctx, event)
+	if err != nil || message == nil {
+		t.Fatalf("SaveTaskStatus() = %+v, %v, want a saved message", message, err)
 	}
+	service.PublishSavedTaskStatus(ctx, event, *message)
+	if len(hub.messages) != 1 || !reflect.DeepEqual(hub.messages[0], *message) {
+		t.Fatalf("hub messages = %+v, want %+v", hub.messages, *message)
+	}
+
+	hub.err = errors.New("no live subscribers")
+	service.PublishSavedTaskStatus(ctx, event, *message)
 	if len(messages.keys) != 1 {
 		t.Fatalf("saved messages = %d, want 1 despite the failed push", len(messages.keys))
 	}
 }
 
-func TestPublishTaskStatusPropagatesStorageFailure(t *testing.T) {
+func TestSaveTaskStatusPropagatesStorageFailure(t *testing.T) {
 	ctx := context.Background()
 	dbErr := errors.New("database unavailable")
 	conversations := &fakeConversations{}
@@ -167,7 +172,7 @@ func TestPublishTaskStatusPropagatesStorageFailure(t *testing.T) {
 	service := New(zap.NewNop(), conversations, messages, &fakeHub{})
 
 	event := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
-	if err := service.PublishTaskStatus(ctx, event); !errors.Is(err, dbErr) {
-		t.Fatalf("PublishTaskStatus() = %v, want %v", err, dbErr)
+	if _, err := service.SaveTaskStatus(ctx, event); !errors.Is(err, dbErr) {
+		t.Fatalf("SaveTaskStatus() = %v, want %v", err, dbErr)
 	}
 }

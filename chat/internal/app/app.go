@@ -209,7 +209,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 	conversations := conversation.NewService(conversationrepo.NewPostgresRepository(db))
 	msgRepository := messagerepo.NewPostgresRepository(db)
 	taskstatusService := taskstatus.New(logger, conversations, msgRepository, hub)
-	taskNotifier := inboxsvc.New(inboxRepository, taskstatusService)
+	taskNotifier := inboxsvc.New(inboxRepository, taskstatusService, tx)
 
 	messages := message.NewService(
 		conversations,
