@@ -3,7 +3,7 @@ GO_MODULES := auth user onboarding task chat pkg integration-tests
 deps:
 	@set -e; for module in $(GO_MODULES); do (cd $$module && GOWORK=off go mod download all); done
 verify:
-	go mod verify
+	@set -e; for module in $(GO_MODULES); do (cd $$module && GOWORK=off go mod verify); done
 fmt:
 	@set -e; for module in $(GO_MODULES); do (cd $$module && golangci-lint fmt --config ../.golangci.yaml); done
 lint:
