@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - infra/local-stack
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go-and-docker:
+    name: Go tests and Docker builds
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Install protobuf tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+          export GOBIN="$RUNNER_TEMP/proto-bin"
+          mkdir -p "$GOBIN"
+
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+          go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0
+          go install github.com/envoyproxy/protoc-gen-validate@v1.3.3
+
+          printf '%s\n' "$GOBIN" >> "$GITHUB_PATH"
+
+      - name: Generate Chat and Onboarding protobuf code
+        run: |
+          google_proto_dir="$RUNNER_TEMP/googleapis"
+          git init --quiet "$google_proto_dir"
+          git -C "$google_proto_dir" fetch --depth=1 \
+            https://github.com/googleapis/googleapis.git \
+            89c3153888201c9e80bc5ec78d6ffca0debe6b52
+          git -C "$google_proto_dir" checkout --quiet FETCH_HEAD
+
+          GOWORK=off go mod download github.com/envoyproxy/protoc-gen-validate@v1.3.3
+          validate_proto_dir="$(go env GOMODCACHE)/github.com/envoyproxy/protoc-gen-validate@v1.3.3"
+
+          mkdir -p pkg/generated
+
+          protoc \
+            -I chat/api \
+            -I onboarding/api \
+            -I "$google_proto_dir" \
+            -I "$validate_proto_dir" \
+            -I /usr/include \
+            --go_out=pkg/generated \
+            --go_opt=paths=source_relative \
+            --go-grpc_out=pkg/generated \
+            --go-grpc_opt=paths=source_relative,require_unimplemented_servers=false \
+            --grpc-gateway_out=pkg/generated \
+            --grpc-gateway_opt=paths=source_relative \
+            --validate_out=lang=go,paths=source_relative:pkg/generated \
+            chat/api/chat/v1/chat.proto \
+            onboarding/api/plan/v1/plan.proto \
+            onboarding/api/step/v1/step.proto
+
+          test -f pkg/generated/chat/v1/chat.pb.go
+          test -f pkg/generated/plan/v1/plan.pb.go
+          test -f pkg/generated/step/v1/step.pb.go
+
+      - name: Run Go tests
+        run: |
+          for module in auth user chat onboarding pkg; do
+            printf '\n=== %s ===\n' "$module"
+            (cd "$module" && go test -race -count=1 ./...)
+          done
+
+      - name: Validate Compose and build images
+        env:
+          POSTGRES_PASSWORD: ci-postgres
+          AI_DB_PASSWORD: ci-ai
+          USER_DB_PASSWORD: ci-user
+          AUTH_DB_PASSWORD: ci-auth
+          CHAT_DB_PASSWORD: ci-chat
+          ONBOARDING_DB_PASSWORD: ci-onboarding
+          EMBEDDING_DIMENSIONS: "1536"
+        run: |
+          docker compose config --quiet
+          docker compose build auth user chat onboarding ai
+
+  ai-tests:
+    name: AI tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ai
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv==0.12.17
+
+      - name: Run AI tests
+        run: uv run --locked pytest
