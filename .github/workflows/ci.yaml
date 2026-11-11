@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.3"
           cache-dependency-path: |
             go.work.sum
             **/go.sum
@@ -40,7 +40,7 @@ jobs:
 
           printf '%s\n' "$GOBIN" >> "$GITHUB_PATH"
 
-      - name: Generate Chat and Onboarding protobuf code
+      - name: Generate User, Chat and Onboarding protobuf code
         run: |
           google_proto_dir="$RUNNER_TEMP/googleapis"
           git init --quiet "$google_proto_dir"
@@ -55,6 +55,8 @@ jobs:
           mkdir -p pkg/generated
 
           protoc \
+            --experimental_allow_proto3_optional \
+            -I user/api \
             -I chat/api \
             -I onboarding/api \
             -I "$google_proto_dir" \
@@ -67,10 +69,13 @@ jobs:
             --grpc-gateway_out=pkg/generated \
             --grpc-gateway_opt=paths=source_relative \
             --validate_out=lang=go,paths=source_relative:pkg/generated \
+            user/api/user/v1/user.proto \
             chat/api/chat/v1/chat.proto \
             onboarding/api/plan/v1/plan.proto \
             onboarding/api/step/v1/step.proto
 
+          test -f pkg/generated/user/v1/user.pb.go
+          test -f pkg/generated/user/v1/user_grpc.pb.go
           test -f pkg/generated/chat/v1/chat.pb.go
           test -f pkg/generated/plan/v1/plan.pb.go
           test -f pkg/generated/step/v1/step.pb.go
@@ -94,7 +99,7 @@ jobs:
           done
 
       - name: Go coverage
-        run: bash scripts/coverage.sh auth user chat onboarding pkg
+        run: bash infra/scripts/coverage.sh auth user chat onboarding pkg
 
       - name: Validate Compose and build images
         env:
