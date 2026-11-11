@@ -15,6 +15,7 @@
   --avito-white: #FFFFFF;
   --drawer-duration: 260ms;
   --drawer-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --chat-column-width: min(76%, 820px);
 }
 
 * {
@@ -46,7 +47,7 @@ input {
   font-family: inherit;
 }
 
-/* Обновлённый чистый бейдж AI BUDDY в шапке с фирменными точками Авито */
+/* Статичный фирменный бейдж AI BUDDY в шапке (без эффекта кликабельной кнопки) */
 .aibuddy-logo-pill {
   display: inline-flex;
   align-items: center;
@@ -62,13 +63,7 @@ input {
   letter-spacing: 0.06em;
   color: var(--avito-black);
   user-select: none;
-  transition: transform 0.16s var(--drawer-easing), box-shadow 0.16s var(--drawer-easing), background-color 0.16s ease;
-}
-
-.aibuddy-logo-pill:hover {
-  background: #F9FAFB;
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: 0 4px 0 var(--avito-black);
+  cursor: default;
 }
 
 .aibuddy-logo-dots {
@@ -234,7 +229,7 @@ input {
   stroke-linejoin: round;
 }
 
-/* Плавная оболочка левой панели: одинаковая скорость открытия и закрытия без дерганья чата */
+/* Плавная оболочка левой панели: одинаковая скорость открытия и закрытия без рывков чата */
 .drawer-shell {
   width: 0;
   min-width: 0;
@@ -286,12 +281,23 @@ input {
   }
 }
 
-/* Центрированная и удлинённая нижняя зона ввода + упорядоченные подсказки */
+/* Единая центральная колонка для сообщений чата и строки ввода (как в современных нейронках) */
+.chat-feed-column {
+  width: var(--chat-column-width);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 100%;
+  transition: width var(--drawer-duration) var(--drawer-easing);
+}
+
+/* Центрированная нижняя зона ввода (ровно той же ширины, что и колонка сообщений) */
 .chat-composer {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(76%, 820px);
+  width: var(--chat-column-width);
   align-self: center;
   margin: 12px auto 0;
   transition: width var(--drawer-duration) var(--drawer-easing);
@@ -369,8 +375,8 @@ input {
   color: var(--avito-gray);
 }
 
-@media (max-width: 720px) {
-  .chat-composer {
-    width: 100%;
+@media (max-width: 900px) {
+  :root {
+    --chat-column-width: 100%;
   }
 }

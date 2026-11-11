@@ -27,6 +27,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>(INITIAL_HISTORY_ITEMS);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -61,12 +62,84 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     setIsDrawerOpen(false);
   };
 
+  // Создание нового диалога в панели «История запросов»
+  const handleStartNewQuestion = () => {
+    setMessages([]);
+    setShowRetryComparison(false);
+
+    // Если сверху уже есть пустой «Новый вопрос», просто активируем его
+    const existingDraft = historyItems.find(
+      (item) => item.messages.length === 0 && item.dayGroup === 'СЕГОДНЯ'
+    );
+    if (existingDraft) {
+      setActiveHistoryId(existingDraft.id);
+      return;
+    }
+
+    const nowLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newId = 'hist-new-' + Date.now();
+    const newItem: HistoryItem = {
+      id: newId,
+      dayGroup: 'СЕГОДНЯ',
+      timeLabel: `Сегодня, ${nowLabel}`,
+      title: '«Новый вопрос...»',
+      badgeText: 'Новый диалог',
+      badgeTone: 'blue',
+      messages: [],
+    };
+
+    setHistoryItems((prev) => [newItem, ...prev]);
+    setActiveHistoryId(newId);
+  };
+
+  const syncHistoryWithMessages = (
+    targetId: string,
+    questionText: string,
+    nextMessages: ChatMessage[],
+    hasApprovedProposal = false
+  ) => {
+    const nowLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const formattedTitle = `«${questionText}»`;
+
+    setHistoryItems((prev) => {
+      const exists = prev.some((item) => item.id === targetId);
+      if (exists) {
+        return prev.map((item) =>
+          item.id === targetId
+            ? {
+                ...item,
+                title: item.title === '«Новый вопрос...»' ? formattedTitle : item.title,
+                badgeText: hasApprovedProposal ? 'Заявка подтверждена' : 'Есть ответ',
+                badgeTone: hasApprovedProposal ? 'green' : 'blue',
+                messages: nextMessages,
+              }
+            : item
+        );
+      }
+
+      const created: HistoryItem = {
+        id: targetId,
+        dayGroup: 'СЕГОДНЯ',
+        timeLabel: `Сегодня, ${nowLabel}`,
+        title: formattedTitle,
+        badgeText: hasApprovedProposal ? 'Заявка подтверждена' : 'Есть ответ',
+        badgeTone: hasApprovedProposal ? 'green' : 'blue',
+        messages: nextMessages,
+      };
+      return [created, ...prev];
+    });
+  };
+
   const handleSend = async (rawText?: string, forceErrorDemo = false) => {
     const text = (rawText ?? inputValue).trim();
     if (!text) return;
 
     setShowRetryComparison(false);
     const idempotencyKey = 'idem-' + Date.now();
+    const currentHistId = activeHistoryId ?? 'hist-session-' + Date.now();
+    if (!activeHistoryId) {
+      setActiveHistoryId(currentHistId);
+    }
 
     const userMsg: ChatMessage = {
       id: 'u-' + Date.now(),
@@ -76,12 +149,16 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       idempotency_key: idempotencyKey,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const updatedWithUser = [...messages, userMsg];
+    setMessages(updatedWithUser);
+    syncHistoryWithMessages(currentHistId, text, updatedWithUser, false);
+
     if (!rawText) setInputValue('');
     setIsLoading(true);
 
     try {
       const reply = await sendChatMessage(text, idempotencyKey, forceErrorDemo);
+      const hasProposal = Boolean(reply.proposal);
       if (reply.proposal) {
         setProposalStage('approved');
         onProposalConfirmed(
@@ -89,7 +166,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           reply.proposal.tracker_issue_key || '1042'
         );
       }
-      setMessages((prev) => [...prev, reply]);
+      const finalMessages = [...updatedWithUser, reply];
+      setMessages(finalMessages);
+      syncHistoryWithMessages(currentHistId, text, finalMessages, hasProposal);
     } catch {
       const errMsg: ChatMessage = {
         id: 'err-' + Date.now(),
@@ -99,7 +178,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         idempotency_key: idempotencyKey,
         error: true,
       };
-      setMessages((prev) => [...prev, errMsg]);
+      const failedMessages = [...updatedWithUser, errMsg];
+      setMessages(failedMessages);
+      syncHistoryWithMessages(currentHistId, text, failedMessages, false);
     } finally {
       setIsLoading(false);
     }
@@ -211,10 +292,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
             <button
               className="ui-btn-dark"
-              onClick={() => {
-                setMessages([]);
-                setShowRetryComparison(false);
-              }}
+              onClick={handleStartNewQuestion}
               style={{
                 width: '100%',
                 padding: '12px',
@@ -245,54 +323,63 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {historyItems
                     .filter((item) => item.dayGroup === group)
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        className="ui-card-interactive"
-                        onClick={() => {
-                          setMessages(item.messages);
-                          setShowRetryComparison(false);
-                        }}
-                        style={{
-                          border: '2px solid #141414',
-                          borderRadius: '12px',
-                          padding: '12px',
-                          background: item.badgeTone === 'green' ? '#EAF4FF' : '#FFFFFF',
-                          cursor: 'pointer',
-                        }}
-                      >
+                    .map((item) => {
+                      const isSelected = item.id === activeHistoryId;
+                      return (
                         <div
+                          key={item.id}
+                          className="ui-card-interactive"
+                          onClick={() => {
+                            setActiveHistoryId(item.id);
+                            setMessages(item.messages);
+                            setShowRetryComparison(false);
+                          }}
                           style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '6px',
+                            border: '2px solid #141414',
+                            borderRadius: '12px',
+                            padding: '12px',
+                            background: isSelected
+                              ? '#EAF4FF'
+                              : item.badgeTone === 'green'
+                              ? '#F5FAFF'
+                              : '#FFFFFF',
+                            boxShadow: isSelected ? '0 2px 0 #141414' : undefined,
+                            cursor: 'pointer',
                           }}
                         >
-                          <span style={{ fontSize: '11px', color: '#5C5C5C' }}>
-                            {item.timeLabel}
-                          </span>
-                          <span
+                          <div
                             style={{
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              padding: '2px 8px',
-                              borderRadius: '999px',
-                              border: '1.5px solid #141414',
-                              background:
-                                item.badgeTone === 'green'
-                                  ? '#C9FFBF'
-                                  : item.badgeTone === 'blue'
-                                  ? '#BADAFB'
-                                  : '#F3F4F6',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginBottom: '6px',
                             }}
                           >
-                            {item.badgeText}
-                          </span>
+                            <span style={{ fontSize: '11px', color: '#5C5C5C' }}>
+                              {item.timeLabel}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: '999px',
+                                border: '1.5px solid #141414',
+                                background:
+                                  item.badgeTone === 'green'
+                                    ? '#C9FFBF'
+                                    : item.badgeTone === 'blue'
+                                    ? '#BADAFB'
+                                    : '#F3F4F6',
+                              }}
+                            >
+                              {item.badgeText}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '13px', fontWeight: 700 }}>{item.title}</div>
                         </div>
-                        <div style={{ fontSize: '13px', fontWeight: 700 }}>{item.title}</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                 </div>
               </div>
             ))}
@@ -420,313 +507,120 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           </button>
         </div>
 
-        {/* Прокручиваемая область сообщений с автоскроллом вниз */}
+        {/* Прокручиваемая область сообщений (внутри выровнена ровно по ширине строки запроса) */}
         <div
           style={{
             flex: 1,
             minHeight: 0,
-            marginLeft: '72px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '18px',
             overflowY: 'auto',
-            paddingRight: '8px',
             paddingBottom: '16px',
             scrollBehavior: 'smooth',
           }}
         >
-          {/* Начальный пустой экран */}
-          {messages.length === 0 && !showRetryComparison && (
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#737373',
-                fontSize: '18px',
-                fontWeight: 600,
-                textAlign: 'center',
-              }}
-            >
-              Задай вопрос ниже или выбери одну из быстрых подсказок
-            </div>
-          )}
-
-          {/* Демонстрация Схемы 04 (Сравнение ошибки и повтора отправки) */}
-          {showRetryComparison && (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '20px',
-                marginTop: '8px',
-              }}
-            >
-              {/* Левая карточка: Сбой */}
+          <div className="chat-feed-column">
+            {/* Начальный пустой экран */}
+            {messages.length === 0 && !showRetryComparison && (
               <div
                 style={{
-                  border: '2px solid #141414',
-                  borderRadius: '16px',
-                  padding: '18px',
-                  background: '#FFFFFF',
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#737373',
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  textAlign: 'center',
                 }}
               >
-                <div
-                  style={{
-                    color: '#E11D48',
-                    fontWeight: 800,
-                    fontSize: '14px',
-                    paddingBottom: '10px',
-                    borderBottom: '2px solid #141414',
-                    marginBottom: '14px',
-                  }}
-                >
-                  1. Если не удалось получить ответ с первого раза
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-                  <div
-                    style={{
-                      border: '2px solid #141414',
-                      borderRadius: '999px',
-                      padding: '8px 18px',
-                      background: '#F3F4F6',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                    }}
-                  >
-                    Какие правила работы с персональными данными?
-                  </div>
-                </div>
-                <div
-                  style={{
-                    border: '2px solid #141414',
-                    borderRadius: '14px',
-                    padding: '14px',
-                    background: '#F7C1C5',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                    <span
-                      style={{
-                        width: '26px',
-                        height: '26px',
-                        borderRadius: '50%',
-                        background: '#FF4053',
-                        color: '#FFFFFF',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 800,
-                        border: '1.5px solid #141414',
-                      }}
-                    >
-                      !
-                    </span>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: '13px' }}>
-                        Не удалось получить ответ. Твой вопрос сохранён
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#141414' }}>
-                        Нажми кнопку ниже, чтобы отправить его ещё раз.
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    className="ui-btn"
-                    onClick={() => {
-                      setShowRetryComparison(false);
-                      handleSend('Какие правила работы с персональными данными?');
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      borderRadius: '10px',
-                      border: '2px solid #141414',
-                      background: '#FFFFFF',
-                      fontWeight: 800,
-                      fontSize: '13px',
-                    }}
-                  >
-                    ↻ Повторить отправку
-                  </button>
-                </div>
+                Задай вопрос ниже или выбери одну из быстрых подсказок
               </div>
+            )}
 
-              {/* Правая карточка: После нажатия */}
+            {/* Демонстрация Схемы 04 (Сравнение ошибки и повтора отправки) */}
+            {showRetryComparison && (
               <div
                 style={{
-                  border: '2px solid #141414',
-                  borderRadius: '16px',
-                  padding: '18px',
-                  background: '#FFFFFF',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '20px',
+                  marginTop: '8px',
                 }}
               >
-                <div
-                  style={{
-                    display: 'inline-block',
-                    background: '#C9FFBF',
-                    border: '1.5px solid #141414',
-                    borderRadius: '6px',
-                    padding: '4px 10px',
-                    fontWeight: 800,
-                    fontSize: '13px',
-                    marginBottom: '12px',
-                  }}
-                >
-                  2. После нажатия на «↻ Повторить отправку»
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-                  <div
-                    style={{
-                      border: '2px solid #141414',
-                      borderRadius: '999px',
-                      padding: '8px 18px',
-                      background: '#F3F4F6',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                    }}
-                  >
-                    Какие правила работы с персональными данными?
-                  </div>
-                </div>
+                {/* Левая карточка: Сбой */}
                 <div
                   style={{
                     border: '2px solid #141414',
-                    borderRadius: '14px',
-                    padding: '14px',
+                    borderRadius: '16px',
+                    padding: '18px',
                     background: '#FFFFFF',
                   }}
                 >
-                  <div style={{ fontWeight: 800, fontSize: '14px', marginBottom: '6px' }}>
-                    AI-buddy
-                  </div>
-                  <p style={{ fontSize: '13px', lineHeight: 1.45, marginBottom: '12px' }}>
-                    При работе с <strong>персональными данными и внутренней информацией</strong> используй только корпоративные сервисы Авито и не загружай рабочие файлы на сторонние сайты.
-                  </p>
                   <div
                     style={{
-                      background: '#BADAFB',
-                      border: '1.5px solid #141414',
-                      borderRadius: '10px',
-                      padding: '10px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
+                      color: '#E11D48',
+                      fontWeight: 800,
+                      fontSize: '14px',
+                      paddingBottom: '10px',
+                      borderBottom: '2px solid #141414',
+                      marginBottom: '14px',
                     }}
                   >
-                    <a
-                      className="ui-btn"
-                      href="https://avito.tech/"
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        background: '#FFFFFF',
-                        border: '1.5px solid #141414',
-                        borderRadius: '6px',
-                        padding: '5px 10px',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        color: '#141414',
-                        textDecoration: 'none',
-                        width: 'fit-content',
-                      }}
-                    >
-                      [1] Лендинг «Защита данных» ↗
-                    </a>
-                    <a
-                      className="ui-btn"
-                      href="https://github.com/avito-tech/playbook"
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        background: '#FFFFFF',
-                        border: '1.5px solid #141414',
-                        borderRadius: '6px',
-                        padding: '5px 10px',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        color: '#141414',
-                        textDecoration: 'none',
-                        width: 'fit-content',
-                      }}
-                    >
-                      [2] Памятка по безопасности ↗
-                    </a>
+                    1. Если не удалось получить ответ с первого раза
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Список живых сообщений чата */}
-          {!showRetryComparison &&
-            messages.map((msg) =>
-              msg.sender === 'user' ? (
-                <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <div
-                    style={{
-                      border: '2px solid #141414',
-                      borderRadius: '999px',
-                      padding: '10px 24px',
-                      background: '#F3F4F6',
-                      fontWeight: 700,
-                      fontSize: '15px',
-                    }}
-                  >
-                    {msg.text}
-                  </div>
-                </div>
-              ) : (
-                <div
-                  key={msg.id}
-                  style={{
-                    border: '2px solid #141414',
-                    borderRadius: '18px',
-                    padding: '20px',
-                    background: msg.error ? '#F7C1C5' : '#FFFFFF',
-                    maxWidth: '860px',
-                  }}
-                >
-                  <div style={{ marginBottom: '12px' }}>
-                    <span
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+                    <div
                       style={{
-                        display: 'inline-block',
-                        padding: '4px 14px',
+                        border: '2px solid #141414',
                         borderRadius: '999px',
-                        border: '1.5px solid #141414',
-                        background: msg.proposal ? '#00AAFF' : '#04E061',
-                        color: '#141414',
-                        fontWeight: 800,
+                        padding: '8px 18px',
+                        background: '#F3F4F6',
+                        fontWeight: 700,
                         fontSize: '13px',
                       }}
                     >
-                      AI-buddy
-                    </span>
+                      Какие правила работы с персональными данными?
+                    </div>
                   </div>
-
                   <div
                     style={{
-                      fontSize: '15px',
-                      lineHeight: 1.55,
-                      whiteSpace: 'pre-line',
-                      marginBottom: msg.sources || msg.proposal || msg.error ? '16px' : '0',
+                      border: '2px solid #141414',
+                      borderRadius: '14px',
+                      padding: '14px',
+                      background: '#F7C1C5',
                     }}
                   >
-                    {msg.text}
-                  </div>
-
-                  {/* Кнопка повтора при сбое (Схема 04) */}
-                  {msg.error && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                      <span
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          borderRadius: '50%',
+                          background: '#FF4053',
+                          color: '#FFFFFF',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 800,
+                          border: '1.5px solid #141414',
+                        }}
+                      >
+                        !
+                      </span>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '13px' }}>
+                          Не удалось получить ответ. Твой вопрос сохранён
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#141414' }}>
+                          Нажми кнопку ниже, чтобы отправить его ещё раз.
+                        </div>
+                      </div>
+                    </div>
                     <button
                       className="ui-btn"
-                      onClick={() =>
-                        handleRetryMessage(
-                          msg.id,
-                          'Какие правила работы с персональными данными?',
-                          msg.idempotency_key || 'idem-retry'
-                        )
-                      }
+                      onClick={() => {
+                        setShowRetryComparison(false);
+                        handleSend('Какие правила работы с персональными данными?');
+                      }}
                       style={{
                         width: '100%',
                         padding: '10px',
@@ -734,205 +628,411 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         border: '2px solid #141414',
                         background: '#FFFFFF',
                         fontWeight: 800,
+                        fontSize: '13px',
                       }}
                     >
-                      ↻ Повторить отправку (с тем же idempotency_key)
+                      ↻ Повторить отправку
                     </button>
-                  )}
+                  </div>
+                </div>
 
-                  {/* Синий блок полезных ссылок и правил (sources) */}
-                  {msg.sources && msg.sources.length > 0 && (
+                {/* Правая карточка: После нажатия */}
+                <div
+                  style={{
+                    border: '2px solid #141414',
+                    borderRadius: '16px',
+                    padding: '18px',
+                    background: '#FFFFFF',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'inline-block',
+                      background: '#C9FFBF',
+                      border: '1.5px solid #141414',
+                      borderRadius: '6px',
+                      padding: '4px 10px',
+                      fontWeight: 800,
+                      fontSize: '13px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    2. После нажатия на «↻ Повторить отправку»
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+                    <div
+                      style={{
+                        border: '2px solid #141414',
+                        borderRadius: '999px',
+                        padding: '8px 18px',
+                        background: '#F3F4F6',
+                        fontWeight: 700,
+                        fontSize: '13px',
+                      }}
+                    >
+                      Какие правила работы с персональными данными?
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      border: '2px solid #141414',
+                      borderRadius: '14px',
+                      padding: '14px',
+                      background: '#FFFFFF',
+                    }}
+                  >
+                    <div style={{ marginBottom: '10px' }}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '5px 14px',
+                          borderRadius: '999px',
+                          border: '1.5px solid #141414',
+                          background: '#04E061',
+                          color: '#141414',
+                          fontWeight: 800,
+                          fontSize: '14px',
+                        }}
+                      >
+                        AI-buddy
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '13px', lineHeight: 1.45, marginBottom: '12px' }}>
+                      При работе с <strong>персональными данными и внутренней информацией</strong> используй только корпоративные сервисы Авито и не загружай рабочие файлы на сторонние сайты.
+                    </p>
                     <div
                       style={{
                         background: '#BADAFB',
-                        border: '2px solid #141414',
-                        borderRadius: '12px',
-                        padding: '14px',
+                        border: '1.5px solid #141414',
+                        borderRadius: '10px',
+                        padding: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
                       }}
                     >
-                      <div style={{ fontSize: '12px', fontWeight: 800, marginBottom: '10px' }}>
-                        Полезные ссылки и правила:
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                        {msg.sources.map((src) => (
-                          <a
-                            key={src.id}
-                            className="ui-btn"
-                            href={src.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{
-                              background: '#FFFFFF',
-                              border: '2px solid #141414',
-                              borderRadius: '8px',
-                              padding: '7px 14px',
-                              fontSize: '13px',
-                              fontWeight: 700,
-                              color: '#141414',
-                              textDecoration: 'none',
-                            }}
-                          >
-                            {src.title} ↗
-                          </a>
-                        ))}
-                      </div>
+                      <a
+                        className="ui-btn"
+                        href="https://avito.tech/"
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          background: '#FFFFFF',
+                          border: '1.5px solid #141414',
+                          borderRadius: '6px',
+                          padding: '5px 10px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          color: '#141414',
+                          textDecoration: 'none',
+                          width: 'fit-content',
+                        }}
+                      >
+                        [1] Лендинг «Защита данных» ↗
+                      </a>
+                      <a
+                        className="ui-btn"
+                        href="https://github.com/avito-tech/playbook"
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          background: '#FFFFFF',
+                          border: '1.5px solid #141414',
+                          borderRadius: '6px',
+                          padding: '5px 10px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          color: '#141414',
+                          textDecoration: 'none',
+                          width: 'fit-content',
+                        }}
+                      >
+                        [2] Памятка по безопасности ↗
+                      </a>
                     </div>
-                  )}
+                  </div>
+                </div>
+              </div>
+            )}
 
-                  {/* Карточка подтверждения доступа (Proposal Card) */}
-                  {msg.proposal && (
+            {/* Список живых сообщений чата (выровненных по левому и правому краям строки ввода) */}
+            {!showRetryComparison &&
+              messages.map((msg) =>
+                msg.sender === 'user' ? (
+                  <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <div
                       style={{
                         border: '2px solid #141414',
-                        borderRadius: '14px',
-                        overflow: 'hidden',
-                        background: '#FFFFFF',
+                        borderRadius: '999px',
+                        padding: '10px 24px',
+                        background: '#F3F4F6',
+                        fontWeight: 700,
+                        fontSize: '15px',
+                        maxWidth: '78%',
                       }}
                     >
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ fontSize: '16px', fontWeight: 800, marginBottom: '4px' }}>
-                          {msg.proposal.title}
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#5C5C5C' }}>
-                          Роль: <strong>{msg.proposal.role_label}</strong> • Раздел:{' '}
-                          <strong>{msg.proposal.resource_label}</strong>
-                        </div>
+                      {msg.text}
+                    </div>
+                  </div>
+                ) : (
+                  <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <div
+                      style={{
+                        width: '100%',
+                        border: '2px solid #141414',
+                        borderRadius: '18px',
+                        padding: '20px',
+                        background: msg.error ? '#F7C1C5' : '#FFFFFF',
+                      }}
+                    >
+                      <div style={{ marginBottom: '12px' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '6px 16px',
+                            borderRadius: '999px',
+                            border: '2px solid #141414',
+                            background: '#04E061',
+                            color: '#141414',
+                            fontWeight: 800,
+                            fontSize: '15px',
+                            letterSpacing: '0.01em',
+                          }}
+                        >
+                          AI-buddy
+                        </span>
                       </div>
 
                       <div
                         style={{
-                          padding: '10px 16px',
-                          borderTop: '1.5px solid #141414',
-                          borderBottom: '1.5px solid #141414',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          flexWrap: 'wrap',
-                          gap: '8px',
-                          background: '#F9FAFB',
+                          fontSize: '15px',
+                          lineHeight: 1.55,
+                          whiteSpace: 'pre-line',
+                          marginBottom: msg.sources || msg.proposal || msg.error ? '16px' : '0',
                         }}
                       >
-                        <span style={{ fontSize: '12px', color: '#5C5C5C', fontWeight: 600 }}>
-                          Посмотреть вид карточки:
-                        </span>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            className={proposalStage === 'draft' ? 'ui-btn-dark' : 'ui-btn'}
-                            onClick={() => setProposalStage('draft')}
-                            style={{
-                              padding: '5px 10px',
-                              borderRadius: '6px',
-                              border: '1.5px solid #141414',
-                              background: proposalStage === 'draft' ? '#141414' : '#FFFFFF',
-                              color: proposalStage === 'draft' ? '#FFFFFF' : '#141414',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                            }}
-                          >
-                            До нажатия
-                          </button>
-                          <button
-                            className={proposalStage === 'sending' ? 'ui-btn-dark' : 'ui-btn'}
-                            onClick={() => setProposalStage('sending')}
-                            style={{
-                              padding: '5px 10px',
-                              borderRadius: '6px',
-                              border: '1.5px solid #141414',
-                              background: proposalStage === 'sending' ? '#141414' : '#FFFFFF',
-                              color: proposalStage === 'sending' ? '#FFFFFF' : '#141414',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                            }}
-                          >
-                            Отправка...
-                          </button>
-                          <button
-                            className={proposalStage === 'approved' ? 'ui-btn-dark' : 'ui-btn'}
-                            onClick={() => setProposalStage('approved')}
-                            style={{
-                              padding: '5px 10px',
-                              borderRadius: '6px',
-                              border: '1.5px solid #141414',
-                              background: proposalStage === 'approved' ? '#141414' : '#FFFFFF',
-                              color: proposalStage === 'approved' ? '#FFFFFF' : '#141414',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                            }}
-                          >
-                            Готово (Доступ получен)
-                          </button>
-                        </div>
+                        {msg.text}
                       </div>
 
-                      {proposalStage === 'draft' && (
-                        <div style={{ padding: '14px 16px', background: '#FFFFFF' }}>
-                          <button
-                            className="ui-btn-green"
-                            onClick={() =>
-                              handleConfirmProposal(
-                                msg.proposal!.proposal_id,
-                                msg.proposal!.resource_id
-                              )
-                            }
+                      {/* Кнопка повтора при сбое (Схема 04) */}
+                      {msg.error && (
+                        <button
+                          className="ui-btn"
+                          onClick={() =>
+                            handleRetryMessage(
+                              msg.id,
+                              'Какие правила работы с персональными данными?',
+                              msg.idempotency_key || 'idem-retry'
+                            )
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '10px',
+                            borderRadius: '10px',
+                            border: '2px solid #141414',
+                            background: '#FFFFFF',
+                            fontWeight: 800,
+                          }}
+                        >
+                          ↻ Повторить отправку (с тем же idempotency_key)
+                        </button>
+                      )}
+
+                      {/* Синий блок полезных ссылок и правил (sources) */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div
+                          style={{
+                            background: '#BADAFB',
+                            border: '2px solid #141414',
+                            borderRadius: '12px',
+                            padding: '14px',
+                          }}
+                        >
+                          <div style={{ fontSize: '12px', fontWeight: 800, marginBottom: '10px' }}>
+                            Полезные ссылки и правила:
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                            {msg.sources.map((src) => (
+                              <a
+                                key={src.id}
+                                className="ui-btn"
+                                href={src.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  background: '#FFFFFF',
+                                  border: '2px solid #141414',
+                                  borderRadius: '8px',
+                                  padding: '7px 14px',
+                                  fontSize: '13px',
+                                  fontWeight: 700,
+                                  color: '#141414',
+                                  textDecoration: 'none',
+                                }}
+                              >
+                                {src.title} ↗
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Карточка подтверждения доступа (Proposal Card) */}
+                      {msg.proposal && (
+                        <div
+                          style={{
+                            border: '2px solid #141414',
+                            borderRadius: '14px',
+                            overflow: 'hidden',
+                            background: '#FFFFFF',
+                          }}
+                        >
+                          <div style={{ padding: '16px' }}>
+                            <div style={{ fontSize: '16px', fontWeight: 800, marginBottom: '4px' }}>
+                              {msg.proposal.title}
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#5C5C5C' }}>
+                              Роль: <strong>{msg.proposal.role_label}</strong> • Раздел:{' '}
+                              <strong>{msg.proposal.resource_label}</strong>
+                            </div>
+                          </div>
+
+                          <div
                             style={{
-                              width: '100%',
-                              padding: '11px',
-                              borderRadius: '10px',
-                              border: '2px solid #141414',
-                              background: '#04E061',
-                              fontWeight: 800,
-                              fontSize: '14px',
+                              padding: '10px 16px',
+                              borderTop: '1.5px solid #141414',
+                              borderBottom: '1.5px solid #141414',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: '8px',
+                              background: '#F9FAFB',
                             }}
                           >
-                            Подтвердить доступ (POST /api/v1/chat/proposals/{msg.proposal.proposal_id}/confirm)
-                          </button>
-                        </div>
-                      )}
+                            <span style={{ fontSize: '12px', color: '#5C5C5C', fontWeight: 600 }}>
+                              Посмотреть вид карточки:
+                            </span>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button
+                                className={proposalStage === 'draft' ? 'ui-btn-dark' : 'ui-btn'}
+                                onClick={() => setProposalStage('draft')}
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  border: '1.5px solid #141414',
+                                  background: proposalStage === 'draft' ? '#141414' : '#FFFFFF',
+                                  color: proposalStage === 'draft' ? '#FFFFFF' : '#141414',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                До нажатия
+                              </button>
+                              <button
+                                className={proposalStage === 'sending' ? 'ui-btn-dark' : 'ui-btn'}
+                                onClick={() => setProposalStage('sending')}
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  border: '1.5px solid #141414',
+                                  background: proposalStage === 'sending' ? '#141414' : '#FFFFFF',
+                                  color: proposalStage === 'sending' ? '#FFFFFF' : '#141414',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Отправка...
+                              </button>
+                              <button
+                                className={proposalStage === 'approved' ? 'ui-btn-dark' : 'ui-btn'}
+                                onClick={() => setProposalStage('approved')}
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  border: '1.5px solid #141414',
+                                  background: proposalStage === 'approved' ? '#141414' : '#FFFFFF',
+                                  color: proposalStage === 'approved' ? '#FFFFFF' : '#141414',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Готово (Доступ получен)
+                              </button>
+                            </div>
+                          </div>
 
-                      {proposalStage === 'sending' && (
-                        <div
-                          style={{
-                            padding: '14px 16px',
-                            background: '#BADAFB',
-                            fontWeight: 700,
-                            fontSize: '14px',
-                          }}
-                        >
-                          ⏳ Отправляется в Task-трекер (pending_dispatch)...
-                        </div>
-                      )}
+                          {proposalStage === 'draft' && (
+                            <div style={{ padding: '14px 16px', background: '#FFFFFF' }}>
+                              <button
+                                className="ui-btn-green"
+                                onClick={() =>
+                                  handleConfirmProposal(
+                                    msg.proposal!.proposal_id,
+                                    msg.proposal!.resource_id
+                                  )
+                                }
+                                style={{
+                                  width: '100%',
+                                  padding: '11px',
+                                  borderRadius: '10px',
+                                  border: '2px solid #141414',
+                                  background: '#04E061',
+                                  fontWeight: 800,
+                                  fontSize: '14px',
+                                }}
+                              >
+                                Подтвердить доступ (POST /api/v1/chat/proposals/{msg.proposal.proposal_id}/confirm)
+                              </button>
+                            </div>
+                          )}
 
-                      {proposalStage === 'approved' && (
-                        <div
-                          style={{
-                            padding: '14px 16px',
-                            background: '#C9FFBF',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            fontWeight: 800,
-                            fontSize: '14px',
-                          }}
-                        >
-                          <span>
-                            ✓ Доступ подтверждён • Заявка №{msg.proposal.tracker_issue_key || '1042'} создана
-                          </span>
+                          {proposalStage === 'sending' && (
+                            <div
+                              style={{
+                                padding: '14px 16px',
+                                background: '#BADAFB',
+                                fontWeight: 700,
+                                fontSize: '14px',
+                              }}
+                            >
+                              ⏳ Отправляется в Task-трекер (pending_dispatch)...
+                            </div>
+                          )}
+
+                          {proposalStage === 'approved' && (
+                            <div
+                              style={{
+                                padding: '14px 16px',
+                                background: '#C9FFBF',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                fontWeight: 800,
+                                fontSize: '14px',
+                              }}
+                            >
+                              <span>
+                                ✓ Доступ подтверждён • Заявка №{msg.proposal.tracker_issue_key || '1042'} создана
+                              </span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              )
+                  </div>
+                )
+              )}
+
+            {isLoading && (
+              <div style={{ fontSize: '14px', color: '#5C5C5C', fontWeight: 600 }}>
+                AI-buddy сверяется с базой знаний и планом адаптации...
+              </div>
             )}
 
-          {isLoading && (
-            <div style={{ fontSize: '14px', color: '#5C5C5C', fontWeight: 600 }}>
-              AI-buddy сверяется с базой знаний и планом адаптации...
-            </div>
-          )}
-
-          {/* Якорь для автопрокрутки к последнему ответу */}
-          <div ref={messagesEndRef} />
+            {/* Якорь для автопрокрутки к последнему ответу */}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
 
         {/* Нижняя зона: быстрые подсказки по убыванию длины + центрированная широкая строка ввода */}

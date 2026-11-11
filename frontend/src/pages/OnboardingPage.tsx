@@ -53,7 +53,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
         minWidth: '390px',
       }}
     >
-      {/* Шапка панели Roadmap (без слова "адаптации") */}
+      {/* Шапка панели Roadmap */}
       <div
         style={{
           display: 'flex',
@@ -140,7 +140,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
         </div>
       </div>
 
-      {/* Переключатель вида: Граф пути / Карточки по неделям */}
+      {/* Переключатель вида: Этапы / По неделям */}
       <div
         style={{
           display: 'flex',
@@ -162,7 +162,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
             fontWeight: 700,
           }}
         >
-          Граф пути (вершины)
+          Этапы
         </button>
         <button
           className={viewMode === 'cards' ? 'ui-btn-dark' : 'ui-btn'}
@@ -206,23 +206,56 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
         </div>
       )}
 
-      {/* Отображение в виде графа (связанные вершины-шаги) */}
+      {/* Отображение Этапов: вершины строго посередине своего уровня и непрерывные линии */}
       {viewMode === 'graph' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '6px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '4px' }}>
           {steps.map((step, idx) => {
             const linkedTask = getStepTask(step.resource_id);
             const isDone = isStepCompleted(step);
-            const nextStep = steps[idx + 1];
+            const prevStep = idx > 0 ? steps[idx - 1] : undefined;
+            const nextStep = idx < steps.length - 1 ? steps[idx + 1] : undefined;
+            const isPrevDone = prevStep ? isStepCompleted(prevStep) : false;
             const isNextDone = nextStep ? isStepCompleted(nextStep) : false;
-            // Зелёная линия идёт только между уже выполненными галочками (за галочкой, а не вперёд)
-            const isConnectorGreen = isDone && isNextDone;
+
+            // Линия зелёная только между двумя уже выполненными вершинами
+            const isTopConnectorGreen = isPrevDone && isDone;
+            const isBottomConnectorGreen = isDone && isNextDone;
+
             const isPending = !isDone && linkedTask?.status === 'pending_approval';
             const isCurrent = !isDone && step.current;
 
             return (
-              <div key={step.step_id} style={{ display: 'flex', gap: '14px' }}>
-                {/* Левая колонка графа: вершина (кружок) и ребро (линия к следующей вершине) */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div
+                key={step.step_id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'stretch',
+                  gap: '14px',
+                }}
+              >
+                {/* Левая колонка: верхняя полулиния + кружок ровно по центру + нижняя полулиния */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    width: '34px',
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '3px',
+                      flex: 1,
+                      minHeight: '10px',
+                      background:
+                        idx === 0
+                          ? 'transparent'
+                          : isTopConnectorGreen
+                          ? '#04E061'
+                          : '#141414',
+                    }}
+                  />
                   <div
                     style={{
                       width: '34px',
@@ -245,26 +278,29 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                   >
                     {isDone ? '✓' : step.step_number}
                   </div>
-                  {idx < steps.length - 1 && (
-                    <div
-                      style={{
-                        width: '3px',
-                        flex: 1,
-                        minHeight: '28px',
-                        background: isConnectorGreen ? '#04E061' : '#141414',
-                      }}
-                    />
-                  )}
+                  <div
+                    style={{
+                      width: '3px',
+                      flex: 1,
+                      minHeight: '10px',
+                      background:
+                        idx === steps.length - 1
+                          ? 'transparent'
+                          : isBottomConnectorGreen
+                          ? '#04E061'
+                          : '#141414',
+                    }}
+                  />
                 </div>
 
-                {/* Правая карточка вершины графа */}
+                {/* Правая карточка этапа */}
                 <div
                   style={{
                     flex: 1,
                     border: '2px solid #141414',
                     borderRadius: '12px',
                     padding: '10px 12px',
-                    marginBottom: '12px',
+                    margin: '6px 0',
                     background: isDone
                       ? '#FFFFFF'
                       : isCurrent
