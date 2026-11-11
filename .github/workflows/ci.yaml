@@ -75,6 +75,17 @@ jobs:
           test -f pkg/generated/plan/v1/plan.pb.go
           test -f pkg/generated/step/v1/step.pb.go
 
+      - name: Generate Go test mocks
+        run: |
+          export GOBIN="$RUNNER_TEMP/mock-bin"
+          mkdir -p "$GOBIN"
+          go install go.uber.org/mock/mockgen@v0.6.0
+          export PATH="$GOBIN:$PATH"
+
+          for module in chat onboarding; do
+            (cd "$module" && GOWORK=off go generate ./...)
+          done
+
       - name: Run Go tests
         run: |
           for module in auth user chat onboarding pkg; do
