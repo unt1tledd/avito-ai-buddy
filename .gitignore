@@ -80,3 +80,5 @@ Thumbs.db
 # Generated API code and API specifications are not ignored.
 /.codex/agents/coder.toml
 /.codex/agents/reviewer.toml
+/infra/postgres/init.sql
+/README-local-ai.md
