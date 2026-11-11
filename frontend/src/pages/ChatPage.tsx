@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ChatMessage,
   HistoryItem,
@@ -21,8 +21,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   tasks,
   onProposalConfirmed,
 }) => {
-  // Какая левая панель открыта: 'none' | 'history' | 'roadmap'
-  const [leftDrawer, setLeftDrawer] = useState<'none' | 'history' | 'roadmap'>('none');
+  // Какая левая панель выбрана и открыта ли она сейчас
+  const [activeDrawer, setActiveDrawer] = useState<'history' | 'roadmap'>('history');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>(INITIAL_HISTORY_ITEMS);
   const [inputValue, setInputValue] = useState('');
@@ -31,11 +33,32 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   // Состояние демонстрации карточки доступа: 'draft' | 'sending' | 'approved'
   const [proposalStage, setProposalStage] = useState<'draft' | 'sending' | 'approved'>('approved');
 
-  // Режим демонстрации ошибки и повтора (Схема 04 — как на 9-м скрине из Miro)
+  // Режим демонстрации ошибки и повтора (Схема 04)
   const [showRetryComparison, setShowRetryComparison] = useState(false);
 
+  // Реф для автоскролла чата вниз при переполнении экрана
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, isLoading, showRetryComparison]);
+
   const toggleDrawer = (drawer: 'history' | 'roadmap') => {
-    setLeftDrawer((prev) => (prev === drawer ? 'none' : drawer));
+    if (isDrawerOpen && activeDrawer === drawer) {
+      setIsDrawerOpen(false);
+      return;
+    }
+    setActiveDrawer(drawer);
+    setIsDrawerOpen(true);
+  };
+
+  const openDrawer = (drawer: 'history' | 'roadmap') => {
+    setActiveDrawer(drawer);
+    setIsDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    setIsDrawerOpen(false);
   };
 
   const handleSend = async (rawText?: string, forceErrorDemo = false) => {
@@ -89,240 +112,262 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     onProposalConfirmed(resourceId, res.tracker_issue_key);
   };
 
-  const handleRetryMessage = async (failedMsgId: string, questionText: string, idempotencyKey: string) => {
+  const handleRetryMessage = async (
+    failedMsgId: string,
+    questionText: string,
+    idempotencyKey: string
+  ) => {
     setIsLoading(true);
     const reply = await sendChatMessage(questionText, idempotencyKey, false);
     setMessages((prev) => prev.map((m) => (m.id === failedMsgId ? reply : m)));
     setIsLoading(false);
   };
 
-  // Быстрые подсказки над полем ввода (меняются по контексту, как на макетах Miro)
+  // Быстрые подсказки над строкой ввода: строго по убыванию длины (длинный -> помельче -> ещё помельче)
   const lastAssistant = [...messages].reverse().find((m) => m.sender === 'assistant');
-  const suggestions = lastAssistant?.proposal
-    ? ['Перейти к следующему шагу адаптации', 'Открыть мой Roadmap']
+  const rawSuggestions = lastAssistant?.proposal
+    ? [
+        'Перейти к следующему шагу адаптации',
+        'Какие доступы нужны стажёру дальше?',
+        'Открыть мой Roadmap',
+      ]
     : lastAssistant?.text.includes('отгул')
-    ? ['Создать черновик заявки на отгул', 'Как оформить учебный отпуск?']
+    ? [
+        'Создать черновик заявки на отгул в сервисе',
+        'Как оформить учебный отпуск?',
+        'Открыть мой Roadmap',
+      ]
     : [
-        'Оформить отгул',
-        'Как выполнить текущий шаг? ...',
         'Правила защиты персональных данных ...',
+        'Как выполнить текущий шаг? ...',
+        'Оформить отгул',
       ];
 
+  const suggestions = [...rawSuggestions]
+    .sort((first, second) => second.length - first.length)
+    .slice(0, 3);
+
+  const shellClassName = [
+    'drawer-shell',
+    isDrawerOpen
+      ? activeDrawer === 'history'
+        ? 'drawer-shell--open-history'
+        : 'drawer-shell--open-roadmap'
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-      {/* Выдвижная панель 1: ИСТОРИЯ ЗАПРОСОВ (как на скрине 6 из Miro) */}
-      {leftDrawer === 'history' && (
-        <aside
-          style={{
-            width: '360px',
-            minWidth: '360px',
-            height: '100%',
-            borderRight: '2px solid #141414',
-            background: '#FFFFFF',
-            display: 'flex',
-            flexDirection: 'column',
-            padding: '18px',
-            overflowY: 'auto',
-          }}
-        >
-          <div
+    <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative', minHeight: 0 }}>
+      {/* Плавная левая оболочка (открывается и закрывается с одинаковой скоростью без рывков чата) */}
+      <div className={shellClassName}>
+        {activeDrawer === 'history' ? (
+          <aside
+            className={`drawer-panel${!isDrawerOpen ? ' drawer-panel--closed' : ''}`}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingBottom: '14px',
-              borderBottom: '2px solid #141414',
-              marginBottom: '14px',
+              width: '360px',
+              minWidth: '360px',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: '#141414',
-                  color: '#FFFFFF',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 700,
-                }}
-              >
-                🕒
-              </div>
-              <h2 style={{ fontSize: '18px', fontWeight: 800 }}>История запросов</h2>
-            </div>
-            <button
-              onClick={() => setLeftDrawer('none')}
+            <div
               style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                border: '2px solid #141414',
-                background: '#FFFFFF',
-                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingBottom: '14px',
+                borderBottom: '2px solid #141414',
+                marginBottom: '14px',
               }}
             >
-              ✕
-            </button>
-          </div>
-
-          <button
-            onClick={() => {
-              setMessages([]);
-              setShowRetryComparison(false);
-            }}
-            style={{
-              width: '100%',
-              padding: '12px',
-              borderRadius: '10px',
-              border: '2px solid #141414',
-              background: '#141414',
-              color: '#FFFFFF',
-              fontWeight: 700,
-              fontSize: '14px',
-              marginBottom: '16px',
-            }}
-          >
-            + Новый вопрос
-          </button>
-
-          {(['СЕГОДНЯ', 'ВЧЕРА (ДЕНЬ 1)'] as const).map((group) => (
-            <div key={group} style={{ marginBottom: '14px' }}>
-              <div
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <svg className="drawer-title-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.2" />
+                  <path
+                    d="M12 6.2V12l4.2 4.2"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="butt"
+                    strokeLinejoin="miter"
+                  />
+                </svg>
+                <h2 style={{ fontSize: '18px', fontWeight: 800 }}>История запросов</h2>
+              </div>
+              <button
+                className="ui-icon-circle"
+                onClick={closeDrawer}
                 style={{
-                  fontSize: '11px',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  border: '2px solid #141414',
+                  background: '#FFFFFF',
                   fontWeight: 800,
-                  color: '#5C5C5C',
-                  marginBottom: '8px',
                 }}
               >
-                {group}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {historyItems
-                  .filter((item) => item.dayGroup === group)
-                  .map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={() => {
-                        setMessages(item.messages);
-                        setShowRetryComparison(false);
-                      }}
-                      style={{
-                        border: '2px solid #141414',
-                        borderRadius: '12px',
-                        padding: '12px',
-                        background: item.badgeTone === 'green' ? '#EAF4FF' : '#FFFFFF',
-                        cursor: 'pointer',
-                      }}
-                    >
+                ✕
+              </button>
+            </div>
+
+            <button
+              className="ui-btn-dark"
+              onClick={() => {
+                setMessages([]);
+                setShowRetryComparison(false);
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '10px',
+                border: '2px solid #141414',
+                background: '#141414',
+                color: '#FFFFFF',
+                fontWeight: 700,
+                fontSize: '14px',
+                marginBottom: '16px',
+              }}
+            >
+              + Новый вопрос
+            </button>
+
+            {(['СЕГОДНЯ', 'ВЧЕРА (ДЕНЬ 1)'] as const).map((group) => (
+              <div key={group} style={{ marginBottom: '14px' }}>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    color: '#5C5C5C',
+                    marginBottom: '8px',
+                  }}
+                >
+                  {group}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {historyItems
+                    .filter((item) => item.dayGroup === group)
+                    .map((item) => (
                       <div
+                        key={item.id}
+                        className="ui-card-interactive"
+                        onClick={() => {
+                          setMessages(item.messages);
+                          setShowRetryComparison(false);
+                        }}
                         style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          marginBottom: '6px',
+                          border: '2px solid #141414',
+                          borderRadius: '12px',
+                          padding: '12px',
+                          background: item.badgeTone === 'green' ? '#EAF4FF' : '#FFFFFF',
+                          cursor: 'pointer',
                         }}
                       >
-                        <span style={{ fontSize: '11px', color: '#5C5C5C' }}>
-                          {item.timeLabel}
-                        </span>
-                        <span
+                        <div
                           style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            padding: '2px 8px',
-                            borderRadius: '999px',
-                            border: '1.5px solid #141414',
-                            background:
-                              item.badgeTone === 'green'
-                                ? '#C9FFBF'
-                                : item.badgeTone === 'blue'
-                                ? '#BADAFB'
-                                : '#F3F4F6',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '6px',
                           }}
                         >
-                          {item.badgeText}
-                        </span>
+                          <span style={{ fontSize: '11px', color: '#5C5C5C' }}>
+                            {item.timeLabel}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              border: '1.5px solid #141414',
+                              background:
+                                item.badgeTone === 'green'
+                                  ? '#C9FFBF'
+                                  : item.badgeTone === 'blue'
+                                  ? '#BADAFB'
+                                  : '#F3F4F6',
+                            }}
+                          >
+                            {item.badgeText}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '13px', fontWeight: 700 }}>{item.title}</div>
                       </div>
-                      <div style={{ fontSize: '13px', fontWeight: 700 }}>{item.title}</div>
-                    </div>
-                  ))}
+                    ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
-          <button
-            onClick={() =>
-              setHistoryItems((prev) => [
-                ...prev,
-                {
-                  id: 'hist-extra-' + Date.now(),
-                  dayGroup: 'ВЧЕРА (ДЕНЬ 1)',
-                  timeLabel: 'День 1, 10:00',
-                  title: '«Где найти AvitoTech Playbook?»',
-                  badgeText: 'Просмотрено',
-                  badgeTone: 'gray',
-                  messages: [
-                    {
-                      id: 'm-ex-1',
-                      sender: 'user',
-                      text: 'Где найти AvitoTech Playbook?',
-                      timestamp: '10:00',
-                    },
-                    {
-                      id: 'm-ex-2',
-                      sender: 'assistant',
-                      text: 'Открытый справочник AvitoTech Playbook доступен в официальном GitHub-репозитории компании.',
-                      timestamp: '10:00',
-                    },
-                  ],
-                },
-              ])
-            }
-            style={{
-              marginTop: 'auto',
-              width: '100%',
-              padding: '10px',
-              borderRadius: '10px',
-              border: '2px solid #141414',
-              background: '#F3F4F6',
-              fontWeight: 700,
-              fontSize: '13px',
+            <button
+              className="ui-btn"
+              onClick={() =>
+                setHistoryItems((prev) => [
+                  ...prev,
+                  {
+                    id: 'hist-extra-' + Date.now(),
+                    dayGroup: 'ВЧЕРА (ДЕНЬ 1)',
+                    timeLabel: 'День 1, 10:00',
+                    title: '«Где найти AvitoTech Playbook?»',
+                    badgeText: 'Просмотрено',
+                    badgeTone: 'gray',
+                    messages: [
+                      {
+                        id: 'm-ex-1',
+                        sender: 'user',
+                        text: 'Где найти AvitoTech Playbook?',
+                        timestamp: '10:00',
+                      },
+                      {
+                        id: 'm-ex-2',
+                        sender: 'assistant',
+                        text: 'Открытый справочник AvitoTech Playbook доступен в официальном GitHub-репозитории компании.',
+                        timestamp: '10:00',
+                      },
+                    ],
+                  },
+                ])
+              }
+              style={{
+                marginTop: 'auto',
+                width: '100%',
+                padding: '10px',
+                borderRadius: '10px',
+                border: '2px solid #141414',
+                background: '#F3F4F6',
+                fontWeight: 700,
+                fontSize: '13px',
+              }}
+            >
+              Загрузить ещё
+            </button>
+          </aside>
+        ) : (
+          <OnboardingPage
+            steps={steps}
+            tasks={tasks}
+            isClosing={!isDrawerOpen}
+            onClose={closeDrawer}
+            onSelectStepQuestion={(q) => {
+              handleSend(q);
             }}
-          >
-            Загрузить ещё
-          </button>
-        </aside>
-      )}
-
-      {/* Выдвижная панель 2: ROADMAP АДАПТАЦИИ (как на скрине 5 из Miro + Граф) */}
-      {leftDrawer === 'roadmap' && (
-        <OnboardingPage
-          steps={steps}
-          tasks={tasks}
-          onClose={() => setLeftDrawer('none')}
-          onSelectStepQuestion={(q) => {
-            handleSend(q);
-          }}
-        />
-      )}
+          />
+        )}
+      </div>
 
       {/* ОСНОВНАЯ ПРАВАЯ ОБЛАСТЬ ЧАТА */}
       <main
         style={{
           flex: 1,
+          minWidth: 0,
+          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '22px 32px',
           position: 'relative',
-          overflowY: 'auto',
+          overflow: 'hidden',
         }}
       >
-        {/* Две круглые кнопки в левом верхнем углу рабочей зоны чата (Часы и Дерево Ψ) */}
+        {/* Две круглые иконки в левом верхнем углу: Часы (История) и Дерево в круге (Roadmap) */}
         <div
           style={{
             position: 'absolute',
@@ -334,35 +379,52 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             zIndex: 10,
           }}
         >
-          {leftDrawer !== 'history' && (
-            <button
-              className="circle-icon-btn"
-              onClick={() => toggleDrawer('history')}
-              title="История запросов"
-            >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <circle cx="12" cy="12" r="9" />
-                <polyline points="12 7 12 12 16 14" />
-              </svg>
-            </button>
-          )}
+          <button
+            className={`drawer-toggle-btn${
+              isDrawerOpen && activeDrawer === 'history' ? ' drawer-toggle-btn--active' : ''
+            }`}
+            onClick={() => toggleDrawer('history')}
+            title="История запросов"
+            aria-label="История запросов"
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.2" />
+              <path
+                d="M12 6.2V12l4.2 4.2"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="butt"
+                strokeLinejoin="miter"
+              />
+            </svg>
+          </button>
 
-          {leftDrawer !== 'roadmap' && (
-            <button
-              className="circle-icon-btn"
-              onClick={() => toggleDrawer('roadmap')}
-              title="Roadmap адаптации"
-              style={{ fontWeight: 700, fontSize: '20px' }}
-            >
-              Ψ
-            </button>
-          )}
+          <button
+            className={`drawer-toggle-btn${
+              isDrawerOpen && activeDrawer === 'roadmap' ? ' drawer-toggle-btn--active' : ''
+            }`}
+            onClick={() => toggleDrawer('roadmap')}
+            title="Roadmap"
+            aria-label="Roadmap"
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.2" />
+              <path
+                d="M12 19.2C12 16.3 11.7 13.4 11.4 9.5M12 16.8C10.4 14.3 7.2 12.8 7.1 6.8M11.6 14.4C14.1 13.5 16.7 11.6 16.7 7.6"
+                stroke="currentColor"
+                strokeWidth="2.1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
 
-        {/* Область сообщений (со сдвигом слева от круглых иконок) */}
+        {/* Прокручиваемая область сообщений с автоскроллом вниз */}
         <div
           style={{
             flex: 1,
+            minHeight: 0,
             marginLeft: '72px',
             display: 'flex',
             flexDirection: 'column',
@@ -370,9 +432,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             overflowY: 'auto',
             paddingRight: '8px',
             paddingBottom: '16px',
+            scrollBehavior: 'smooth',
           }}
         >
-          {/* Начальный пустой экран (как на скрине 4 из Miro) */}
+          {/* Начальный пустой экран */}
           {messages.length === 0 && !showRetryComparison && (
             <div
               style={{
@@ -390,7 +453,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             </div>
           )}
 
-          {/* Демонстрация Схемы 04 (Сравнение ошибки и повтора отправки — скрин 9 из Miro) */}
+          {/* Демонстрация Схемы 04 (Сравнение ошибки и повтора отправки) */}
           {showRetryComparison && (
             <div
               style={{
@@ -470,6 +533,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     </div>
                   </div>
                   <button
+                    className="ui-btn"
                     onClick={() => {
                       setShowRetryComparison(false);
                       handleSend('Какие правила работы с персональными данными?');
@@ -552,6 +616,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     }}
                   >
                     <a
+                      className="ui-btn"
                       href="https://avito.tech/"
                       target="_blank"
                       rel="noreferrer"
@@ -570,6 +635,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       [1] Лендинг «Защита данных» ↗
                     </a>
                     <a
+                      className="ui-btn"
                       href="https://github.com/avito-tech/playbook"
                       target="_blank"
                       rel="noreferrer"
@@ -630,7 +696,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         borderRadius: '999px',
                         border: '1.5px solid #141414',
                         background: msg.proposal ? '#00AAFF' : '#04E061',
-                        color: msg.proposal ? '#FFFFFF' : '#141414',
+                        color: '#141414',
                         fontWeight: 800,
                         fontSize: '13px',
                       }}
@@ -653,6 +719,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   {/* Кнопка повтора при сбое (Схема 04) */}
                   {msg.error && (
                     <button
+                      className="ui-btn"
                       onClick={() =>
                         handleRetryMessage(
                           msg.id,
@@ -673,7 +740,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     </button>
                   )}
 
-                  {/* Синий блок полезных ссылок и правил (sources — как на скрине 7 из Miro) */}
+                  {/* Синий блок полезных ссылок и правил (sources) */}
                   {msg.sources && msg.sources.length > 0 && (
                     <div
                       style={{
@@ -690,6 +757,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         {msg.sources.map((src) => (
                           <a
                             key={src.id}
+                            className="ui-btn"
                             href={src.url}
                             target="_blank"
                             rel="noreferrer"
@@ -711,7 +779,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     </div>
                   )}
 
-                  {/* Карточка подтверждения доступа (Proposal Card — как на скрине 8 из Miro) */}
+                  {/* Карточка подтверждения доступа (Proposal Card) */}
                   {msg.proposal && (
                     <div
                       style={{
@@ -749,6 +817,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         </span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
+                            className={proposalStage === 'draft' ? 'ui-btn-dark' : 'ui-btn'}
                             onClick={() => setProposalStage('draft')}
                             style={{
                               padding: '5px 10px',
@@ -763,6 +832,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                             До нажатия
                           </button>
                           <button
+                            className={proposalStage === 'sending' ? 'ui-btn-dark' : 'ui-btn'}
                             onClick={() => setProposalStage('sending')}
                             style={{
                               padding: '5px 10px',
@@ -777,6 +847,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                             Отправка...
                           </button>
                           <button
+                            className={proposalStage === 'approved' ? 'ui-btn-dark' : 'ui-btn'}
                             onClick={() => setProposalStage('approved')}
                             style={{
                               padding: '5px 10px',
@@ -796,6 +867,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       {proposalStage === 'draft' && (
                         <div style={{ padding: '14px 16px', background: '#FFFFFF' }}>
                           <button
+                            className="ui-btn-green"
                             onClick={() =>
                               handleConfirmProposal(
                                 msg.proposal!.proposal_id,
@@ -858,25 +930,21 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               AI-buddy сверяется с базой знаний и планом адаптации...
             </div>
           )}
+
+          {/* Якорь для автопрокрутки к последнему ответу */}
+          <div ref={messagesEndRef} />
         </div>
 
-        {/* Нижняя зона: быстрые подсказки справа + строка ввода вопроса */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-end',
-              gap: '8px',
-            }}
-          >
+        {/* Нижняя зона: быстрые подсказки по убыванию длины + центрированная широкая строка ввода */}
+        <div className="chat-composer">
+          <div className="suggestion-list">
             {suggestions.map((sug) => (
               <button
                 key={sug}
                 className="suggestion-pill"
                 onClick={() => {
                   if (sug === 'Открыть мой Roadmap') {
-                    setLeftDrawer('roadmap');
+                    openDrawer('roadmap');
                   } else if (sug.startsWith('Правила защиты')) {
                     setShowRetryComparison(true);
                   } else {
@@ -898,6 +966,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           >
             <button
               type="button"
+              className="ui-icon-circle"
               onClick={() => setShowRetryComparison((v) => !v)}
               title="Показать / скрыть демо повтора при сбое (Схема 04)"
               style={{

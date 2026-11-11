@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ChatPage } from './pages/ChatPage';
-import { TasksPage } from './pages/TasksPage';
-import { ProfilePage } from './pages/ProfilePage';
 import {
   INITIAL_ONBOARDING_STEPS,
   OnboardingStep,
@@ -9,14 +7,10 @@ import {
   fetchOnboardingPlan,
   fetchAccessTasks,
 } from './lib/api';
-import { getSavedRole, setSavedRole, UserRole } from './lib/cookies';
 
 export const App: React.FC = () => {
   const [steps, setSteps] = useState<OnboardingStep[]>(INITIAL_ONBOARDING_STEPS);
   const [tasks, setTasks] = useState<AccessTask[]>([]);
-  const [role, setRole] = useState<UserRole>(getSavedRole());
-  const [showTasksModal, setShowTasksModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
 
   useEffect(() => {
     fetchOnboardingPlan().then(setSteps);
@@ -47,35 +41,9 @@ export const App: React.FC = () => {
     );
   };
 
-  const handleApproveTask = (taskId: string) => {
-    let approvedResource = '';
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.task_id === taskId) {
-          approvedResource = t.resource_id;
-          return { ...t, status: 'approved' };
-        }
-        return t;
-      })
-    );
-    if (approvedResource) {
-      setSteps((prev) =>
-        prev.map((s) =>
-          s.resource_id === approvedResource ? { ...s, completed: true } : s
-        )
-      );
-    }
-  };
-
-  const handleRoleChange = (newRole: UserRole) => {
-    setRole(newRole);
-    setSavedRole(newRole);
-    setShowProfileModal(false);
-  };
-
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Верхняя шапка ровно как на макете Miro */}
+      {/* Верхняя шапка с обновлённым логотипом AI BUDDY */}
       <header
         style={{
           height: '68px',
@@ -89,45 +57,14 @@ export const App: React.FC = () => {
           background: '#FFFFFF',
         }}
       >
-        <div className="aibuddy-logo-pill">AIBUDDY</div>
-
-        {/* Ненавязчивые кнопки справа для показа жюри Task-трекера и Роли */}
-        <div
-          style={{
-            position: 'absolute',
-            right: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-          }}
-        >
-          <button
-            onClick={() => setShowTasksModal(true)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '999px',
-              border: '1.5px solid #141414',
-              background: '#FFFFFF',
-              fontSize: '12px',
-              fontWeight: 700,
-            }}
-          >
-            Заявки Task ({tasks.length})
-          </button>
-
-          <button
-            onClick={() => setShowProfileModal(true)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '999px',
-              border: '1.5px solid #141414',
-              background: role === 'intern' ? '#C9FFBF' : '#DFCDF3',
-              fontSize: '12px',
-              fontWeight: 700,
-            }}
-          >
-            Роль: {role === 'intern' ? 'Стажёр' : 'Тимлид'}
-          </button>
+        <div className="aibuddy-logo-pill">
+          <span className="aibuddy-logo-dots" aria-hidden="true">
+            <span className="aibuddy-logo-dot" style={{ background: '#04E061' }} />
+            <span className="aibuddy-logo-dot" style={{ background: '#00AAFF' }} />
+            <span className="aibuddy-logo-dot" style={{ background: '#965EEB' }} />
+            <span className="aibuddy-logo-dot" style={{ background: '#FF4053' }} />
+          </span>
+          <span>AI BUDDY</span>
         </div>
       </header>
 
@@ -137,23 +74,6 @@ export const App: React.FC = () => {
         tasks={tasks}
         onProposalConfirmed={handleProposalConfirmed}
       />
-
-      {showTasksModal && (
-        <TasksPage
-          tasks={tasks}
-          role={role}
-          onApproveTask={handleApproveTask}
-          onClose={() => setShowTasksModal(false)}
-        />
-      )}
-
-      {showProfileModal && (
-        <ProfilePage
-          role={role}
-          onChangeRole={handleRoleChange}
-          onClose={() => setShowProfileModal(false)}
-        />
-      )}
     </div>
   );
 };

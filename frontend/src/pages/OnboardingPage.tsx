@@ -4,6 +4,8 @@ import { OnboardingStep, AccessTask } from '../lib/api';
 interface OnboardingPageProps {
   steps: OnboardingStep[];
   tasks: AccessTask[];
+  isClosing: boolean;
+  onAnimationEnd?: React.AnimationEventHandler<HTMLElement>;
   onClose: () => void;
   onSelectStepQuestion: (question: string) => void;
 }
@@ -18,6 +20,8 @@ const PERIODS: Array<'1 неделя' | '2 неделя' | '1 месяц' | '3+ 
 export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   steps,
   tasks,
+  isClosing,
+  onAnimationEnd,
   onClose,
   onSelectStepQuestion,
 }) => {
@@ -27,29 +31,29 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   const completedCount = steps.filter((s) => s.completed).length;
   const percent = Math.round((completedCount / steps.length) * 100);
 
-  // Связываем шаги и заявки по resource_id (требование со скрина №2 бэкендеров)
+  // Связываем шаги и заявки по resource_id
   const getStepTask = (resourceId?: string) => {
     if (!resourceId) return undefined;
     return tasks.find((t) => t.resource_id === resourceId);
+  };
+
+  const isStepCompleted = (step: OnboardingStep) => {
+    const linkedTask = getStepTask(step.resource_id);
+    return step.completed || linkedTask?.status === 'approved';
   };
 
   const filteredSteps = steps.filter((s) => s.period === selectedPeriod);
 
   return (
     <aside
+      className={`drawer-panel${isClosing ? ' drawer-panel--closed' : ''}`}
+      onAnimationEnd={onAnimationEnd}
       style={{
         width: '390px',
         minWidth: '390px',
-        height: '100%',
-        borderRight: '2px solid #141414',
-        background: '#FFFFFF',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '18px',
-        overflowY: 'auto',
       }}
     >
-      {/* Шапка панели Roadmap */}
+      {/* Шапка панели Roadmap (без слова "адаптации") */}
       <div
         style={{
           display: 'flex',
@@ -61,26 +65,21 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              background: '#141414',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 700,
-              fontSize: '18px',
-            }}
-          >
-            Ψ
-          </div>
-          <h2 style={{ fontSize: '18px', fontWeight: 800 }}>Roadmap адаптации</h2>
+          <svg className="drawer-title-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.1" />
+            <path
+              d="M12 19.2C12 16.3 11.7 13.4 11.4 9.5M12 16.8C10.4 14.3 7.2 12.8 7.1 6.8M11.6 14.4C14.1 13.5 16.7 11.6 16.7 7.6"
+              stroke="currentColor"
+              strokeWidth="2.1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <h2 style={{ fontSize: '18px', fontWeight: 800 }}>Roadmap</h2>
         </div>
 
         <button
+          className="ui-icon-circle"
           onClick={onClose}
           title="Закрыть Roadmap"
           style={{
@@ -150,6 +149,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
         }}
       >
         <button
+          className={viewMode === 'graph' ? 'ui-btn-dark' : 'ui-btn'}
           onClick={() => setViewMode('graph')}
           style={{
             flex: 1,
@@ -165,6 +165,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           Граф пути (вершины)
         </button>
         <button
+          className={viewMode === 'cards' ? 'ui-btn-dark' : 'ui-btn'}
           onClick={() => setViewMode('cards')}
           style={{
             flex: 1,
@@ -186,6 +187,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           {PERIODS.map((period) => (
             <button
               key={period}
+              className={selectedPeriod === period ? 'ui-btn-dark' : 'ui-btn'}
               onClick={() => setSelectedPeriod(period)}
               style={{
                 flex: 1,
@@ -209,7 +211,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '6px' }}>
           {steps.map((step, idx) => {
             const linkedTask = getStepTask(step.resource_id);
-            const isDone = step.completed || linkedTask?.status === 'approved';
+            const isDone = isStepCompleted(step);
+            const nextStep = steps[idx + 1];
+            const isNextDone = nextStep ? isStepCompleted(nextStep) : false;
+            // Зелёная линия идёт только между уже выполненными галочками (за галочкой, а не вперёд)
+            const isConnectorGreen = isDone && isNextDone;
             const isPending = !isDone && linkedTask?.status === 'pending_approval';
             const isCurrent = !isDone && step.current;
 
@@ -228,7 +234,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                         : isCurrent
                         ? '#00AAFF'
                         : '#FFFFFF',
-                      color: isCurrent ? '#FFFFFF' : '#141414',
+                      color: '#141414',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -245,7 +251,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                         width: '3px',
                         flex: 1,
                         minHeight: '28px',
-                        background: isDone ? '#04E061' : '#141414',
+                        background: isConnectorGreen ? '#04E061' : '#141414',
                       }}
                     />
                   )}
@@ -313,6 +319,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
 
                   {isCurrent && (
                     <button
+                      className="ui-btn"
                       onClick={() =>
                         onSelectStepQuestion('Как выполнить текущий шаг адаптации?')
                       }
@@ -337,11 +344,10 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           })}
         </div>
       ) : (
-        /* Отображение карточками выбранной недели (как на макете из Miro) */
+        /* Отображение карточками выбранной недели */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {filteredSteps.map((step) => {
-            const linkedTask = getStepTask(step.resource_id);
-            const isDone = step.completed || linkedTask?.status === 'approved';
+            const isDone = isStepCompleted(step);
             const isCurrent = !isDone && step.current;
 
             return (
@@ -386,6 +392,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                 </div>
                 {isCurrent && (
                   <button
+                    className="ui-btn"
                     onClick={() =>
                       onSelectStepQuestion('Как выполнить текущий шаг адаптации?')
                     }
