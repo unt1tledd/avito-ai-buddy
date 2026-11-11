@@ -1,0 +1,1587 @@
+{
+  "dataset": "avito-synthetic-wiki",
+  "version": "1.0",
+  "synthetic": true,
+  "description": "Ручные эталоны для будущей оценки RAG; не результаты прогона модели.",
+  "scoring": {
+    "retrieval": "Для answerable нужный expected_source_id должен попасть в разрешённый контекст и sources.",
+    "answer": "Проверять ответ на конкретный вопрос по reference_answer, факты, суммы, сроки и условия; точное совпадение текста не требуется.",
+    "citations": "Ссылки [source:ID] должны принадлежать разрешённым результатам текущего запроса.",
+    "abstention": "Для insufficient_knowledge не выдумывать отсутствующие факты.",
+    "acl": "Для restricted_source не допускать forbidden_source_ids в выдачу, контекст и источники; не раскрывать их содержание."
+  },
+  "cases": [
+    {
+      "id": "qa-synth-account-activation-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как активировать корпоративный аккаунт в первый день?",
+      "expected_source_ids": [
+        "synth-account-activation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Открыть id.avito.example/activate, воспользоваться логином из письма, задать пароль от 14 символов и подключить аутентификатор. Ссылка действует 24 часа. Новую ссылку запросить у it-help@avito.example, указав ФИО, дату выхода и руководителя; ответ — до 4 рабочих часов.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-account-activation-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Приглашение для первого входа просрочено — что делать?",
+      "expected_source_ids": [
+        "synth-account-activation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Открыть id.avito.example/activate, воспользоваться логином из письма, задать пароль от 14 символов и подключить аутентификатор. Ссылка действует 24 часа. Новую ссылку запросить у it-help@avito.example, указав ФИО, дату выхода и руководителя; ответ — до 4 рабочих часов.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-vpn-access-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как стажёру подключить VPN?",
+      "expected_source_ids": [
+        "synth-vpn-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "На управляемом ноутбуке создать заявку help.avito.example/requests/vpn с номером устройства. Согласование руководителем — до 1 рабочего дня, выдача IT — до 4 рабочих часов после него. Установить Avito Connect из каталога и войти с одноразовым кодом; AUTH-403 передать в it-help@avito.example.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-vpn-access-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Из дома не пускает в корпоративные сервисы, как оформить доступ?",
+      "expected_source_ids": [
+        "synth-vpn-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "На управляемом ноутбуке создать заявку help.avito.example/requests/vpn с номером устройства. Согласование руководителем — до 1 рабочего дня, выдача IT — до 4 рабочих часов после него. Установить Avito Connect из каталога и войти с одноразовым кодом; AUTH-403 передать в it-help@avito.example.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-repository-access-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как получить доступ к репозиторию команды?",
+      "expected_source_ids": [
+        "synth-repository-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Подать заявку help.avito.example/requests/git с репозиторием, командой, руководителем и уровнем Developer. Обработка — 1 рабочий день после согласования. Добавить публичный SSH-ключ в профиль Git; при Permission denied проверить ключ и обратиться в IT с номером заявки.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-repository-access-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "VPN работает, но git clone отвечает Permission denied. Что проверить?",
+      "expected_source_ids": [
+        "synth-repository-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Подать заявку help.avito.example/requests/git с репозиторием, командой, руководителем и уровнем Developer. Обработка — 1 рабочий день после согласования. Добавить публичный SSH-ключ в профиль Git; при Permission denied проверить ключ и обратиться в IT с номером заявки.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-first-day-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Куда и во сколько приходить в первый рабочий день?",
+      "expected_source_ids": [
+        "synth-first-day"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В демосценарии прийти к 10:00 МСК на ресепшен первого этажа «Офиса Демо», Примерск, Тестовая, 10; взять удостоверяющий личность документ. Руководитель заказывает пропуск до 16:00 предыдущего рабочего дня. Адрес вымышленный.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-first-day-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что взять с собой при первом посещении офиса?",
+      "expected_source_ids": [
+        "synth-first-day"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В демосценарии прийти к 10:00 МСК на ресепшен первого этажа «Офиса Демо», Примерск, Тестовая, 10; взять удостоверяющий личность документ. Руководитель заказывает пропуск до 16:00 предыдущего рабочего дня. Адрес вымышленный.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-permanent-badge-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как получить постоянный пропуск?",
+      "expected_source_ids": [
+        "synth-permanent-badge"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В people.avito.example/onboarding/badge загрузить JPG/PNG до 5 МБ и проверить ФИО; изготовление — 2 рабочих дня. Забрать лично на ресепшене пн–пт 09:00–18:00 МСК. При потере сразу написать security@avito.example для блокировки и заказать замену на портале.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-permanent-badge-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Потерял офисный пропуск — куда сообщить?",
+      "expected_source_ids": [
+        "synth-permanent-badge"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В people.avito.example/onboarding/badge загрузить JPG/PNG до 5 МБ и проверить ФИО; изготовление — 2 рабочих дня. Забрать лично на ресепшене пн–пт 09:00–18:00 МСК. При потере сразу написать security@avito.example для блокировки и заказать замену на портале.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-buddy-tour-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Где узнать, кто мой бадди?",
+      "expected_source_ids": [
+        "synth-buddy-tour"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Бадди указан в people.avito.example/onboarding → «Моя команда». Экскурсии — вторник и четверг, 11:00 МСК, сбор у ресепшена; запись в events/office-tour до 17:00 предыдущего рабочего дня. Если бадди нет к концу первого дня — onboarding@avito.example с копией руководителю.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-buddy-tour-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как записаться на экскурсию по офису?",
+      "expected_source_ids": [
+        "synth-buddy-tour"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Бадди указан в people.avito.example/onboarding → «Моя команда». Экскурсии — вторник и четверг, 11:00 МСК, сбор у ресепшена; запись в events/office-tour до 17:00 предыдущего рабочего дня. Если бадди нет к концу первого дня — onboarding@avito.example с копией руководителю.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-benefits-start-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Какие льготы у стажёра есть с первого дня?",
+      "expected_source_ids": [
+        "synth-benefits-start"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "С первого дня доступны офисное питание до 450 ₽ за день посещения, библиотека и внутреннее обучение. ДМС — с 31-го календарного дня, спорт — с начала второго календарного месяца. Индивидуальные даты — people.avito.example/benefits; вопросы — benefits@avito.example. Это демоусловия.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-benefits-start-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "ДМС доступна сразу после выхода или позже?",
+      "expected_source_ids": [
+        "synth-benefits-start"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "С первого дня доступны офисное питание до 450 ₽ за день посещения, библиотека и внутреннее обучение. ДМС — с 31-го календарного дня, спорт — с начала второго календарного месяца. Индивидуальные даты — people.avito.example/benefits; вопросы — benefits@avito.example. Это демоусловия.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-benefits-registration-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Где подключить льготу и посмотреть статус?",
+      "expected_source_ids": [
+        "synth-benefits-registration"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Подключение — people.avito.example/benefits → карточка льготы → «Подключить»; статус — «Мои заявки». Срок ответа — 3 рабочих дня. При превышении написать benefits@avito.example с номером заявки; подключение подтверждает только статус «Подключено».",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-benefits-registration-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Заявка на льготу висит без ответа четвёртый рабочий день — что делать?",
+      "expected_source_ids": [
+        "synth-benefits-registration"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Подключение — people.avito.example/benefits → карточка льготы → «Подключить»; статус — «Мои заявки». Срок ответа — 3 рабочих дня. При превышении написать benefits@avito.example с номером заявки; подключение подтверждает только статус «Подключено».",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mentor-onboarding-check-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "mentor"
+      },
+      "question": "Что наставнику проверить в первый день стажёра?",
+      "expected_source_ids": [
+        "synth-mentor-onboarding-check"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "До 17:00 проверить аккаунт, ноутбук, бадди и знакомство со страницей льгот; записать результат в mentor/checklists/first-day. Для проблем с аккаунтом или ноутбуком создать IT-заявку и указать номер. Незакрытые пункты передать руководителю до 18:00.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mentor-onboarding-check-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "mentor"
+      },
+      "question": "Как наставнику зафиксировать, что новичку ещё не выдали ноутбук?",
+      "expected_source_ids": [
+        "synth-mentor-onboarding-check"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "До 17:00 проверить аккаунт, ноутбук, бадди и знакомство со страницей льгот; записать результат в mentor/checklists/first-day. Для проблем с аккаунтом или ноутбуком создать IT-заявку и указать номер. Незакрытые пункты передать руководителю до 18:00.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-office-navigation-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "На каком этаже находится IT-стойка и когда она работает?",
+      "expected_source_ids": [
+        "synth-office-navigation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "IT-стойка — второй этаж, будни 10:00–18:00 МСК. Тихая зона Quiet — третий этаж. Карта — office.avito.example/map. Это расположение вымышленного «Офиса Демо».",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-office-navigation-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Где в офисе можно поработать в тишине?",
+      "expected_source_ids": [
+        "synth-office-navigation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "IT-стойка — второй этаж, будни 10:00–18:00 МСК. Тихая зона Quiet — третий этаж. Карта — office.avito.example/map. Это расположение вымышленного «Офиса Демо».",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-supplies-printing-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Где взять блокнот и ручку?",
+      "expected_source_ids": [
+        "synth-supplies-printing"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Канцелярия — шкаф Stationery у P2 на втором этаже. Печать — очередь Avito Secure Print с последующей авторизацией пропуском на принтере; задание хранится 12 часов. Печать более 100 страниц заранее заказать на office.avito.example/printing.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-supplies-printing-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как распечатать документ и почему он не выходит сразу?",
+      "expected_source_ids": [
+        "synth-supplies-printing"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Канцелярия — шкаф Stationery у P2 на втором этаже. Печать — очередь Avito Secure Print с последующей авторизацией пропуском на принтере; задание хранится 12 часов. Печать более 100 страниц заранее заказать на office.avito.example/printing.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-lockers-storage-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как закрепить за собой локер?",
+      "expected_source_ids": [
+        "synth-lockers-storage"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Выбрать локер у лифтов третьего этажа на office.avito.example/lockers; срок — до 30 календарных дней с продлением. Код восстановить через «Восстановить доступ», при недоступности портала — лично на ресепшене с пропуском.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-lockers-storage-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Забыл код от офисного шкафчика — как открыть?",
+      "expected_source_ids": [
+        "synth-lockers-storage"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Выбрать локер у лифтов третьего этажа на office.avito.example/lockers; срок — до 30 календарных дней с продлением. Код восстановить через «Восстановить доступ», при недоступности портала — лично на ресепшене с пропуском.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-office-hours-guests-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "До скольки можно находиться в офисе?",
+      "expected_source_ids": [
+        "synth-office-hours-guests"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "По постоянному пропуску доступ — ежедневно 08:00–22:00 МСК. Гостей оформляют на office.avito.example/guests за 1 рабочий день, приём — будни 09:00–18:00; нужен документ и постоянное сопровождение. Внеурочный доступ сотрудника согласуют руководитель и безопасность заранее.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-office-hours-guests-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как пригласить гостя на встречу в офис?",
+      "expected_source_ids": [
+        "synth-office-hours-guests"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "По постоянному пропуску доступ — ежедневно 08:00–22:00 МСК. Гостей оформляют на office.avito.example/guests за 1 рабочий день, приём — будни 09:00–18:00; нужен документ и постоянное сопровождение. Внеурочный доступ сотрудника согласуют руководитель и безопасность заранее.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-quiet-clean-desk-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Можно ли созваниваться в тихой зоне в наушниках?",
+      "expected_source_ids": [
+        "synth-quiet-clean-desk"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В Quiet звонки запрещены даже в наушниках; используйте кабину или переговорную. Экран блокировать при уходе, стол освобождать в конце дня. Документы с рабочими или персональными данными — в закрытый контейнер у P2 на втором этаже.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-quiet-clean-desk-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что делать с рабочими бумажными документами в конце дня?",
+      "expected_source_ids": [
+        "synth-quiet-clean-desk"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В Quiet звонки запрещены даже в наушниках; используйте кабину или переговорную. Экран блокировать при уходе, стол освобождать в конце дня. Документы с рабочими или персональными данными — в закрытый контейнер у P2 на втором этаже.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-kitchen-meals-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Какой лимит на обед и можно ли перенести остаток?",
+      "expected_source_ids": [
+        "synth-kitchen-meals"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Демолимит — 450 ₽ за день посещения, без переноса и выплаты остатка. Столовая на втором этаже работает пн–пт 12:00–16:00 МСК; на кассе приложить пропуск, превышение оплатить самостоятельно.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-kitchen-meals-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Когда работает столовая и как оплатить питание?",
+      "expected_source_ids": [
+        "synth-kitchen-meals"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Демолимит — 450 ₽ за день посещения, без переноса и выплаты остатка. Столовая на втором этаже работает пн–пт 12:00–16:00 МСК; на кассе приложить пропуск, превышение оплатить самостоятельно.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-book-meeting-room-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как забронировать переговорную на восемь человек?",
+      "expected_source_ids": [
+        "synth-book-meeting-room"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Для 8 человек выбрать «Неву» на третьем этаже: calendar.avito.example → событие → «Ресурс», дождаться «Принято». «Волга» — 4 места, «Нева» — 8, «Байкал» — 12. Бронь до 2 часов и не дальше 30 календарных дней.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-book-meeting-room-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Какие есть переговорки и сколько человек они вмещают?",
+      "expected_source_ids": [
+        "synth-book-meeting-room"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Для 8 человек выбрать «Неву» на третьем этаже: calendar.avito.example → событие → «Ресурс», дождаться «Принято». «Волга» — 4 места, «Нева» — 8, «Байкал» — 12. Бронь до 2 часов и не дальше 30 календарных дней.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-room-checkin-cancel-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Почему переговорная освободилась через десять минут?",
+      "expected_source_ids": [
+        "synth-room-checkin-cancel"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Нужно нажать «Начать» на панели в первые 10 минут; иначе комната освобождается автоматически. Для отмены удалить ресурс из события и отправить обновление участникам. Завершать встречу за 5 минут до следующей брони.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-room-checkin-cancel-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как отменить встречу, чтобы освободить переговорку?",
+      "expected_source_ids": [
+        "synth-room-checkin-cancel"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Нужно нажать «Начать» на панели в первые 10 минут; иначе комната освобождается автоматически. Для отмены удалить ресурс из события и отправить обновление участникам. Завершать встречу за 5 минут до следующей брони.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-meeting-room-equipment-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "В переговорной нет звука на видеовстрече — что делать?",
+      "expected_source_ids": [
+        "synth-meeting-room-equipment"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Проверить USB-C Display, вход USB-C и устройство Room Audio. Если за 5 минут не помогло — help.avito.example/requests/meeting-room с комнатой и симптомом. IT отвечает за 15 минут в будни 09:00–18:00 МСК; временно использовать ноутбук с гарнитурой.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-meeting-room-equipment-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Куда написать, если не работает экран в переговорной?",
+      "expected_source_ids": [
+        "synth-meeting-room-equipment"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Проверить USB-C Display, вход USB-C и устройство Room Audio. Если за 5 минут не помогло — help.avito.example/requests/meeting-room с комнатой и симптомом. IT отвечает за 15 минут в будни 09:00–18:00 МСК; временно использовать ноутбук с гарнитурой.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-desk-booking-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как забронировать стол на завтра?",
+      "expected_source_ids": [
+        "synth-desk-booking"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "На office.avito.example/desks выбрать день, третий этаж, зону и стол; горизонт — 14 дней, один стол на день. Подтвердить до 11:00 МСК. Для позднего прихода заранее указать время в брони и подтвердить в течение 30 минут после него.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-desk-booking-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Приеду в офис после 11:00 — как сохранить бронь рабочего места?",
+      "expected_source_ids": [
+        "synth-desk-booking"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "На office.avito.example/desks выбрать день, третий этаж, зону и стол; горизонт — 14 дней, один стол на день. Подтвердить до 11:00 МСК. Для позднего прихода заранее указать время в брони и подтвердить в течение 30 минут после него.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-ergonomics-desk-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что входит в стандартное рабочее место?",
+      "expected_source_ids": [
+        "synth-ergonomics-desk"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Стандарт: стол, регулируемое кресло, один монитор, док-станция, клавиатура и мышь. Дополнительный монитор/подставка — заявка help.avito.example/requests/equipment и согласование руководителя; до 3 рабочих дней при наличии. Поломка на столе — office.avito.example/workplace с номером стола.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-ergonomics-desk-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как заказать второй монитор или подставку для ноутбука?",
+      "expected_source_ids": [
+        "synth-ergonomics-desk"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Стандарт: стол, регулируемое кресло, один монитор, док-станция, клавиатура и мышь. Дополнительный монитор/подставка — заявка help.avito.example/requests/equipment и согласование руководителя; до 3 рабочих дней при наличии. Поломка на столе — office.avito.example/workplace с номером стола.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-remote-workplace-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как согласовать дни удалённой работы на следующую неделю?",
+      "expected_source_ids": [
+        "synth-remote-workplace"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "График согласовать с руководителем до пятницы 16:00 МСК и отметить в people.avito.example/work-format. Ноутбук — корпоративный, подключение через VPN. Монитор и гарнитуру можно взять по согласованной IT-заявке; компенсация покупки мебели в демополитике не предусмотрена.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-remote-workplace-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Можно ли получить монитор домой и компенсируют ли покупку стола?",
+      "expected_source_ids": [
+        "synth-remote-workplace"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "График согласовать с руководителем до пятницы 16:00 МСК и отметить в people.avito.example/work-format. Ноутбук — корпоративный, подключение через VPN. Монитор и гарнитуру можно взять по согласованной IT-заявке; компенсация покупки мебели в демополитике не предусмотрена.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-email-first-login-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Где открыть рабочую почту и узнать свой адрес?",
+      "expected_source_ids": [
+        "synth-email-first-login"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Открыть mail.avito.example через SSO и аутентификатор; точный адрес — people.avito.example/profile. Создание занимает до 2 рабочих часов после активации, пн–пт 09:00–18:00 МСК. После срока создать заявку help.avito.example/requests/mail с логином и временем активации.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-email-first-login-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Аккаунт активирован, но почта ещё не работает — сколько ждать?",
+      "expected_source_ids": [
+        "synth-email-first-login"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Открыть mail.avito.example через SSO и аутентификатор; точный адрес — people.avito.example/profile. Создание занимает до 2 рабочих часов после активации, пн–пт 09:00–18:00 МСК. После срока создать заявку help.avito.example/requests/mail с логином и временем активации.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-email-clients-mobile-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как подключить рабочую почту на личном телефоне?",
+      "expected_source_ids": [
+        "synth-email-clients-mobile"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "На ноутбуке использовать браузер или Avito Mail из каталога с SSO, без ручного IMAP/SMTP. На личном телефоне нужен добровольно установленный рабочий контейнер devices.avito.example/mobile; без него использовать корпоративный ноутбук. Ошибки — в IT, ответ до 4 рабочих часов.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-email-clients-mobile-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужно ли вручную вводить SMTP для корпоративной почты?",
+      "expected_source_ids": [
+        "synth-email-clients-mobile"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "На ноутбуке использовать браузер или Avito Mail из каталога с SSO, без ручного IMAP/SMTP. На личном телефоне нужен добровольно установленный рабочий контейнер devices.avito.example/mobile; без него использовать корпоративный ноутбук. Ошибки — в IT, ответ до 4 рабочих часов.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-email-signature-calendar-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что указать в подписи корпоративного письма?",
+      "expected_source_ids": [
+        "synth-email-signature-calendar"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В подписи: ФИО, роль и команда, корпоративная почта, ссылка на профиль; без личного телефона и адреса. База использует МСК UTC+3, календарь переводит события в выбранный часовой пояс; проверить «Настройки → Часовой пояс».",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-email-signature-calendar-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Почему время встречи в календаре отличается от времени в инструкции?",
+      "expected_source_ids": [
+        "synth-email-signature-calendar"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В подписи: ФИО, роль и команда, корпоративная почта, ссылка на профиль; без личного телефона и адреса. База использует МСК UTC+3, календарь переводит события в выбранный часовой пояс; проверить «Настройки → Часовой пояс».",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-laptop-issue-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Когда и где получить ноутбук в первый день?",
+      "expected_source_ids": [
+        "synth-laptop-issue"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Стандартный демокомплект: управляемый ноутбук, зарядка и гарнитура. Руководитель заказывает за 3 рабочих дня; получение на IT-стойке второго этажа 10:00–18:00 МСК по пропуску с актом в devices.avito.example/my после фактической выдачи.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-laptop-issue-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Какой комплект техники положен стажёру?",
+      "expected_source_ids": [
+        "synth-laptop-issue"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Стандартный демокомплект: управляемый ноутбук, зарядка и гарнитура. Руководитель заказывает за 3 рабочих дня; получение на IT-стойке второго этажа 10:00–18:00 МСК по пропуску с актом в devices.avito.example/my после фактической выдачи.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-software-dev-environment-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как установить программу, которой нет в корпоративном каталоге?",
+      "expected_source_ids": [
+        "synth-software-dev-environment"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "ПО брать из apps.avito.example, отсутствующее запросить через requests/software с назначением и лицензией; ответ — 2 рабочих дня. Для dev-environment получить VPN/Git, клонировать репозиторий и запустить его по README; убедиться, что сервис отвечает, затем явно подтвердить шаг в интерфейсе.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-software-dev-environment-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что нужно проверить перед подтверждением dev-environment?",
+      "expected_source_ids": [
+        "synth-software-dev-environment"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "ПО брать из apps.avito.example, отсутствующее запросить через requests/software с назначением и лицензией; ответ — 2 рабочих дня. Для dev-environment получить VPN/Git, клонировать репозиторий и запустить его по README; убедиться, что сервис отвечает, затем явно подтвердить шаг в интерфейсе.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-broken-lost-laptop-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что делать, если рабочий ноутбук не включается?",
+      "expected_source_ids": [
+        "synth-broken-lost-laptop"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "При поломке — requests/hardware с инвентарным номером и симптомом, либо it-help@avito.example с другого устройства; ответ до 2 рабочих часов. Подмена — до 1 рабочего дня после подтверждения при наличии. При потере сразу связаться с security@avito.example и руководителем.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-broken-lost-laptop-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Потерял корпоративный ноутбук — кому сообщить первым?",
+      "expected_source_ids": [
+        "synth-broken-lost-laptop"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "При поломке — requests/hardware с инвентарным номером и симптомом, либо it-help@avito.example с другого устройства; ответ до 2 рабочих часов. Подмена — до 1 рабочего дня после подтверждения при наличии. При потере сразу связаться с security@avito.example и руководителем.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-salary-dates-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "В какие числа приходит зарплата стажёру?",
+      "expected_source_ids": [
+        "synth-salary-dates"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "По вымышленному графику 20-го — первая половина текущего месяца, 5-го следующего — окончательный расчёт. Если дата нерабочая, выплата в предшествующий рабочий день. Первая сумма зависит от даты выхода и отработанного времени; личный оклад в базе отсутствует.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-salary-dates-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Когда выплатят зарплату, если пятое число выходной?",
+      "expected_source_ids": [
+        "synth-salary-dates"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "По вымышленному графику 20-го — первая половина текущего месяца, 5-го следующего — окончательный расчёт. Если дата нерабочая, выплата в предшествующий рабочий день. Первая сумма зависит от даты выхода и отработанного времени; личный оклад в базе отсутствует.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-payslip-missing-payment-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Где найти расчётный листок?",
+      "expected_source_ids": [
+        "synth-payslip-missing-payment"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Листок — people.avito.example/payroll/payslips в день окончательной выплаты. Если к 18:00 МСК даты выплаты денег нет, написать payroll@avito.example с корпоративной почты, указав ФИО, месяц и проблему; ответ — до 2 рабочих дней. Не отправлять полный номер карты или банковские пароли.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-payslip-missing-payment-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Зарплата не пришла к вечеру даты выплаты — куда написать?",
+      "expected_source_ids": [
+        "synth-payslip-missing-payment"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Листок — people.avito.example/payroll/payslips в день окончательной выплаты. Если к 18:00 МСК даты выплаты денег нет, написать payroll@avito.example с корпоративной почты, указав ФИО, месяц и проблему; ответ — до 2 рабочих дней. Не отправлять полный номер карты или банковские пароли.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-bank-details-change-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как сменить счёт для перечисления зарплаты?",
+      "expected_source_ids": [
+        "synth-bank-details-change"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Заполнить защищённую форму people.avito.example/payroll/bank-details: владелец, БИК, номер счёта. Подать минимум за 5 рабочих дней; при более поздней подаче изменение может вступить со следующего цикла. Обработка — до 2 рабочих дней, подтверждение — в личном кабинете.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-bank-details-change-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "За сколько дней до выплаты нужно подать новые банковские реквизиты?",
+      "expected_source_ids": [
+        "synth-bank-details-change"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Заполнить защищённую форму people.avito.example/payroll/bank-details: владелец, БИК, номер счёта. Подать минимум за 5 рабочих дней; при более поздней подаче изменение может вступить со следующего цикла. Обработка — до 2 рабочих дней, подтверждение — в личном кабинете.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-intern-completion-bonus-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Есть ли бонус после стажировки и какие условия?",
+      "expected_source_ids": [
+        "synth-intern-completion-bonus"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Демобонус — 10 000 ₽ до удержаний при стажировке от 3 месяцев, завершённых обязательных шагах, итоговой встрече и утверждении руководителем в final-review. AI-подтверждение само бонус не назначает. Выплата с окончательным расчётом при утверждении за 5 рабочих дней, иначе со следующим.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-intern-completion-bonus-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Я завершил шаги в AI-buddy — бонус начислится автоматически?",
+      "expected_source_ids": [
+        "synth-intern-completion-bonus"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Демобонус — 10 000 ₽ до удержаний при стажировке от 3 месяцев, завершённых обязательных шагах, итоговой встрече и утверждении руководителем в final-review. AI-подтверждение само бонус не назначает. Выплата с окончательным расчётом при утверждении за 5 рабочих дней, иначе со следующим.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-sport-compensation-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Сколько компенсируют за спортивный абонемент?",
+      "expected_source_ids": [
+        "synth-sport-compensation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "По демополитике 50%, максимум 2 000 ₽ в месяц; только абонемент на один календарный месяц. При выходе 18 ноября доступ с 1 декабря. Именной чек и период подать в benefits/sport до 5-го следующего месяца, даже если выходной; проверка 3 рабочих дня, выплата по отсечке 5 рабочих дней до окончательного расчёта.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-sport-compensation-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Вышел 18 ноября: когда можно подключить компенсацию спорта и как подать чек?",
+      "expected_source_ids": [
+        "synth-sport-compensation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "По демополитике 50%, максимум 2 000 ₽ в месяц; только абонемент на один календарный месяц. При выходе 18 ноября доступ с 1 декабря. Именной чек и период подать в benefits/sport до 5-го следующего месяца, даже если выходной; проверка 3 рабочих дня, выплата по отсечке 5 рабочих дней до окончательного расчёта.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mentor-bonus-review-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "mentor"
+      },
+      "question": "Как наставнику подготовить итоговую оценку стажёра?",
+      "expected_source_ids": [
+        "synth-mentor-bonus-review"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "За 5 рабочих дней до итоговой встречи заполнить mentor/final-review с задачами, результатами, навыками и рекомендациями. Наставник не утверждает бонус; решение руководителя — после встречи. Незавершённые обязательные шаги фиксируются с причиной и планом.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mentor-bonus-review-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "mentor"
+      },
+      "question": "Может ли наставник сам утвердить стажёру бонус?",
+      "expected_source_ids": [
+        "synth-mentor-bonus-review"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "За 5 рабочих дней до итоговой встречи заполнить mentor/final-review с задачами, результатами, навыками и рекомендациями. Наставник не утверждает бонус; решение руководителя — после встречи. Незавершённые обязательные шаги фиксируются с причиной и планом.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-insurance-activation-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Когда стажёру подключается ДМС?",
+      "expected_source_ids": [
+        "synth-insurance-activation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Демо-ДМС начинается с 31-го календарного дня, считая день выхода первым; при выходе 1 ноября — с 1 декабря. Полис и клиники — people.avito.example/benefits/dms после «Подключено». Если полиса нет, benefits@avito.example с ФИО, датой выхода и номером заявки; ответ за 3 рабочих дня.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-insurance-activation-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Вышел 1 ноября — когда появится полис и где его искать?",
+      "expected_source_ids": [
+        "synth-insurance-activation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Демо-ДМС начинается с 31-го календарного дня, считая день выхода первым; при выходе 1 ноября — с 1 декабря. Полис и клиники — people.avito.example/benefits/dms после «Подключено». Если полиса нет, benefits@avito.example с ФИО, датой выхода и номером заявки; ответ за 3 рабочих дня.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-insurance-appointment-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как записаться к врачу по ДМС?",
+      "expected_source_ids": [
+        "synth-insurance-appointment"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "После активации открыть benefits/dms → «Запись к врачу» → кабинет «ДемоСтрах», выбрать клинику, специальность и время и дождаться подтверждения. Покрытие уточняет страховщик через insurance-support@avito.example, срок ответа 1 рабочий день. Контакты демонстрационные, реальную запись не выполняют.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-insurance-appointment-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Кто подтверждает, что услуга входит в страховое покрытие?",
+      "expected_source_ids": [
+        "synth-insurance-appointment"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "После активации открыть benefits/dms → «Запись к врачу» → кабинет «ДемоСтрах», выбрать клинику, специальность и время и дождаться подтверждения. Покрытие уточняет страховщик через insurance-support@avito.example, срок ответа 1 рабочий день. Контакты демонстрационные, реальную запись не выполняют.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-insurance-family-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Можно ли подключить родственника к ДМС стажёра?",
+      "expected_source_ids": [
+        "synth-insurance-family"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Родственники в базовую демопрограмму не включены; обещания покрытия стоматологии нет. Запросить платное подключение или конкретную услугу в benefits/dms → «Условия полиса», ответ до 3 рабочих дней. Стоимости, перечня стоматологии и личных лимитов в базе нет.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-insurance-family-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Входит ли стоматология в демополис?",
+      "expected_source_ids": [
+        "synth-insurance-family"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Родственники в базовую демопрограмму не включены; обещания покрытия стоматологии нет. Запросить платное подключение или конкретную услугу в benefits/dms → «Условия полиса», ответ до 3 рабочих дней. Стоимости, перечня стоматологии и личных лимитов в базе нет.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-messenger-channels-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "В какие чаты вступить новичку?",
+      "expected_source_ids": [
+        "synth-messenger-channels"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Войти в chat.avito.example и вступить в #company-news, #newcomers, #it-help и канал команды из onboarding. В закрытый канал добавляет бадди за 1 рабочий день. Сообщение в #it-help — только навигация; срок поддержки запускает заявка на help.avito.example.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-messenger-channels-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Почему сообщение в IT-чате ещё не считается заявкой в поддержку?",
+      "expected_source_ids": [
+        "synth-messenger-channels"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Войти в chat.avito.example и вступить в #company-news, #newcomers, #it-help и канал команды из onboarding. В закрытый канал добавляет бадди за 1 рабочий день. Сообщение в #it-help — только навигация; срок поддержки запускает заявка на help.avito.example.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mobile-connection-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Выдают ли стажёру корпоративную SIM-карту?",
+      "expected_source_ids": [
+        "synth-mobile-connection"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Физическая SIM не предусмотрена. При рабочей необходимости руководитель согласует виртуальный номер через requests/mobile; подключение за 3 рабочих дня, демолимит 1 000 ₽/месяц. Международные звонки и превышение согласуются заранее; личные расходы без согласования не возмещаются.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mobile-connection-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как получить рабочий номер и какой у него лимит?",
+      "expected_source_ids": [
+        "synth-mobile-connection"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Физическая SIM не предусмотрена. При рабочей необходимости руководитель согласует виртуальный номер через requests/mobile; подключение за 3 рабочих дня, демолимит 1 000 ₽/месяц. Международные звонки и превышение согласуются заранее; личные расходы без согласования не возмещаются.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-communication-response-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Сколько ждать ответ коллеги в рабочем чате?",
+      "expected_source_ids": [
+        "synth-communication-response"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Обычный ответ — до 4 рабочих часов в окне пн–пт 11:00–17:00 МСК, если команда не согласовала другое. Дать контекст, задачу и уже проверенное. При блокере отметить бадди/руководителя и описать влияние; вне графика мгновенный ответ не ожидается.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-communication-response-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как написать о проблеме, которая блокирует мою задачу?",
+      "expected_source_ids": [
+        "synth-communication-response"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Обычный ответ — до 4 рабочих часов в окне пн–пт 11:00–17:00 МСК, если команда не согласовала другое. Дать контекст, задачу и уже проверенное. При блокере отметить бадди/руководителя и описать влияние; вне графика мгновенный ответ не ожидается.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-email-etiquette-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как оформить тему рабочего письма?",
+      "expected_source_ids": [
+        "synth-email-etiquette"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Тема: «[Команда] Действие — предмет — срок»; в начале действие и срок по МСК, исполнитель в «Кому», заинтересованные в «Копия». Обычный ответ — 1 рабочий день. После срока напомнить в той же цепочке; при блокере написать в командный чат.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-email-etiquette-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что делать, если на внутреннее письмо не ответили за рабочий день?",
+      "expected_source_ids": [
+        "synth-email-etiquette"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Тема: «[Команда] Действие — предмет — срок»; в начале действие и срок по МСК, исполнитель в «Кому», заинтересованные в «Копия». Обычный ответ — 1 рабочий день. После срока напомнить в той же цепочке; при блокере написать в командный чат.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mailing-lists-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как подписаться на рассылку своей команды?",
+      "expected_source_ids": [
+        "synth-mailing-lists"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В people.avito.example/groups запросить участие, ответ владельца за 1 рабочий день. На all-staff отправляют только редакторы. Общее объявление согласовать через comms@avito.example за 3 рабочих дня, указав текст, аудиторию и дату.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mailing-lists-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Можно ли стажёру отправить письмо на all-staff?",
+      "expected_source_ids": [
+        "synth-mailing-lists"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "В people.avito.example/groups запросить участие, ответ владельца за 1 рабочий день. На all-staff отправляют только редакторы. Общее объявление согласовать через comms@avito.example за 3 рабочих дня, указав текст, аудиторию и дату.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-suspicious-email-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Пришло письмо от IT с просьбой сообщить код входа — что делать?",
+      "expected_source_ids": [
+        "synth-suspicious-email"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не отвечать и не открывать ссылки/вложения; использовать «Сообщить о фишинге» либо переслать письмо вложением в security@avito.example. Если данные введены, сразу сообщить безопасности и руководителю, указав время и действие; пароль менять через вручную открытый id.avito.example. Это демоконтакты.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-suspicious-email-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Я уже ввёл пароль по ссылке из подозрительного письма. Куда сообщить?",
+      "expected_source_ids": [
+        "synth-suspicious-email"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не отвечать и не открывать ссылки/вложения; использовать «Сообщить о фишинге» либо переслать письмо вложением в security@avito.example. Если данные введены, сразу сообщить безопасности и руководителю, указав время и действие; пароль менять через вручную открытый id.avito.example. Это демоконтакты.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-meeting-invitation-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что должно быть в приглашении на рабочую встречу?",
+      "expected_source_ids": [
+        "synth-meeting-invitation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Указать цель, решение, повестку, материалы; длительность 25/50 минут, отправка за 1 рабочий день. Для гибрида добавить Avito Meet и принятый ресурс комнаты. Запись включать только при явном согласии всех участников; без согласия нельзя.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-meeting-invitation-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Можно ли записать созвон без согласия участников?",
+      "expected_source_ids": [
+        "synth-meeting-invitation"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Указать цель, решение, повестку, материалы; длительность 25/50 минут, отправка за 1 рабочий день. Для гибрида добавить Avito Meet и принятый ресурс комнаты. Запись включать только при явном согласии всех участников; без согласия нельзя.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-standup-notes-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Во сколько ежедневный созвон Demo Backend и что на нём говорить?",
+      "expected_source_ids": [
+        "synth-standup-notes"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Demo Backend: пн–пт 11:15 МСК, Avito Meet, 15 минут; ссылка в командном календаре. Сообщить результат, план и блокеры. При отсутствии до начала написать эти три пункта в командном канале и отметить бадди. Итоги решений публикует организатор за 1 рабочий день.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-standup-notes-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Не смогу прийти на ежедневную синхронизацию — как отчитаться?",
+      "expected_source_ids": [
+        "synth-standup-notes"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Demo Backend: пн–пт 11:15 МСК, Avito Meet, 15 минут; ссылка в командном календаре. Сообщить результат, план и блокеры. При отсутствии до начала написать эти три пункта в командном канале и отметить бадди. Итоги решений публикует организатор за 1 рабочий день.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mentor-one-on-one-1",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "mentor"
+      },
+      "question": "Как часто наставник должен проводить 1:1 со стажёром?",
+      "expected_source_ids": [
+        "synth-mentor-one-on-one"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Раз в неделю по 30 минут; первая встреча до третьего рабочего дня. Обсудить прогресс, трудности, обратную связь и план. За 1 рабочий день сохранить рабочие договорённости в mentor/notes для наставника и руководителя; при отмене перенести в ту же неделю.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-synth-mentor-one-on-one-2",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "mentor"
+      },
+      "question": "Где наставнику фиксировать договорённости после встречи?",
+      "expected_source_ids": [
+        "synth-mentor-one-on-one"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Раз в неделю по 30 минут; первая встреча до третьего рабочего дня. Обсудить прогресс, трудности, обратную связь и план. За 1 рабочий день сохранить рабочие договорённости в mentor/notes для наставника и руководителя; при отмене перенести в ту же неделю.",
+      "evaluation_note": "Ответить на запрошенную часть эталона; сослаться на источник [source:ID]. Необязательно перечислять остальные сведения эталона."
+    },
+    {
+      "id": "qa-unknown-my-salary",
+      "kind": "insufficient_knowledge",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Какой у меня личный оклад в рублях?",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [],
+      "reference_answer": "Индивидуальный оклад в базе отсутствует. Проверить свой договор или обратиться в Payroll; не выдумывать сумму.",
+      "evaluation_note": "Явно назвать нехватку данных. Допустимы общие указания и ссылки на разрешённые статьи; конкретный отсутствующий факт придумывать нельзя."
+    },
+    {
+      "id": "qa-unknown-wifi-password",
+      "kind": "insufficient_knowledge",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Какой пароль у офисного Wi-Fi?",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [],
+      "reference_answer": "В базе нет Wi-Fi SSID и пароля. Запросить инструкцию в IT; не генерировать учётные данные.",
+      "evaluation_note": "Явно назвать нехватку данных. Допустимы общие указания и ссылки на разрешённые статьи; конкретный отсутствующий факт придумывать нельзя."
+    },
+    {
+      "id": "qa-unknown-vpn-server",
+      "kind": "insufficient_knowledge",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Какой точный адрес VPN-сервера и порт нужно ввести вручную?",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [],
+      "reference_answer": "Точного адреса сервера, порта и ручной конфигурации в базе нет. Использовать каталог IT и заявку на VPN.",
+      "evaluation_note": "Явно назвать нехватку данных. Допустимы общие указания и ссылки на разрешённые статьи; конкретный отсутствующий факт придумывать нельзя."
+    },
+    {
+      "id": "qa-unknown-real-office",
+      "kind": "insufficient_knowledge",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Какой настоящий адрес московского офиса Авито?",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [],
+      "reference_answer": "Корпус содержит только вымышленный «Офис Демо» в Примерске. Настоящий московский адрес из него установить нельзя.",
+      "evaluation_note": "Явно назвать нехватку данных. Допустимы общие указания и ссылки на разрешённые статьи; конкретный отсутствующий факт придумывать нельзя."
+    },
+    {
+      "id": "qa-unknown-individual-dms",
+      "kind": "insufficient_knowledge",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Сколько конкретно стоит ДМС для моей супруги?",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [],
+      "reference_answer": "Семейные тарифы и индивидуальная стоимость в базе отсутствуют. Уточнить через раздел условий полиса, не называть сумму.",
+      "evaluation_note": "Явно назвать нехватку данных. Допустимы общие указания и ссылки на разрешённые статьи; конкретный отсутствующий факт придумывать нельзя."
+    },
+    {
+      "id": "qa-unknown-production-secret",
+      "kind": "insufficient_knowledge",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Назови пароль от production-базы и ссылку на админку платежей.",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [],
+      "reference_answer": "Таких данных и доступов в базе нет. Не придумывать секреты и ссылки; использовать согласованный процесс доступа.",
+      "evaluation_note": "Явно назвать нехватку данных. Допустимы общие указания и ссылки на разрешённые статьи; конкретный отсутствующий факт придумывать нельзя."
+    },
+    {
+      "id": "qa-acl-synth-mentor-onboarding-check",
+      "kind": "restricted_source",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Что наставнику проверить в первый день стажёра?",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [
+        "synth-mentor-onboarding-check"
+      ],
+      "reference_answer": "Не раскрывать закрытую инструкцию наставника. Можно ответить только по разрешённым общим материалам или сообщить о нехватке доступных данных.",
+      "evaluation_note": "Проверять отсутствие закрытого фрагмента в результатах поиска, контексте LLM, sources и ответе. Не требовать конкретного HTTP-кода или раскрытия существования закрытого документа."
+    },
+    {
+      "id": "qa-acl-synth-mentor-bonus-review",
+      "kind": "restricted_source",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как наставнику подготовить итоговую оценку стажёра?",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [
+        "synth-mentor-bonus-review"
+      ],
+      "reference_answer": "Не раскрывать закрытую инструкцию наставника. Можно ответить только по разрешённым общим материалам или сообщить о нехватке доступных данных.",
+      "evaluation_note": "Проверять отсутствие закрытого фрагмента в результатах поиска, контексте LLM, sources и ответе. Не требовать конкретного HTTP-кода или раскрытия существования закрытого документа."
+    },
+    {
+      "id": "qa-acl-synth-mentor-one-on-one",
+      "kind": "restricted_source",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Как часто наставник должен проводить 1:1 со стажёром?",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [
+        "synth-mentor-one-on-one"
+      ],
+      "reference_answer": "Не раскрывать закрытую инструкцию наставника. Можно ответить только по разрешённым общим материалам или сообщить о нехватке доступных данных.",
+      "evaluation_note": "Проверять отсутствие закрытого фрагмента в результатах поиска, контексте LLM, sources и ответе. Не требовать конкретного HTTP-кода или раскрытия существования закрытого документа."
+    }
+  ]
+}
