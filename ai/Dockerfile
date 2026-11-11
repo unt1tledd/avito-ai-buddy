@@ -12,7 +12,6 @@ WORKDIR /app
 COPY --from=build /app/.venv ./.venv
 COPY migrations ./migrations
 COPY knowledge ./knowledge
-RUN mkdir .data && chown 65532:65532 .data
 USER 65532:65532
 ENV UVICORN_PORT=8080
 EXPOSE 8080

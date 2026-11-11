@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -12,11 +11,8 @@ def test_loads_existing_environment_names_and_types(monkeypatch):
         "AI_MODE": "integration",
         "AI_SERVICE_TOKEN": "chat-test-token",
         "USER_SERVICE_TOKEN": "user-test-token",
-        "ONBOARDING_SERVICE_TOKEN": "onboarding-test-token",
-        "QUESTIONS_ONLY": "true",
         "LLM_MODEL": "configured-model",
         "KNOWLEDGE_MIN_SIMILARITY": "0.45",
-        "DEMO_DB_PATH": "demo/state.sqlite3",
     })
 
     settings = Settings.from_env()
@@ -24,11 +20,8 @@ def test_loads_existing_environment_names_and_types(monkeypatch):
     assert settings.mode == "integration"
     assert settings.service_token == "chat-test-token"
     assert settings.user_token == "user-test-token"
-    assert settings.onboarding_token == "onboarding-test-token"
-    assert settings.questions_only is True
     assert settings.llm_model == "configured-model"
     assert settings.knowledge_min_similarity == 0.45
-    assert settings.demo_db_path == Path("demo/state.sqlite3")
 
 
 def test_ignores_unrecognized_environment_names_and_keeps_http_validation_separate(monkeypatch):
@@ -54,13 +47,28 @@ def test_programmatic_settings_reject_unknown_fields():
         Settings(knowledge_min_similiarity=0.2)
 
 
+def test_legacy_onboarding_environment_does_not_configure_ai(monkeypatch):
+    monkeypatch.setattr(os, "environ", {
+        "AI_MODE": "demo",
+        "ONBOARDING_URL": "https://unused.example",
+        "ONBOARDING_SERVICE_TOKEN": "unused-token",
+        "QUESTIONS_ONLY": "false",
+        "CONFIRMATIONS_ONLY": "true",
+        "DEMO_DB_PATH": "unused.sqlite3",
+    })
+
+    settings = Settings.from_env()
+    settings.validate_mode()
+
+    assert settings == Settings(mode="demo")
+
+
 def test_empty_environment_values_do_not_fall_back_to_defaults(monkeypatch):
-    monkeypatch.setattr(os, "environ", {"AI_MODE": "", "LLM_BASE_URL": "", "DEMO_DB_PATH": ""})
+    monkeypatch.setattr(os, "environ", {"AI_MODE": "", "LLM_BASE_URL": ""})
 
     settings = Settings.from_env()
 
     assert settings.llm_base_url == ""
-    assert settings.demo_db_path == Path(".")
     with pytest.raises(RuntimeError, match="^AI_MODE must be integration or demo$"):
         settings.validate_mode()
 

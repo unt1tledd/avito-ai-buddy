@@ -6,13 +6,11 @@ import pytest
 
 from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, SILICONFLOW_DIMENSIONS, EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ResponsesModel
-from ai_service.clients.onboarding import HttpOnboarding, OnboardingRejected, OnboardingUnknown
 from ai_service.clients.user import HttpUser, UserError
 from ai_service.core.config import Settings
 from ai_service.schemas.contracts import Actor
 
 
-ACTOR = Actor(user_id="test-user", role="intern", team="backend")
 FIRST_VECTOR = [1, 0] + [0] * (EMBEDDING_DIMENSIONS - 2)
 SECOND_VECTOR = [0, 1] + [0] * (EMBEDDING_DIMENSIONS - 2)
 
@@ -76,7 +74,6 @@ def test_qwen_embeddings_use_separate_credentials_and_database_dimensions(monkey
             return await Embeddings(http, Settings.from_env()).embed(["Вопрос"])
 
     assert asyncio.run(run()) == [qwen_vector]
-
 
 
 def test_siliconflow_rejects_1536_before_network():
@@ -200,34 +197,6 @@ def test_llm_requires_usable_tool_call_ids(call_ids, error):
 
     with pytest.raises(ModelError, match=error):
         asyncio.run(run())
-
-
-@pytest.mark.parametrize(("status", "body", "error", "message"), [
-    (200, {"step_id": "dev-environment", "status": "completed"}, None, None),
-    (200, {"step_id": "another-step", "status": "completed"}, OnboardingUnknown, "другого шага"),
-    (200, {}, OnboardingUnknown, "не подтвердил"),
-    (403, {}, OnboardingRejected, "нет права"),
-    (404, {}, OnboardingRejected, "не найден"),
-    (503, {}, OnboardingUnknown, "не подтвердил"),
-])
-def test_onboarding_request(status, body, error, message):
-    def handler(request):
-        assert request.method == "PUT"
-        assert request.url.path == "/v1/users/test-user/onboarding/steps/dev-environment/completion"
-        assert request.headers["authorization"] == "Bearer onboard-key"
-        return httpx.Response(status, json=body)
-
-    async def run():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await HttpOnboarding(http, "https://onboarding.example", "onboard-key").complete_step(
-                ACTOR, "dev-environment"
-            )
-
-    if error:
-        with pytest.raises(error, match=message):
-            asyncio.run(run())
-    else:
-        assert asyncio.run(run()).status == "completed"
 
 
 def test_openrouter_requires_pinned_embedding_provider():

@@ -8,7 +8,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from ..core.config import Capability
 from ..core.diagnostics import UpstreamError
 from ..schemas.contracts import ChatResponse
 from ..services.chat_service import ChatService, ChatUnavailable, InvalidChat
@@ -17,11 +16,11 @@ from .schemas import ChatRequest
 
 class Readiness(BaseModel):
     status: Literal["ready", "unavailable"]
-    capability: Capability
+    capability: Literal["questions"] = "questions"
     reason: str | None = None
 
 
-def create_router(service_token: str, capability: Capability) -> APIRouter:
+def create_router(service_token: str) -> APIRouter:
     router = APIRouter()
     bearer = HTTPBearer(auto_error=False)
 
@@ -52,8 +51,8 @@ def create_router(service_token: str, capability: Capability) -> APIRouter:
                 reason = error.reason
         if reason:
             response.status_code = HTTPStatus.SERVICE_UNAVAILABLE
-            return Readiness(status="unavailable", capability=capability, reason=reason)
-        return Readiness(status="ready", capability=capability)
+            return Readiness(status="unavailable", reason=reason)
+        return Readiness(status="ready")
 
     @router.post(
         "/v1/chat",
@@ -71,8 +70,8 @@ def create_router(service_token: str, capability: Capability) -> APIRouter:
             HTTPStatus.UNAUTHORIZED: {"description": "Invalid or missing chat service token"},
             HTTPStatus.REQUEST_TIMEOUT: {"description": "Request body deadline expired"},
             HTTPStatus.REQUEST_ENTITY_TOO_LARGE: {"description": "Request body exceeds 256 KiB"},
-            HTTPStatus.BAD_GATEWAY: {"description": "User, onboarding, embeddings, knowledge base, model or tool orchestration error"},
-            HTTPStatus.SERVICE_UNAVAILABLE: {"description": "AI service configuration is incomplete or the requested capability is disabled"},
+            HTTPStatus.BAD_GATEWAY: {"description": "User, embeddings, knowledge base, model or tool orchestration error"},
+            HTTPStatus.SERVICE_UNAVAILABLE: {"description": "AI service configuration is incomplete"},
             HTTPStatus.GATEWAY_TIMEOUT: {"description": "Chat deadline expired"},
         },
     )
@@ -87,7 +86,6 @@ def create_router(service_token: str, capability: Capability) -> APIRouter:
             conversation_id=payload.conversation_id,
             actor=payload.actor,
             message=payload.message,
-            confirmed_step_id=payload.confirmed_step_id,
             deadline=request.state.chat_deadline,
         ))
         disconnect = asyncio.create_task(wait_for_disconnect())

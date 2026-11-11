@@ -1,7 +1,5 @@
 import asyncio
 import json
-import sqlite3
-from contextlib import closing
 
 import httpx
 import psycopg
@@ -52,7 +50,7 @@ def answer(text):
 
 
 @pytest.fixture
-def settings(tmp_path, monkeypatch):
+def settings(monkeypatch):
     async def embed(self, texts):
         assert len(texts) == 1
         return [EMBEDDING]
@@ -78,7 +76,6 @@ def settings(tmp_path, monkeypatch):
         knowledge_db_dsn="postgresql://knowledge.test/knowledge",
         knowledge_processing_approved=True,
         embedding_api_key="test-embedding-token",
-        demo_db_path=tmp_path / "steps.sqlite3",
     )
 
 
@@ -88,8 +85,6 @@ def integration_settings(settings):
         "mode": "integration",
         "user_url": "https://user.example",
         "user_token": "user-test-token",
-        "onboarding_url": "https://onboarding.example",
-        "onboarding_token": "onboarding-test-token",
     })
 
 
@@ -106,15 +101,13 @@ def use_mock_http(monkeypatch):
     return use
 
 
-@pytest.mark.parametrize("variable", ["USER_URL", "USER_SERVICE_TOKEN", "ONBOARDING_URL", "ONBOARDING_SERVICE_TOKEN"])
+@pytest.mark.parametrize("variable", ["USER_URL", "USER_SERVICE_TOKEN"])
 @pytest.mark.parametrize("missing", [None, " \t"])
 def test_default_mode_requires_each_integration_setting(monkeypatch, variable, missing):
     monkeypatch.delenv("KNOWLEDGE_MIN_SIMILARITY", raising=False)
     for name, value in {
         "USER_URL": "https://user.example",
         "USER_SERVICE_TOKEN": "user-test-token",
-        "ONBOARDING_URL": "https://onboarding.example",
-        "ONBOARDING_SERVICE_TOKEN": "onboarding-test-token",
     }.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("AI_MODE", raising=False)
@@ -129,11 +122,8 @@ def test_default_mode_requires_each_integration_setting(monkeypatch, variable, m
 
 @pytest.mark.parametrize(("field", "variable", "value"), [
     ("user_url", "USER_URL", "user.example"),
-    ("onboarding_url", "ONBOARDING_URL", "https://[invalid-secret"),
     ("user_url", "USER_URL", "https://💩.example"),
-    ("onboarding_url", "ONBOARDING_URL", "https://💩.example"),
     ("user_url", "USER_URL", "https://user:embedded-secret@user.example"),
-    ("onboarding_url", "ONBOARDING_URL", "https://user:embedded-secret@onboarding.example"),
 ])
 def test_integration_rejects_invalid_service_url(integration_settings, field, variable, value):
     with pytest.raises(RuntimeError, match=rf"^{variable} must be an HTTP\(S\) base URL$"):
@@ -143,7 +133,6 @@ def test_integration_rejects_invalid_service_url(integration_settings, field, va
 
 @pytest.mark.parametrize(("field", "variable"), [
     ("user_token", "USER_SERVICE_TOKEN"),
-    ("onboarding_token", "ONBOARDING_SERVICE_TOKEN"),
 ])
 @pytest.mark.parametrize("token", ["тестовый-токен", "test-token\r\n", "test token"])
 def test_integration_rejects_unusable_bearer_token(integration_settings, field, variable, token):
@@ -168,8 +157,6 @@ def test_chat_rejects_invalid_provider_settings_on_startup(settings, overrides, 
 @pytest.mark.parametrize(("field", "variable", "value"), [
     ("user_url", "USER_URL", "https://user.example"),
     ("user_token", "USER_SERVICE_TOKEN", "user-test-token"),
-    ("onboarding_url", "ONBOARDING_URL", "https://onboarding.example"),
-    ("onboarding_token", "ONBOARDING_SERVICE_TOKEN", "onboarding-test-token"),
 ])
 def test_demo_mode_rejects_any_integration_setting(settings, field, variable, value):
     with pytest.raises(RuntimeError, match=rf"^AI_MODE=demo cannot be combined with {variable}$"):
@@ -181,13 +168,6 @@ def test_unknown_mode_does_not_start(settings):
     with pytest.raises(RuntimeError, match="^AI_MODE must be integration or demo$"):
         with TestClient(create_app(settings.model_copy(update={"mode": "local"}))):
             pytest.fail("Unknown mode started")
-
-
-def test_questions_and_confirmations_only_cannot_both_start(integration_settings):
-    configured = integration_settings.model_copy(update={"questions_only": True, "confirmations_only": True})
-    with pytest.raises(RuntimeError, match="QUESTIONS_ONLY and CONFIRMATIONS_ONLY cannot both be enabled"):
-        with TestClient(create_app(configured)):
-            pytest.fail("Conflicting capabilities started")
 
 
 def ask(client, message, actor=ACTOR, **extra):
@@ -216,7 +196,7 @@ def test_chat_forwards_accessible_sources_from_search(settings, actor, ids):
     assert sorted(source["id"] for source in response.json()["sources"]) == sorted(ids)
     assert sorted(source["id"] for source in first_context(model)["hits"]) == sorted(ids)
     assert sorted(hit["id"] for hit in tool_output(model)["hits"]) == sorted(ids)
-    assert response.json()["action"] is None
+    assert set(response.json()) == {"answer", "sources"}
     assert [tool["name"] for tool in model.requests[0][2]] == ["find_instruction"]
 
 
@@ -255,7 +235,7 @@ def test_user_profile_and_sources_are_sent_with_first_llm_request(integration_se
     assert response.json()["sources"] == context["hits"]
 
 
-def test_questions_only_uses_user_without_onboarding(integration_settings, monkeypatch, use_mock_http):
+def test_integration_uses_only_user_service(integration_settings, monkeypatch, use_mock_http):
     requests = []
 
     def handler(request):
@@ -267,13 +247,10 @@ def test_questions_only_uses_user_without_onboarding(integration_settings, monke
 
     use_mock_http(handler)
     monkeypatch.setattr(KnowledgeRepository, "check_ready", check_ready)
-    configured = integration_settings.model_copy(update={
-        "questions_only": True, "onboarding_url": "", "onboarding_token": "",
-    })
     payload = {
         "conversation_id": "123", "actor": {"user_id": "42"}, "message": QUESTION,
     }
-    with TestClient(create_app(configured, model=ScriptedModel(answer("Ответ.")))) as client:
+    with TestClient(create_app(integration_settings, model=ScriptedModel(answer("Ответ.")))) as client:
         readiness = client.get("/readyz")
         reply = client.post("/api/v1/chat", headers=AUTH, json=payload)
         confirmation = client.post("/v1/chat", headers=AUTH, json={**payload, "confirmed_step_id": "setup"})
@@ -282,9 +259,35 @@ def test_questions_only_uses_user_without_onboarding(integration_settings, monke
     assert readiness.json() == {"status": "ready", "capability": "questions", "reason": None}
     assert reply.status_code == 200
     assert [source["id"] for source in reply.json()["sources"]] == ["demo-dev-environment"]
-    assert reply.json()["action"] is None
-    assert confirmation.status_code == 503
+    assert set(reply.json()) == {"answer", "sources"}
+    assert confirmation.status_code == 422
     assert requests == [("GET", "https://user.example/v1/user/42/metadata", "Bearer user-test-token")]
+
+
+@pytest.mark.parametrize("path", ["/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("mode", ["demo", "integration"])
+@pytest.mark.parametrize("step_id", ["dev-environment", None])
+def test_step_confirmation_is_rejected_before_any_work(
+    settings, integration_settings, use_mock_http, monkeypatch, path, mode, step_id
+):
+    def unexpected_work(*args, **kwargs):
+        pytest.fail("Step confirmation must not invoke dependencies")
+
+    use_mock_http(unexpected_work)
+    monkeypatch.setattr(Embeddings, "embed", unexpected_work)
+    monkeypatch.setattr(KnowledgeRepository, "search", unexpected_work)
+    model = ScriptedModel()
+    configured = integration_settings if mode == "integration" else settings
+    with TestClient(create_app(configured, model=model)) as client:
+        response = client.post(path, headers=AUTH, json={
+            "conversation_id": "123", "actor": ACTOR, "message": "Подтверждаю шаг",
+            "confirmed_step_id": step_id,
+        })
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "confirmed_step_id"]
+    assert response.json()["detail"][0]["type"] == "extra_forbidden"
+    assert model.requests == []
 
 
 def test_chat_uses_current_profile_and_excludes_history_after_role_change(integration_settings, monkeypatch):
@@ -403,31 +406,8 @@ def test_wrong_embedding_dimension_returns_gateway_error_before_search(monkeypat
     assert model.requests == []
 
 
-def test_confirmed_step_is_saved_without_search_or_llm_and_repeat_is_safe(settings):
-    settings = settings.model_copy(update={
-        "knowledge_db_dsn": "",
-        "llm_model": "test-model",
-        "llm_base_url": "unused-url",
-        "llm_api_key": "unused-key",
-    })
-    for _ in range(2):
-        with TestClient(create_app(settings)) as client:
-            response = ask(client, "Отметь шаг", confirmed_step_id="dev-environment")
-        assert response.status_code == 200, response.text
-        assert response.json() == {
-            "answer": "Шаг адаптации отмечен как выполненный.",
-            "sources": [],
-            "action": {"step_id": "dev-environment", "status": "completed"},
-        }
-
-    with closing(sqlite3.connect(settings.demo_db_path)) as db:
-        assert db.execute("SELECT user_id, step_id FROM completed_steps").fetchall() == [
-            ("42", "dev-environment"),
-        ]
-
-
 @pytest.mark.parametrize("model_tries_to_write", [False, True])
-def test_unconfirmed_step_is_not_saved_even_if_model_claims_success(settings, model_tries_to_write):
+def test_model_cannot_call_write_tools(settings, model_tries_to_write):
     outputs = [answer("Шаг выполнен.")]
     if model_tries_to_write:
         outputs.insert(0, call("complete_onboarding_step", step_id="dev-environment"))
@@ -435,80 +415,10 @@ def test_unconfirmed_step_is_not_saved_even_if_model_claims_success(settings, mo
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, "Отметь шаг")
     assert response.status_code == 200, response.text
-    assert response.json()["action"] is None
+    assert set(response.json()) == {"answer", "sources"}
     assert [tool["name"] for tool in model.requests[0][2]] == ["find_instruction"]
     if model_tries_to_write:
         assert "недоступен" in tool_output(model)["error"]
-    assert not settings.demo_db_path.exists()
-
-
-@pytest.mark.parametrize(("actor", "step_id", "message"), [
-    ({**ACTOR, "role": "mentor"}, "dev-environment", "нет права"),
-    (ACTOR, "unknown-step", "не найден"),
-])
-def test_demo_onboarding_reports_refusal_without_saving(settings, actor, step_id, message):
-    model = ScriptedModel(answer("Шаг выполнен."))
-    with TestClient(create_app(settings, model=model)) as client:
-        response = ask(client, "Отметь шаг", actor, confirmed_step_id=step_id)
-    assert response.status_code == 200, response.text
-    assert response.json()["action"] is None
-    assert message in response.json()["answer"]
-    assert not settings.demo_db_path.exists()
-    assert not model.requests
-
-
-@pytest.mark.parametrize(("outcome", "model_text", "expected", "saved"), [
-    ("success", "Шаг не выполнен.", "отмечен как выполненный", True),
-    ("denied", "Шаг выполнен.", "нет права", False),
-    ("timeout", "Шаг выполнен.", "пока неизвестен", True),
-    ("wrong-step", "Шаг выполнен.", "пока неизвестен", True),
-    ("accepted", "Шаг выполнен.", "пока неизвестен", False),
-])
-def test_integrated_confirmation_reports_the_write_outcome(
-    integration_settings, use_mock_http, monkeypatch, outcome, model_text, expected, saved
-):
-    step_id = "confirmed-step"
-    path = f"/v1/users/42/onboarding/steps/{step_id}/completion"
-    calls = []
-    completed_steps = []
-
-    def handler(request):
-        calls.append((request.method, str(request.url)))
-        assert request.method == "PUT"
-        assert request.url.path == path
-        assert request.headers["authorization"] == "Bearer onboarding-test-token"
-        assert len(calls) == 1
-        if outcome == "denied":
-            return httpx.Response(403)
-        if outcome == "accepted":
-            return httpx.Response(202, json={"step_id": step_id, "status": "completed"})
-        completed_steps.append((ACTOR["user_id"], step_id))
-        if outcome == "timeout":
-            raise httpx.ReadTimeout("Response lost after saving", request=request)
-        result_id = "other-step" if outcome == "wrong-step" else step_id
-        return httpx.Response(200, json={"step_id": result_id, "status": "completed"})
-
-    def unexpected_search(*args, **kwargs):
-        pytest.fail("Confirmed action attempted to search")
-
-    use_mock_http(handler)
-    monkeypatch.setattr(Embeddings, "embed", unexpected_search)
-    monkeypatch.setattr(psycopg.AsyncConnection, "connect", unexpected_search)
-    model = ScriptedModel(answer(model_text))
-    with TestClient(create_app(integration_settings, model=model)) as client:
-        response = ask(client, "Отметь другой шаг", {**ACTOR, "role": "mentor", "team": "design"},
-                       conversation_id="conversation-1", confirmed_step_id=step_id)
-
-    assert response.status_code == 200, response.text
-    result = response.json()
-    assert result["answer"] != model_text
-    assert expected in result["answer"]
-    assert result["sources"] == []
-    assert result["action"] == ({"step_id": step_id, "status": "completed"} if outcome == "success" else None)
-    assert completed_steps == ([(ACTOR["user_id"], step_id)] if saved else [])
-    assert calls == [("PUT", f"https://onboarding.example{path}")]
-    assert not model.requests
-    assert not integration_settings.demo_db_path.exists()
 
 
 @pytest.mark.parametrize("path", ["/api/v1/chat", "/v1/chat"])
@@ -525,7 +435,7 @@ def test_user_id_alone_requires_user_service(settings):
         assert ask(client, "Привет", {"user_id": ACTOR["user_id"]}).status_code == 503
 
 
-def test_model_failure_without_action_returns_gateway_error(settings):
+def test_model_failure_returns_gateway_error(settings):
     with TestClient(create_app(settings, model=ScriptedModel(ModelError("Тайм-аут")))) as client:
         response = ask(client, "Привет")
     assert response.status_code == 502
@@ -650,18 +560,17 @@ def test_chat_body_limit(settings, chunked):
     assert response.status_code == 413
 
 
-def test_readiness_reports_configuration_and_confirmation_mode(settings):
-    for overrides, code, capability, reason in [
-        ({"service_token": ""}, 503, "chat", "service_token_missing"),
-        ({"knowledge_db_dsn": ""}, 503, "chat", "knowledge_dsn_missing"),
-        ({"knowledge_processing_approved": False}, 503, "chat", "knowledge_processing_unapproved"),
-        ({"knowledge_db_dsn": "", "confirmations_only": True}, 200, "confirmations", None),
+def test_readiness_reports_question_configuration(settings):
+    for overrides, code, reason in [
+        ({"service_token": ""}, 503, "service_token_missing"),
+        ({"knowledge_db_dsn": ""}, 503, "knowledge_dsn_missing"),
+        ({"knowledge_processing_approved": False}, 503, "knowledge_processing_unapproved"),
     ]:
         with TestClient(create_app(settings.model_copy(update=overrides), model=ScriptedModel())) as client:
             assert client.get("/healthz").status_code == 200
             response = client.get("/readyz")
             assert response.status_code == code
-            assert response.json()["capability"] == capability
+            assert response.json()["capability"] == "questions"
             assert response.json()["reason"] == reason
 
 
@@ -669,7 +578,7 @@ def test_chat_discards_unverified_answer_after_empty_search(settings):
     model = ScriptedModel(answer("Внутренний адрес https://invented.example"))
     with TestClient(create_app(settings, model=model)) as client:
         result = ask(client, QUESTION, {**ACTOR, "team": "design"}).json()
-    assert result == {"answer": NO_KNOWLEDGE, "sources": [], "action": None}
+    assert result == {"answer": NO_KNOWLEDGE, "sources": []}
 
 
 @pytest.mark.parametrize("outcome", ["recover", "search-error", "bad-citation", "refusal"])
@@ -789,44 +698,6 @@ def test_disconnected_client_cancels_in_flight_request(settings):
         assert cancelled.is_set()
 
     asyncio.run(run())
-
-
-def test_confirmation_deadline_is_unknown_and_never_retries(integration_settings, use_mock_http, caplog):
-    sent = []
-
-    async def handler(request):
-        sent.append(request.method)
-        await asyncio.sleep(30)
-        raise AssertionError("expected cancellation")
-
-    use_mock_http(handler)
-    settings = integration_settings.model_copy(update={
-        "chat_timeout_seconds": 0.05, "confirmations_only": True, "user_url": "", "user_token": "",
-    })
-    with TestClient(create_app(settings)) as client:
-        response = ask(client, "PRIVATE CHAT", {"user_id": "42"},
-                       conversation_id="conversation-1", confirmed_step_id="dev-environment")
-    assert response.status_code == 200
-    assert response.json()["action"] is None
-    assert "неизвестен" in response.json()["answer"]
-    assert sent == ["PUT"]
-    assert f"request_id={response.headers['x-request-id']}" in caplog.text
-    assert "operation=chat.confirm result=timeout" in caplog.text
-    assert "PRIVATE CHAT" not in caplog.text
-    assert "onboarding-test-token" not in caplog.text
-
-
-@pytest.mark.parametrize("outcome", ["connection", "auth", "ambiguous"])
-def test_onboarding_distinguishes_unavailable_from_unknown(integration_settings, use_mock_http, outcome):
-    def handler(request):
-        if outcome == "connection":
-            raise httpx.ConnectError("failed", request=request)
-        return httpx.Response(401 if outcome == "auth" else 503)
-
-    use_mock_http(handler)
-    with TestClient(create_app(integration_settings)) as client:
-        response = ask(client, "Подтверждаю", conversation_id="conversation-1", confirmed_step_id="dev-environment")
-    assert response.status_code == (200 if outcome == "ambiguous" else 502)
 
 
 def test_chat_deadline_includes_reading_body(settings):

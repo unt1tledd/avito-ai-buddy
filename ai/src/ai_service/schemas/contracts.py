@@ -69,12 +69,6 @@ class SearchResult(Payload):
     hits: list[SearchHit]
 
 
-class ActionResult(Payload):
-    step_id: Identifier
-    status: Literal["completed"]
-
-
 class ChatResponse(Payload):
     answer: str
     sources: list[SearchHit] = Field(max_length=MAX_RESPONSE_SOURCES)
-    action: ActionResult | None = None

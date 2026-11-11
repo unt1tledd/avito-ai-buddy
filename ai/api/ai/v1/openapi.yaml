@@ -62,11 +62,10 @@ paths:
         '413':
           description: Request body exceeds 256 KiB
         '502':
-          description: User, onboarding, embeddings, knowledge base, model or tool
-            orchestration error
+          description: User, embeddings, knowledge base, model or tool orchestration
+            error
         '503':
-          description: AI service configuration is incomplete or the requested capability
-            is disabled
+          description: AI service configuration is incomplete
         '504':
           description: Chat deadline expired
         '422':
@@ -79,22 +78,6 @@ paths:
       - HTTPBearer: []
 components:
   schemas:
-    ActionResult:
-      properties:
-        step_id:
-          type: string
-          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
-          title: Step Id
-        status:
-          type: string
-          const: completed
-          title: Status
-      additionalProperties: false
-      type: object
-      required:
-      - step_id
-      - status
-      title: ActionResult
     Actor:
       properties:
         user_id:
@@ -156,12 +139,6 @@ components:
           title: History
           description: Accepted for compatibility. Each answer uses the current message
             and current search results.
-        confirmed_step_id:
-          anyOf:
-          - type: string
-            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
-          - type: 'null'
-          title: Confirmed Step Id
       additionalProperties: false
       type: object
       required:
@@ -179,10 +156,6 @@ components:
           type: array
           maxItems: 6
           title: Sources
-        action:
-          anyOf:
-          - $ref: '#/components/schemas/ActionResult'
-          - type: 'null'
       additionalProperties: false
       type: object
       required:
@@ -227,11 +200,9 @@ components:
           title: Status
         capability:
           type: string
-          enum:
-          - chat
-          - questions
-          - confirmations
+          const: questions
           title: Capability
+          default: questions
         reason:
           anyOf:
           - type: string
@@ -240,7 +211,6 @@ components:
       type: object
       required:
       - status
-      - capability
       title: Readiness
     SearchHit:
       properties:

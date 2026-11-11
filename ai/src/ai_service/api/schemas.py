@@ -20,4 +20,3 @@ class ChatRequest(Payload):
         max_length=MAX_CHAT_HISTORY_MESSAGES,
         description="Accepted for compatibility. Each answer uses the current message and current search results.",
     )
-    confirmed_step_id: Identifier | None = None
