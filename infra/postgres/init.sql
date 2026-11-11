@@ -4,6 +4,7 @@
 \getenv user_password USER_DB_PASSWORD
 \getenv auth_password AUTH_DB_PASSWORD
 \getenv chat_password CHAT_DB_PASSWORD
+\getenv onboarding_password ONBOARDING_DB_PASSWORD
 
 SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', role_name, role_password)
 FROM (
@@ -11,7 +12,8 @@ FROM (
         ('ai_app', :'ai_password'),
         ('users_app', :'user_password'),
         ('auth_app', :'auth_password'),
-        ('chat_app', :'chat_password')
+        ('chat_app', :'chat_password'),
+        ('onboarding_app', :'onboarding_password')        
 ) AS requested(role_name, role_password)
 WHERE NOT EXISTS (
     SELECT 1
@@ -25,7 +27,8 @@ FROM (
     VALUES
         ('users', 'users_app'),
         ('auth_db', 'auth_app'),
-        ('chat', 'chat_app')
+        ('chat', 'chat_app'),
+        ('onboarding', 'onboarding_app')        
 ) AS requested(database_name, owner_name)
 WHERE NOT EXISTS (
     SELECT 1
