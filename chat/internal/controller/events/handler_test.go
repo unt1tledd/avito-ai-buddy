@@ -1,49 +1,35 @@
 package events
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"avito-ai-buddy/chat/internal/controller/events/mocks"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
+	"avito-ai-buddy/chat/internal/port"
 
 	"go.uber.org/mock/gomock"
 )
 
-func TestPublishRoutesUpdateToOwner(t *testing.T) {
+func TestPublishTaskStatusRoutesUpdateToOwner(t *testing.T) {
 	hub := NewHub()
 	owner, unsubscribeOwner := hub.Subscribe("intern-a")
 	defer unsubscribeOwner()
 	other, unsubscribeOther := hub.Subscribe("intern-b")
 	defer unsubscribeOther()
-	handler := NewHandler(hub, nil, "task-secret")
 
-	for _, tc := range []struct {
-		token  string
-		status int
-	}{
-		{"invalid-token", http.StatusUnauthorized},
-		{"task-secret", http.StatusNoContent},
-	} {
-		req := httptest.NewRequest(http.MethodPost, "/internal/v1/chat/task-events",
-			strings.NewReader(`{"user_id":"intern-a","task_id":"task-42","status":"approved"}`))
-		req.Header.Set("Authorization", "Bearer "+tc.token)
-		recorder := httptest.NewRecorder()
-		handler.Publish(recorder, req)
-		if recorder.Code != tc.status {
-			t.Fatalf("status = %d, want %d", recorder.Code, tc.status)
-		}
-		if tc.status == http.StatusUnauthorized && len(owner) != 0 {
-			t.Fatal("unauthorized request reached a subscriber")
-		}
+	event := port.TaskEvent{UserID: "intern-a", TaskID: "task-42", ExternalRequestID: "access-42", Status: "approved"}
+	if err := hub.PublishTaskStatus(context.Background(), event); err != nil {
+		t.Fatalf("publish task status: %v", err)
 	}
 	select {
 	case update := <-owner:
-		if update.TaskID != "task-42" || update.Status != "approved" {
-			t.Fatalf("unexpected event: %+v", update)
+		want := StatusUpdate{TaskID: "task-42", ExternalRequestID: "access-42", Status: "approved"}
+		if update.Type != EventTypeTaskStatusChanged || update.StatusUpdate != want {
+			t.Fatalf("event = %+v, want type %q and payload %+v", update, EventTypeTaskStatusChanged, want)
 		}
 	default:
 		t.Fatal("owner did not receive an event")
@@ -63,7 +49,7 @@ func TestSubscribeRequiresSessionBeforeUpgrade(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			sessions := mocks.NewMocksessionService(gomock.NewController(t))
-			handler := NewHandler(NewHub(), sessions, "task-secret")
+			handler := NewHandler(NewHub(), sessions)
 			req := httptest.NewRequest(http.MethodGet, "/v1/chat/events", nil)
 			if token != "" {
 				req.AddCookie(&http.Cookie{Name: "access_token", Value: token})
@@ -88,7 +74,7 @@ func TestSubscribeReturnsServiceUnavailableWhenAuthFails(t *testing.T) {
 		Return("", time.Time{}, chaterrors.ErrAuthUnavailable)
 
 	recorder := httptest.NewRecorder()
-	NewHandler(NewHub(), sessions, "task-secret").Subscribe(recorder, req)
+	NewHandler(NewHub(), sessions).Subscribe(recorder, req)
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
 	}

@@ -11,6 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getOutboxMessage = `-- name: GetOutboxMessage :one
+SELECT status, attempts
+FROM chat.outbox
+WHERE idempotency_key = $1
+`
+
+type GetOutboxMessageRow struct {
+	Status   ChatOutboxStatus `json:"status"`
+	Attempts int32            `json:"attempts"`
+}
+
+func (q *Queries) GetOutboxMessage(ctx context.Context, idempotencyKey string) (GetOutboxMessageRow, error) {
+	row := q.db.QueryRow(ctx, getOutboxMessage, idempotencyKey)
+	var i GetOutboxMessageRow
+	err := row.Scan(&i.Status, &i.Attempts)
+	return i, err
+}
+
 const getOutboxMessages = `-- name: GetOutboxMessages :many
 UPDATE chat.outbox
 SET status = 'IN_PROGRESS'::chat.outbox_status
@@ -27,7 +45,7 @@ WHERE idempotency_key IN (
     LIMIT $2::integer
         FOR UPDATE SKIP LOCKED
 )
-RETURNING idempotency_key, data, kind
+RETURNING idempotency_key, data, kind, attempts
 `
 
 type GetOutboxMessagesParams struct {
@@ -39,6 +57,7 @@ type GetOutboxMessagesRow struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	Data           []byte `json:"data"`
 	Kind           int32  `json:"kind"`
+	Attempts       int32  `json:"attempts"`
 }
 
 func (q *Queries) GetOutboxMessages(ctx context.Context, arg GetOutboxMessagesParams) ([]GetOutboxMessagesRow, error) {
@@ -50,7 +69,12 @@ func (q *Queries) GetOutboxMessages(ctx context.Context, arg GetOutboxMessagesPa
 	var items []GetOutboxMessagesRow
 	for rows.Next() {
 		var i GetOutboxMessagesRow
-		if err := rows.Scan(&i.IdempotencyKey, &i.Data, &i.Kind); err != nil {
+		if err := rows.Scan(
+			&i.IdempotencyKey,
+			&i.Data,
+			&i.Kind,
+			&i.Attempts,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -61,9 +85,23 @@ func (q *Queries) GetOutboxMessages(ctx context.Context, arg GetOutboxMessagesPa
 	return items, nil
 }
 
+const markOutboxMessagesAsFailed = `-- name: MarkOutboxMessagesAsFailed :exec
+UPDATE chat.outbox
+SET status = 'FAILED'::chat.outbox_status,
+    attempts = attempts + 1,
+    processed_at = now()
+WHERE idempotency_key = ANY($1::text[])
+`
+
+func (q *Queries) MarkOutboxMessagesAsFailed(ctx context.Context, idempotencyKeys []string) error {
+	_, err := q.db.Exec(ctx, markOutboxMessagesAsFailed, idempotencyKeys)
+	return err
+}
+
 const markOutboxMessagesAsProcessed = `-- name: MarkOutboxMessagesAsProcessed :exec
 UPDATE chat.outbox
-SET status = 'SUCCESS'::chat.outbox_status
+SET status = 'SUCCESS'::chat.outbox_status,
+    processed_at = now()
 WHERE idempotency_key = ANY($1::text[])
 `
 
@@ -74,12 +112,26 @@ func (q *Queries) MarkOutboxMessagesAsProcessed(ctx context.Context, idempotency
 
 const markOutboxMessagesAsRetryable = `-- name: MarkOutboxMessagesAsRetryable :exec
 UPDATE chat.outbox
-SET status = 'CREATED'::chat.outbox_status
+SET status = 'CREATED'::chat.outbox_status,
+    attempts = attempts + 1
 WHERE idempotency_key = ANY($1::text[])
 `
 
 func (q *Queries) MarkOutboxMessagesAsRetryable(ctx context.Context, idempotencyKeys []string) error {
 	_, err := q.db.Exec(ctx, markOutboxMessagesAsRetryable, idempotencyKeys)
+	return err
+}
+
+const resetOutboxMessage = `-- name: ResetOutboxMessage :exec
+UPDATE chat.outbox
+SET status = 'CREATED'::chat.outbox_status,
+    attempts = 0,
+    processed_at = NULL
+WHERE idempotency_key = $1
+`
+
+func (q *Queries) ResetOutboxMessage(ctx context.Context, idempotencyKey string) error {
+	_, err := q.db.Exec(ctx, resetOutboxMessage, idempotencyKey)
 	return err
 }
 

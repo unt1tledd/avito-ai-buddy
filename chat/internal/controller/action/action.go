@@ -26,10 +26,13 @@ type actionServer struct {
 	logger  *zap.Logger
 }
 
+// NewServer builds the ActionService gRPC server over the action usecase.
 func NewServer(actions actionService, logger *zap.Logger) *actionServer {
 	return &actionServer{actions: actions, logger: logger}
 }
 
+// ConfirmProposal confirms an access proposal on behalf of the authenticated
+// intern: the request is queued into the outbox for the task service.
 func (s *actionServer) ConfirmProposal(ctx context.Context, req *chatpb.ConfirmProposalRequest) (*chatpb.ConfirmProposalResponse, error) {
 	if err := req.Validate(); err != nil {
 		s.logger.Warn("chat request validation failed", zap.String("rpc", "ConfirmProposal"), zap.Error(err))

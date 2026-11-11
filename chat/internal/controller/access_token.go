@@ -10,8 +10,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// AccessTokenCookie is the cookie holding the intern's access token.
 const AccessTokenCookie = "access_token"
 
+// GetAccessTokenFromContext extracts the access token from the gRPC request:
+// first from the Authorization header, then from the cookies forwarded by
+// the HTTP gateway. Without a token the request is unauthenticated.
 func GetAccessTokenFromContext(ctx context.Context) (string, error) {
 	token := ""
 	for _, header := range metadata.ValueFromIncomingContext(ctx, "authorization") {

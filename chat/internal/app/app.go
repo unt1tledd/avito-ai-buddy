@@ -15,19 +15,23 @@ import (
 	taskkafka "avito-ai-buddy/chat/internal/adapter/task/kafka"
 	useradapter "avito-ai-buddy/chat/internal/adapter/user/grpc"
 	"avito-ai-buddy/chat/internal/config"
+	kafkac "avito-ai-buddy/chat/internal/consumer/kafka"
 	actionapi "avito-ai-buddy/chat/internal/controller/action"
 	chatapi "avito-ai-buddy/chat/internal/controller/chat"
 	"avito-ai-buddy/chat/internal/controller/events"
 	"avito-ai-buddy/chat/internal/entity"
+	inboxsvc "avito-ai-buddy/chat/internal/inbox"
 	"avito-ai-buddy/chat/internal/outbox"
 	"avito-ai-buddy/chat/internal/port"
 	actionrepo "avito-ai-buddy/chat/internal/repository/action"
 	conversationrepo "avito-ai-buddy/chat/internal/repository/conversation"
+	inboxrepo "avito-ai-buddy/chat/internal/repository/inbox"
 	messagerepo "avito-ai-buddy/chat/internal/repository/message"
 	outboxrepo "avito-ai-buddy/chat/internal/repository/outbox"
 	"avito-ai-buddy/chat/internal/usecase/action"
 	"avito-ai-buddy/chat/internal/usecase/conversation"
 	"avito-ai-buddy/chat/internal/usecase/message"
+	"avito-ai-buddy/chat/internal/usecase/taskstatus"
 	"avito-ai-buddy/chat/migrations"
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 	"avito-ai-buddy/pkg/transactor"
@@ -39,13 +43,17 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// Run boots the chat service: it wires the dependencies, serves gRPC and
+// HTTP gateway, runs the outbox worker and the Kafka consumer, and blocks
+// until the context is cancelled or a server fails.
 func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 	authClient := authadapter.NewClient(&http.Client{
 		Timeout:       cfg.Auth.Timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}, cfg.Auth.BaseURL, cfg.Auth.ValidatePath)
 	opts := grpc.WithTransportCredentials(insecure.NewCredentials())
-	grpcServer, messages, closeDependencies, err := newChatServer(ctx, logger, cfg, opts, authClient)
+	hub := events.NewHub()
+	grpcServer, messages, taskNotifier, closeDependencies, err := newChatServer(ctx, logger, cfg, opts, authClient, hub)
 	if err != nil {
 		return err
 	}
@@ -66,11 +74,24 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 
 	socketCtx, cancelSockets := context.WithCancel(ctx)
 	defer cancelSockets()
-	httpServer, err := newHTTPServer(ctx, socketCtx, cfg, gatewayConn, messages)
+	httpServer, err := newHTTPServer(ctx, socketCtx, hub, gatewayConn, messages)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = httpServer.Close() }()
+
+	consumerCtx, stopConsumer := context.WithCancel(ctx)
+	consumerDone := make(chan struct{})
+	go func() {
+		defer close(consumerDone)
+		if err := kafkac.RunConsumer(consumerCtx, logger, &cfg.Kafka, taskNotifier); err != nil {
+			logger.Error("task events consumer exited", zap.Error(err))
+		}
+	}()
+	defer func() {
+		stopConsumer()
+		<-consumerDone
+	}()
 
 	httpListener, err := net.Listen("tcp", ":"+cfg.GRPC.GatewayPort)
 	if err != nil {
@@ -90,10 +111,10 @@ type sessionService interface {
 	GetSession(ctx context.Context, token string) (userID string, expiresAt time.Time, err error)
 }
 
-func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, opts grpc.DialOption, authClient port.TokenValidator) (_ *grpc.Server, _ sessionService, _ func(), err error) {
+func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, opts grpc.DialOption, authClient port.TokenValidator, hub *events.Hub) (_ *grpc.Server, _ sessionService, _ port.TaskEventsNotifier, _ func(), err error) {
 	db, err := pgxpool.New(ctx, cfg.PG.URL)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("configure postgres pool: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("configure postgres pool: %w", err)
 	}
 
 	var connections []*grpc.ClientConn
@@ -110,7 +131,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 	}()
 
 	if err := migrations.Migrate(ctx, db); err != nil {
-		return nil, nil, nil, fmt.Errorf("migrate chat database: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("migrate chat database: %w", err)
 	}
 
 	connect := func(service, addr string) (*grpc.ClientConn, error) {
@@ -124,18 +145,22 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 
 	userConn, err := connect("User", cfg.Clients.UserGRPCAddr)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	planConn, err := connect("Onboarding", cfg.Clients.OnboardingGRPCAddr)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	brokers := cfg.Kafka.BrokerAddrs()
 	if len(brokers) == 0 {
-		return nil, nil, nil, errors.New("no Kafka brokers configured (KAFKA_BROKERS)")
+		return nil, nil, nil, nil, errors.New("no Kafka brokers configured (KAFKA_BROKERS)")
 	}
-	publisher := taskkafka.NewPublisher(brokers, cfg.Kafka.TaskCommandsTopic)
+	publisher, err := taskkafka.NewPublisher(brokers, cfg.Kafka.TaskCommandsTopic)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	tx := transactor.NewTransactor(db)
+	inboxRepository := inboxrepo.NewPostgresRepository(db)
 	outboxRepository := outboxrepo.NewPostgresRepository(db)
 	worker := outbox.New(logger, outboxRepository, func(kind int32) (outbox.KindHandler, error) {
 		if kind != entity.OutboxKindCreateAccessRequest {
@@ -148,25 +173,47 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 			}
 			return publisher.PublishCreateAccessRequest(ctx, command)
 		}, nil
-	}, cfg, tx)
+	}, cfg, tx, hub)
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan struct{})
 	go func() {
 		defer close(workerDone)
-		worker.Start(workerCtx, 1, cfg.Outbox.BatchSize, cfg.Outbox.PollInterval, cfg.Outbox.InProgressTTL)
+		worker.Start(workerCtx, 1)
+	}()
+	cleanupCtx, stopCleanup := context.WithCancel(ctx)
+	cleanupDone := make(chan struct{})
+	go func() {
+		defer close(cleanupDone)
+		ticker := time.NewTicker(cfg.Inbox.CleanupInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case <-ticker.C:
+				if err := inboxRepository.CleanupOlderThan(cleanupCtx, cfg.Inbox.Retention); err != nil {
+					logger.Error("inbox retention cleanup failed", zap.Error(err))
+				}
+			}
+		}
 	}()
 	closeServerDependencies := func() {
 		stopWorker()
 		<-workerDone
-		_ = publisher.Close()
+		publisher.Close()
+		stopCleanup()
+		<-cleanupDone
 		closeDependencies()
 	}
-
 	actions := actionrepo.NewPostgresRepository(db)
 	conversations := conversation.NewService(conversationrepo.NewPostgresRepository(db))
+	msgRepository := messagerepo.NewPostgresRepository(db)
+	taskstatusService := taskstatus.New(logger, conversations, msgRepository, hub)
+	taskNotifier := inboxsvc.New(inboxRepository, taskstatusService, tx)
+
 	messages := message.NewService(
 		conversations,
-		messagerepo.NewPostgresRepository(db),
+		msgRepository,
 		actions,
 		useradapter.NewClient(userConn),
 		onboardingadapter.NewClient(planConn),
@@ -182,7 +229,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 	}))
 	chatpb.RegisterChatServiceServer(server, chatController)
 	chatpb.RegisterActionServiceServer(server, actionController)
-	return server, messages, closeServerDependencies, nil
+	return server, messages, taskNotifier, closeServerDependencies, nil
 }
 
 func connectGateway(listener net.Listener, opts grpc.DialOption) (*grpc.ClientConn, error) {
@@ -197,7 +244,7 @@ func connectGateway(listener net.Listener, opts grpc.DialOption) (*grpc.ClientCo
 	return conn, nil
 }
 
-func newHTTPServer(ctx, socketCtx context.Context, cfg *config.Config, gatewayConn *grpc.ClientConn, messages sessionService) (*http.Server, error) {
+func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn *grpc.ClientConn, messages sessionService) (*http.Server, error) {
 	mux := runtime.NewServeMux()
 	if err := chatpb.RegisterChatServiceHandler(ctx, mux, gatewayConn); err != nil {
 		return nil, fmt.Errorf("register Chat HTTP routes: %w", err)
@@ -207,7 +254,7 @@ func newHTTPServer(ctx, socketCtx context.Context, cfg *config.Config, gatewayCo
 		return nil, fmt.Errorf("register Action HTTP routes: %w", err)
 	}
 
-	eventHandler := events.NewHandler(events.NewHub(), messages, cfg.App.TaskEventsToken)
+	eventHandler := events.NewHandler(hub, messages)
 	httpMux := http.NewServeMux()
 	httpMux.HandleFunc("GET /v1/chat/events", func(w http.ResponseWriter, r *http.Request) {
 		requestCtx, cancel := context.WithCancel(r.Context())
@@ -217,7 +264,6 @@ func newHTTPServer(ctx, socketCtx context.Context, cfg *config.Config, gatewayCo
 
 		eventHandler.Subscribe(w, r.WithContext(requestCtx))
 	})
-	httpMux.HandleFunc("POST /internal/v1/chat/task-events", eventHandler.Publish)
 	httpMux.Handle("/", mux)
 
 	return &http.Server{

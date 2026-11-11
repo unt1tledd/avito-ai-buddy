@@ -4,12 +4,8 @@ package events
 
 import (
 	"context"
-	"crypto/subtle"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"avito-ai-buddy/chat/internal/controller"
@@ -23,16 +19,20 @@ type sessionService interface {
 	GetSession(ctx context.Context, token string) (userID string, expiresAt time.Time, err error)
 }
 
+// Handler serves the WebSocket event subscription endpoint.
 type Handler struct {
-	hub       *Hub
-	sessions  sessionService
-	taskToken string
+	hub      *Hub
+	sessions sessionService
 }
 
-func NewHandler(hub *Hub, sessions sessionService, taskToken string) *Handler {
-	return &Handler{hub: hub, sessions: sessions, taskToken: taskToken}
+// NewHandler builds the handler over the event hub and the session service
+// used to authenticate the access token cookie.
+func NewHandler(hub *Hub, sessions sessionService) *Handler {
+	return &Handler{hub: hub, sessions: sessions}
 }
 
+// Subscribe upgrades the request to a WebSocket connection and streams the
+// user's events until the connection or the session expires.
 func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(controller.AccessTokenCookie)
 	if err != nil || cookie.Value == "" {
@@ -66,14 +66,10 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case update, open := <-updates:
+		case event, open := <-updates:
 			if !open {
 				return
 			}
-			event := struct {
-				Type string `json:"type"`
-				StatusUpdate
-			}{Type: "task.status_changed", StatusUpdate: update}
 			writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			err := wsjson.Write(writeCtx, conn, event)
 			cancel()
@@ -89,32 +85,4 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-}
-
-func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
-	if h.taskToken == "" {
-		http.Error(w, "task authentication unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(h.taskToken)) != 1 {
-		http.Error(w, "invalid task credentials", http.StatusUnauthorized)
-		return
-	}
-
-	var request struct {
-		UserID string `json:"user_id"`
-		StatusUpdate
-	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
-	if err := decoder.Decode(&request); err != nil ||
-		decoder.Decode(new(json.RawMessage)) != io.EOF ||
-		strings.TrimSpace(request.UserID) == "" ||
-		strings.TrimSpace(request.TaskID) == "" ||
-		strings.TrimSpace(request.Status) == "" {
-		http.Error(w, "invalid status update", http.StatusBadRequest)
-		return
-	}
-	h.hub.Publish(request.UserID, request.StatusUpdate)
-	w.WriteHeader(http.StatusNoContent)
 }

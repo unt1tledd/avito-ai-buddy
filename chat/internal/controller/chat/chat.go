@@ -27,10 +27,13 @@ type chatServer struct {
 	logger   *zap.Logger
 }
 
+// NewServer builds the ChatService gRPC server over the message usecase.
 func NewServer(messages messageService, logger *zap.Logger) *chatServer {
 	return &chatServer{messages: messages, logger: logger}
 }
 
+// SendMessage stores the intern's question and returns the assistant reply.
+// Retries with the same idempotency key return the saved reply.
 func (s *chatServer) SendMessage(ctx context.Context, req *chatpb.SendMessageRequest) (*chatpb.SendMessageResponse, error) {
 	if err := req.Validate(); err != nil {
 		s.logger.Warn("chat request validation failed", zap.String("rpc", "SendMessage"), zap.Error(err))
@@ -67,6 +70,8 @@ func (s *chatServer) SendMessage(ctx context.Context, req *chatpb.SendMessageReq
 	}, nil
 }
 
+// GetHistory returns a page of the conversation history ordered from newest
+// to oldest, with a cursor for the next page.
 func (s *chatServer) GetHistory(ctx context.Context, req *chatpb.GetHistoryRequest) (*chatpb.GetHistoryResponse, error) {
 	if err := req.Validate(); err != nil {
 		s.logger.Warn("chat request validation failed", zap.String("rpc", "GetHistory"), zap.Error(err))

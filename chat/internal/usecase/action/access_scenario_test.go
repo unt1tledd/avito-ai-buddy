@@ -5,17 +5,33 @@ import (
 	"errors"
 	"testing"
 
+	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
-	"avito-ai-buddy/chat/internal/usecase/action/mocks"
-
-	"go.uber.org/mock/gomock"
 )
 
 func TestInternCannotConfirmAnotherInternsProposal(t *testing.T) {
 	ctx := t.Context()
-	ctrl := gomock.NewController(t)
-	actions := mocks.NewMockrepository(ctrl)
-	outbox := mocks.NewMockoutboxRepository(ctrl)
+	actions := &fakeActions{
+		getByID: func(context.Context, int64, int64) (*entity.Action, error) { return nil, nil },
+		saveAccess: func(context.Context, int64, entity.AccessRequest) error {
+			t.Error("SaveAccessRequest() called for a foreign proposal")
+			return nil
+		},
+	}
+	outbox := &fakeOutbox{
+		send: func(context.Context, entity.OutboxMessage) error {
+			t.Error("SendOutboxMessage() called for a foreign proposal")
+			return nil
+		},
+		getStatus: func(context.Context, string) (string, int32, error) {
+			t.Error("GetMessageStatus() called for a foreign proposal")
+			return "", 0, nil
+		},
+		reset: func(context.Context, string) error {
+			t.Error("ResetMessage() called for a foreign proposal")
+			return nil
+		},
+	}
 	auth := validatorFunc(func(_ context.Context, token string) (int64, error) {
 		if token != "intern-8-session" {
 			t.Fatalf("validated token = %q, want intern-8-session", token)
@@ -23,7 +39,6 @@ func TestInternCannotConfirmAnotherInternsProposal(t *testing.T) {
 		return 8, nil
 	})
 	tx := transactorFunc(func(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) })
-	actions.EXPECT().GetByID(ctx, int64(8), int64(42)).Return(nil, nil)
 
 	service := NewService(actions, outbox, auth, tx)
 	_, err := service.ConfirmProposal(ctx, "intern-8-session", "42")

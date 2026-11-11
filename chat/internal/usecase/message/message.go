@@ -60,6 +60,9 @@ type chatService struct {
 	ai            aiClient
 }
 
+// NewService builds the message usecase: it needs the conversation and
+// message repositories, the access proposal repository, the user, onboarding
+// and AI clients, the auth token validator and a transaction manager.
 func NewService(
 	conversations conversationService,
 	messagesRepo messageRepository,
@@ -82,6 +85,9 @@ func NewService(
 	}
 }
 
+// SendMessage saves the intern's question (idempotent by key), claims the
+// reply and asks the AI service. Retries with the same key return the saved
+// reply instead of asking twice.
 func (s *chatService) SendMessage(ctx context.Context, token, text string, idempotencyKey int64) (entity.Message, error) {
 	userID, err := s.auth.ValidateToken(ctx, token)
 	if err != nil {
@@ -206,6 +212,8 @@ func (s *chatService) answerQuestion(ctx context.Context, userID int64, question
 	return assistantMessage, nil
 }
 
+// GetHistory returns a page of the intern's conversation history with a
+// cursor for the next page.
 func (s *chatService) GetHistory(ctx context.Context, token string, pageSize int32, pageToken string) (entity.HistoryPage, error) {
 	userID, err := s.auth.ValidateToken(ctx, token)
 	if err != nil {
@@ -223,6 +231,8 @@ func (s *chatService) GetHistory(ctx context.Context, token string, pageSize int
 	return entity.HistoryPage{Messages: messages, NextPageToken: nextPageToken}, nil
 }
 
+// GetSession validates the token and returns the user ID with the session
+// expiry, used to bound the lifetime of a WebSocket connection.
 func (s *chatService) GetSession(ctx context.Context, token string) (string, time.Time, error) {
 	userID, err := s.auth.ValidateToken(ctx, token)
 	if err != nil {

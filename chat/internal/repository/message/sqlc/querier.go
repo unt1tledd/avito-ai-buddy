@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	ClaimReply(ctx context.Context, arg ClaimReplyParams) (pgtype.Timestamptz, error)
 	Create(ctx context.Context, arg CreateParams) (int64, error)
+	CreateIdempotentMessage(ctx context.Context, arg CreateIdempotentMessageParams) (int64, error)
 	FinishReply(ctx context.Context, arg FinishReplyParams) (int64, error)
 	GetOrCreateQuestion(ctx context.Context, arg GetOrCreateQuestionParams) (GetOrCreateQuestionRow, error)
 	GetReply(ctx context.Context, id int64) (GetReplyRow, error)

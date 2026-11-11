@@ -9,9 +9,12 @@ import (
 )
 
 type Querier interface {
+	GetOutboxMessage(ctx context.Context, idempotencyKey string) (GetOutboxMessageRow, error)
 	GetOutboxMessages(ctx context.Context, arg GetOutboxMessagesParams) ([]GetOutboxMessagesRow, error)
+	MarkOutboxMessagesAsFailed(ctx context.Context, idempotencyKeys []string) error
 	MarkOutboxMessagesAsProcessed(ctx context.Context, idempotencyKeys []string) error
 	MarkOutboxMessagesAsRetryable(ctx context.Context, idempotencyKeys []string) error
+	ResetOutboxMessage(ctx context.Context, idempotencyKey string) error
 	SendOutboxMessage(ctx context.Context, arg SendOutboxMessageParams) error
 }
 

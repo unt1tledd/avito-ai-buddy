@@ -3,6 +3,12 @@ INSERT INTO chat.message (conversation_id, role, body, sources, created_at)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING id;
 
+-- name: CreateIdempotentMessage :one
+INSERT INTO chat.message (conversation_id, role, body, sources, created_at, idempotency_key)
+VALUES ($1, $2, $3, $4, $5, sqlc.arg(idempotency_key)::bigint)
+ON CONFLICT (conversation_id, idempotency_key) DO NOTHING
+RETURNING id;
+
 -- name: GetOrCreateQuestion :one
 INSERT INTO chat.message (conversation_id, role, body, sources, created_at, idempotency_key)
 VALUES ($1, 'user', $2, 'null'::jsonb, $3, sqlc.arg(idempotency_key)::bigint)
