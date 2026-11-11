@@ -34,6 +34,17 @@ sql:
         emit_interface: true
         omit_unused_structs: true
   - engine: "postgresql"
+    queries: "internal/repository/inbox/queries.sql"
+    schema: "migrations/migrations"
+    gen:
+      go:
+        package: "inbox"
+        sql_package: "pgx/v5"
+        out: "internal/repository/inbox/sqlc"
+        emit_json_tags: true
+        emit_interface: true
+        omit_unused_structs: true
+  - engine: "postgresql"
     queries: "internal/repository/outbox/queries.sql"
     schema: "migrations/migrations"
     gen:

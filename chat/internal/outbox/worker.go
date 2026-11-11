@@ -2,24 +2,33 @@ package outbox
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
 	"avito-ai-buddy/chat/internal/config"
 	"avito-ai-buddy/chat/internal/entity"
+	outboxfetch "avito-ai-buddy/chat/internal/repository/outbox"
 
 	"go.uber.org/zap"
 )
 
 type (
 	outboxRepository interface {
-		GetMessages(ctx context.Context, batchSize int32, inProgressTTL time.Duration) ([]entity.OutboxMessage, error)
+		GetMessages(ctx context.Context) ([]entity.OutboxMessage, error)
 		MarkAsProcessed(ctx context.Context, idempotencyKeys []string) error
 		MarkAsRetryable(ctx context.Context, idempotencyKeys []string) error
+		MarkAsFailed(ctx context.Context, idempotencyKeys []string) error
 	}
 
 	transactor interface {
 		WithTx(ctx context.Context, f func(ctx context.Context) error) (err error)
+	}
+
+	// FailureNotifier informs the user when an outbox message exhausts all
+	// retry attempts and is parked as FAILED.
+	FailureNotifier interface {
+		PublishAccessRequestFailed(ctx context.Context, userID string, proposalID int64, idempotencyKey string) error
 	}
 )
 
@@ -27,7 +36,7 @@ type GlobalHandler = func(kind int32) (KindHandler, error)
 type KindHandler = func(ctx context.Context, data []byte) error
 
 type Outbox interface {
-	Start(ctx context.Context, workers int, batchSize int32, waitTime time.Duration, inProgressTTL time.Duration)
+	Start(ctx context.Context, workers int)
 }
 
 type outboxImpl struct {
@@ -36,6 +45,7 @@ type outboxImpl struct {
 	globalHandler    GlobalHandler
 	cfg              *config.Config
 	transactor       transactor
+	failureNotifier  FailureNotifier
 }
 
 func New(
@@ -44,6 +54,7 @@ func New(
 	globalHandler GlobalHandler,
 	cfg *config.Config,
 	transactor transactor,
+	failureNotifier FailureNotifier,
 ) *outboxImpl {
 	return &outboxImpl{
 		logger:           logger,
@@ -51,21 +62,16 @@ func New(
 		globalHandler:    globalHandler,
 		cfg:              cfg,
 		transactor:       transactor,
+		failureNotifier:  failureNotifier,
 	}
 }
 
-func (o *outboxImpl) Start(
-	ctx context.Context,
-	workers int,
-	batchSize int32,
-	fetchPeriod time.Duration,
-	inProgressTTL time.Duration,
-) {
+func (o *outboxImpl) Start(ctx context.Context, workers int) {
 	wg := new(sync.WaitGroup)
 
 	for workerID := 1; workerID <= workers; workerID++ {
 		wg.Add(1)
-		go o.worker(ctx, wg, batchSize, fetchPeriod, inProgressTTL)
+		go o.worker(ctx, wg)
 	}
 	wg.Wait()
 }
@@ -73,21 +79,22 @@ func (o *outboxImpl) Start(
 func (o *outboxImpl) worker(
 	ctx context.Context,
 	wg *sync.WaitGroup,
-	batchSize int32,
-	waitTime time.Duration,
-	inProgressTTL time.Duration,
 ) {
 	defer wg.Done()
-	timer := time.NewTimer(waitTime)
+	timer := time.NewTimer(o.cfg.Outbox.PollInterval)
 	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			delay := waitTime
+			delay := o.cfg.Outbox.PollInterval
 			err := o.transactor.WithTx(ctx, func(ctx context.Context) error {
-				messages, err := o.outboxRepository.GetMessages(ctx, batchSize, inProgressTTL)
+				fetchCtx := outboxfetch.WithFetchOptions(ctx, outboxfetch.FetchOptions{
+					BatchSize:     o.cfg.Outbox.BatchSize,
+					InProgressTTL: o.cfg.Outbox.InProgressTTL,
+				})
+				messages, err := o.outboxRepository.GetMessages(fetchCtx)
 
 				if err != nil {
 					o.logger.Error("can not fetch messages from outbox", zap.Error(err))
@@ -95,59 +102,107 @@ func (o *outboxImpl) worker(
 				}
 
 				successKeys := make([]string, 0, len(messages)/2)
-				failedKeys := make([]string, 0, len(messages)/2)
+				retryableKeys := make([]string, 0, len(messages)/2)
+				var terminal []entity.OutboxMessage
 
 				for i := range messages {
 					message := messages[i]
 					key := message.IdempotencyKey
 
-					kindHandler, errKind := o.globalHandler(message.Kind)
+					publishErr := o.publish(ctx, message)
 
-					if errKind != nil {
-						o.logger.Error("unexpected kind",
-							zap.Error(errKind),
-							zap.Any("kind", message.Kind),
-							zap.String("key", key),
-							zap.ByteString("data", message.Data),
-						)
+					if publishErr == nil {
+						successKeys = append(successKeys, key)
 						continue
 					}
 
-					publishCtx, cancel := context.WithTimeout(ctx, o.cfg.Outbox.PublishTimeout)
-					err = kindHandler(publishCtx, message.Data)
-					cancel()
-
-					if err != nil {
-						delay = o.cfg.Outbox.RetryDelay
-						failedKeys = append(failedKeys, key)
-						o.logger.Error("kind error", zap.Error(err))
-						continue
+					delay = o.cfg.Outbox.RetryDelay
+					if message.Attempts+1 >= o.cfg.Outbox.MaxAttempts {
+						// The last retry attempt failed: park the message as
+						// FAILED and let the user know the request never left.
+						terminal = append(terminal, message)
+					} else {
+						retryableKeys = append(retryableKeys, key)
 					}
-
-					successKeys = append(successKeys, key)
+					o.logger.Error("outbox publish failed",
+						zap.Error(publishErr),
+						zap.String("key", key),
+						zap.Int32("attempt", message.Attempts+1),
+					)
 				}
 
-				err = o.outboxRepository.MarkAsProcessed(ctx, successKeys)
-
-				if err != nil {
-					o.logger.Error("mark as processed outbox error", zap.Error(err))
-					return err
+				if len(successKeys) > 0 {
+					if err := o.outboxRepository.MarkAsProcessed(ctx, successKeys); err != nil {
+						return err
+					}
 				}
-
-				err = o.outboxRepository.MarkAsRetryable(ctx, failedKeys)
-
-				if err != nil {
-					o.logger.Error("mark as retryable error", zap.Error(err))
-					return err
+				if len(terminal) > 0 {
+					keys := messageKeys(terminal)
+					if err := o.outboxRepository.MarkAsFailed(ctx, keys); err != nil {
+						return err
+					}
+					o.notifyFailures(ctx, terminal)
 				}
-
+				if len(retryableKeys) > 0 {
+					return o.outboxRepository.MarkAsRetryable(ctx, retryableKeys)
+				}
 				return nil
 			})
-
 			if err != nil {
-				o.logger.Error("worker stage error", zap.Error(err))
+				delay = o.cfg.Outbox.RetryDelay
+				o.logger.Error("outbox dispatch failed", zap.Error(err))
 			}
+
 			timer.Reset(delay)
 		}
 	}
+}
+
+// publish decodes and delivers a single outbox message. An unsupported kind
+// counts as a delivery failure so the message eventually reaches FAILED.
+func (o *outboxImpl) publish(ctx context.Context, message entity.OutboxMessage) error {
+	kindHandler, errKind := o.globalHandler(message.Kind)
+	if errKind != nil {
+		return errKind
+	}
+
+	publishCtx, cancel := context.WithTimeout(ctx, o.cfg.Outbox.PublishTimeout)
+	defer cancel()
+	return kindHandler(publishCtx, message.Data)
+}
+
+// notifyFailures tells the affected users that their access request could not
+// be delivered. Notification failures are only logged: the outbox state is
+// already terminal at this point.
+func (o *outboxImpl) notifyFailures(ctx context.Context, terminal []entity.OutboxMessage) {
+	if o.failureNotifier == nil {
+		return
+	}
+	for _, message := range terminal {
+		var request struct {
+			UserID     string `json:"user_id"`
+			ProposalID int64  `json:"proposal_id"`
+		}
+		if err := json.Unmarshal(message.Data, &request); err != nil {
+			o.logger.Error("decode failed outbox message for notification",
+				zap.Error(err),
+				zap.String("key", message.IdempotencyKey),
+			)
+			continue
+		}
+		if err := o.failureNotifier.PublishAccessRequestFailed(ctx, request.UserID, request.ProposalID, message.IdempotencyKey); err != nil {
+			o.logger.Error("publish access request failure notification",
+				zap.Error(err),
+				zap.String("key", message.IdempotencyKey),
+			)
+		}
+	}
+}
+
+func messageKeys(messages []entity.OutboxMessage) []string {
+	keys := make([]string, 0, len(messages))
+	for _, message := range messages {
+		keys = append(keys, message.IdempotencyKey)
+	}
+	return keys
 }

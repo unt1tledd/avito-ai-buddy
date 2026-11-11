@@ -27,7 +27,7 @@ WHERE idempotency_key IN (
     LIMIT $2::integer
         FOR UPDATE SKIP LOCKED
 )
-RETURNING idempotency_key, data, kind
+RETURNING idempotency_key, data, kind, attempts
 `
 
 type GetOutboxMessagesParams struct {
@@ -39,6 +39,7 @@ type GetOutboxMessagesRow struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	Data           []byte `json:"data"`
 	Kind           int32  `json:"kind"`
+	Attempts       int32  `json:"attempts"`
 }
 
 func (q *Queries) GetOutboxMessages(ctx context.Context, arg GetOutboxMessagesParams) ([]GetOutboxMessagesRow, error) {
@@ -50,7 +51,12 @@ func (q *Queries) GetOutboxMessages(ctx context.Context, arg GetOutboxMessagesPa
 	var items []GetOutboxMessagesRow
 	for rows.Next() {
 		var i GetOutboxMessagesRow
-		if err := rows.Scan(&i.IdempotencyKey, &i.Data, &i.Kind); err != nil {
+		if err := rows.Scan(
+			&i.IdempotencyKey,
+			&i.Data,
+			&i.Kind,
+			&i.Attempts,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -61,9 +67,23 @@ func (q *Queries) GetOutboxMessages(ctx context.Context, arg GetOutboxMessagesPa
 	return items, nil
 }
 
+const markOutboxMessagesAsFailed = `-- name: MarkOutboxMessagesAsFailed :exec
+UPDATE chat.outbox
+SET status = 'FAILED'::chat.outbox_status,
+    attempts = attempts + 1,
+    processed_at = now()
+WHERE idempotency_key = ANY($1::text[])
+`
+
+func (q *Queries) MarkOutboxMessagesAsFailed(ctx context.Context, idempotencyKeys []string) error {
+	_, err := q.db.Exec(ctx, markOutboxMessagesAsFailed, idempotencyKeys)
+	return err
+}
+
 const markOutboxMessagesAsProcessed = `-- name: MarkOutboxMessagesAsProcessed :exec
 UPDATE chat.outbox
-SET status = 'SUCCESS'::chat.outbox_status
+SET status = 'SUCCESS'::chat.outbox_status,
+    processed_at = now()
 WHERE idempotency_key = ANY($1::text[])
 `
 
@@ -74,7 +94,8 @@ func (q *Queries) MarkOutboxMessagesAsProcessed(ctx context.Context, idempotency
 
 const markOutboxMessagesAsRetryable = `-- name: MarkOutboxMessagesAsRetryable :exec
 UPDATE chat.outbox
-SET status = 'CREATED'::chat.outbox_status
+SET status = 'CREATED'::chat.outbox_status,
+    attempts = attempts + 1
 WHERE idempotency_key = ANY($1::text[])
 `
 

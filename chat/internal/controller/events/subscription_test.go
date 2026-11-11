@@ -4,13 +4,12 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"avito-ai-buddy/chat/internal/controller"
 	"avito-ai-buddy/chat/internal/controller/events/mocks"
+	"avito-ai-buddy/chat/internal/port"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -24,7 +23,7 @@ func TestInternReceivesApprovalOnAnOpenChat(t *testing.T) {
 	sessions := mocks.NewMocksessionService(gomock.NewController(t))
 	sessions.EXPECT().GetSession(gomock.Any(), "intern-session").
 		Return("7", time.Now().Add(time.Minute), nil)
-	handler := NewHandler(hub, sessions, "task-secret")
+	handler := NewHandler(hub, sessions)
 
 	client := newPipeHTTPClient(t, http.HandlerFunc(handler.Subscribe))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -41,13 +40,9 @@ func TestInternReceivesApprovalOnAnOpenChat(t *testing.T) {
 	}
 	defer func() { _ = conn.CloseNow() }()
 
-	req := httptest.NewRequest(http.MethodPost, "/internal/v1/chat/task-events",
-		strings.NewReader(`{"user_id":"7","task_id":"task-42","external_request_id":"access-42","status":"approved"}`))
-	req.Header.Set("Authorization", "Bearer task-secret")
-	resp := httptest.NewRecorder()
-	handler.Publish(resp, req)
-	if resp.Code != http.StatusNoContent {
-		t.Fatalf("publish approval = %d, want %d", resp.Code, http.StatusNoContent)
+	event := port.TaskEvent{UserID: "7", TaskID: "task-42", ExternalRequestID: "access-42", Status: "approved"}
+	if err := hub.PublishTaskStatus(ctx, event); err != nil {
+		t.Fatalf("publish approval: %v", err)
 	}
 
 	var got struct {
@@ -58,7 +53,7 @@ func TestInternReceivesApprovalOnAnOpenChat(t *testing.T) {
 		t.Fatalf("read approval event: %v", err)
 	}
 	want := StatusUpdate{TaskID: "task-42", ExternalRequestID: "access-42", Status: "approved"}
-	if got.Type != "task.status_changed" || got.StatusUpdate != want {
+	if got.Type != EventTypeTaskStatusChanged || got.StatusUpdate != want {
 		t.Fatalf("approval event = %+v, want task.status_changed %+v", got, want)
 	}
 	select {
@@ -68,35 +63,20 @@ func TestInternReceivesApprovalOnAnOpenChat(t *testing.T) {
 	}
 }
 
-func TestInvalidTaskCallbacksCannotChangeChatStatus(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		taskToken string
-		body      string
-		want      int
-	}{
-		{name: "task integration not configured", want: http.StatusServiceUnavailable},
-		{name: "no recipient", taskToken: "task-secret", body: `{"task_id":"task-42","status":"approved"}`, want: http.StatusBadRequest},
-		{name: "no status", taskToken: "task-secret", body: `{"user_id":"7","task_id":"task-42"}`, want: http.StatusBadRequest},
-		{name: "extra JSON", taskToken: "task-secret", body: `{"user_id":"7","task_id":"task-42","status":"approved"}{}`, want: http.StatusBadRequest},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			hub := NewHub()
-			updates, unsubscribe := hub.Subscribe("7")
-			defer unsubscribe()
-			req := httptest.NewRequest(http.MethodPost, "/internal/v1/chat/task-events", strings.NewReader(tc.body))
-			req.Header.Set("Authorization", "Bearer task-secret")
-			resp := httptest.NewRecorder()
-			NewHandler(hub, nil, tc.taskToken).Publish(resp, req)
-			if resp.Code != tc.want {
-				t.Fatalf("task callback = %d, want %d", resp.Code, tc.want)
-			}
-			select {
-			case update := <-updates:
-				t.Fatalf("rejected callback reached the chat: %+v", update)
-			default:
-			}
-		})
+func TestNotifierSkipsUnknownUsers(t *testing.T) {
+	hub := NewHub()
+	updates, unsubscribe := hub.Subscribe("7")
+	defer unsubscribe()
+
+	event := port.TaskEvent{UserID: "999", TaskID: "task-42", Status: "approved"}
+	if err := hub.PublishTaskStatus(context.Background(), event); err != nil {
+		t.Fatalf("publish task status for unknown user: %v", err)
+	}
+
+	select {
+	case update := <-updates:
+		t.Fatalf("unknown user's event reached another subscriber: %+v", update)
+	default:
 	}
 }
 
@@ -109,10 +89,13 @@ func TestSlowChatTabDoesNotBlockOtherTabs(t *testing.T) {
 
 	for i := 0; i <= cap(slow); i++ {
 		want := StatusUpdate{TaskID: "task-42", Status: "approved"}
-		hub.Publish("7", want)
+		event := port.TaskEvent{UserID: "7", TaskID: "task-42", Status: "approved"}
+		if err := hub.PublishTaskStatus(context.Background(), event); err != nil {
+			t.Fatalf("publish task status: %v", err)
+		}
 		select {
 		case got := <-active:
-			if got != want {
+			if got.StatusUpdate != want {
 				t.Fatalf("status update = %+v, want %+v", got, want)
 			}
 		default:

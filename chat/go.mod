@@ -6,10 +6,10 @@ require (
 	avito-ai-buddy/pkg v0.0.0
 	github.com/caarlos0/env/v10 v10.0.0
 	github.com/coder/websocket v1.8.14
+	github.com/confluentinc/confluent-kafka-go/v2 v2.16.1
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/segmentio/kafka-go v0.4.51
 	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.28.0
 	google.golang.org/grpc v1.85.0
@@ -21,9 +21,7 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
-	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/pressly/goose/v3 v3.27.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect

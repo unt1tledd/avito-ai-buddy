@@ -4,6 +4,7 @@ package outbox
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"avito-ai-buddy/chat/internal/entity"
@@ -36,10 +37,35 @@ func (r *PostgresRepository) SendOutboxMessage(ctx context.Context, message enti
 	})
 }
 
-func (r *PostgresRepository) GetMessages(ctx context.Context, batchSize int32, inProgressTTL time.Duration) ([]entity.OutboxMessage, error) {
+// FetchOptions carries the dispatch parameters for GetMessages through the
+// context: the worker injects them from config on every poll.
+type FetchOptions struct {
+	BatchSize     int32
+	InProgressTTL time.Duration
+}
+
+type fetchOptionsKey struct{}
+
+// WithFetchOptions returns a context carrying the outbox fetch parameters.
+func WithFetchOptions(ctx context.Context, options FetchOptions) context.Context {
+	return context.WithValue(ctx, fetchOptionsKey{}, options)
+}
+
+// FetchOptionsFromContext extracts the outbox fetch parameters previously
+// stored by WithFetchOptions.
+func FetchOptionsFromContext(ctx context.Context) (FetchOptions, bool) {
+	options, ok := ctx.Value(fetchOptionsKey{}).(FetchOptions)
+	return options, ok
+}
+
+func (r *PostgresRepository) GetMessages(ctx context.Context) ([]entity.OutboxMessage, error) {
+	options, ok := FetchOptionsFromContext(ctx)
+	if !ok {
+		return nil, errors.New("outbox fetch options are not set in context")
+	}
 	rows, err := r.getQueries(ctx).GetOutboxMessages(ctx, sqlc.GetOutboxMessagesParams{
-		BatchSize:     batchSize,
-		InProgressTtl: pgtype.Interval{Microseconds: inProgressTTL.Microseconds(), Valid: true},
+		BatchSize:     options.BatchSize,
+		InProgressTtl: pgtype.Interval{Microseconds: options.InProgressTTL.Microseconds(), Valid: true},
 	})
 	if err != nil {
 		return nil, err
@@ -50,6 +76,7 @@ func (r *PostgresRepository) GetMessages(ctx context.Context, batchSize int32, i
 			IdempotencyKey: row.IdempotencyKey,
 			Data:           row.Data,
 			Kind:           row.Kind,
+			Attempts:       row.Attempts,
 		})
 	}
 	return messages, nil
@@ -61,4 +88,8 @@ func (r *PostgresRepository) MarkAsProcessed(ctx context.Context, keys []string)
 
 func (r *PostgresRepository) MarkAsRetryable(ctx context.Context, keys []string) error {
 	return r.getQueries(ctx).MarkOutboxMessagesAsRetryable(ctx, keys)
+}
+
+func (r *PostgresRepository) MarkAsFailed(ctx context.Context, keys []string) error {
+	return r.getQueries(ctx).MarkOutboxMessagesAsFailed(ctx, keys)
 }

@@ -6,4 +6,5 @@ type OutboxMessage struct {
 	IdempotencyKey string
 	Data           []byte
 	Kind           int32
+	Attempts       int32
 }

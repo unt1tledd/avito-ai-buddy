@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TYPE chat.outbox_status as ENUM ('CREATED', 'IN_PROGRESS', 'SUCCESS');
+CREATE TYPE chat.outbox_status as ENUM ('CREATED', 'IN_PROGRESS', 'SUCCESS', 'FAILED');
 
 CREATE TABLE chat.outbox
 (
@@ -9,8 +9,10 @@ CREATE TABLE chat.outbox
     data            JSONB                   NOT NULL,
     status          chat.outbox_status           NOT NULL,
     kind            INT                     NOT NULL,
+    attempts        INT                     NOT NULL DEFAULT 0,
     created_at      TIMESTAMP DEFAULT now() NOT NULL,
-    updated_at      TIMESTAMP DEFAULT now() NOT NULL
+    updated_at      TIMESTAMP DEFAULT now() NOT NULL,
+    processed_at    TIMESTAMPTZ
 );
 
 -- +goose StatementBegin

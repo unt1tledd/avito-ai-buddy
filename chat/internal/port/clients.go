@@ -38,6 +38,19 @@ type CreateAccessRequest struct {
 	AccessLevel string `json:"access_level"`
 }
 
+// TaskEvent is a task status change consumed from Kafka.
+type TaskEvent struct {
+	UserID            string `json:"user_id"`
+	TaskID            string `json:"task_id"`
+	ExternalRequestID string `json:"external_request_id,omitempty"`
+	Status            string `json:"status"`
+}
+
+// TaskEventsNotifier publishes received task status updates to chat subscribers.
+type TaskEventsNotifier interface {
+	PublishTaskStatus(ctx context.Context, event TaskEvent) error
+}
+
 type TokenValidator interface {
 	ValidateToken(ctx context.Context, token string) (int64, error)
 }
