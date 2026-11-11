@@ -1,4 +1,5 @@
-GO_MODULES := user onboarding task chat pkg integration-tests
+GO_MODULES := auth user onboarding task chat pkg integration-tests
+
 .PHONY: deps verify fmt lint test vet tools-check
 deps:
 	@set -e; for module in $(GO_MODULES); do (cd $$module && GOWORK=off go mod download all); done
