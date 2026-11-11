@@ -1,0 +1,174 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
+    environment:
+      POSTGRES_DB: ai_buddy
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      AI_DB_PASSWORD: "${AI_DB_PASSWORD:?Set AI_DB_PASSWORD in .env}"
+      USER_DB_PASSWORD: "${USER_DB_PASSWORD:?Set USER_DB_PASSWORD in .env}"
+      AUTH_DB_PASSWORD: "${AUTH_DB_PASSWORD:?Set AUTH_DB_PASSWORD in .env}"
+      CHAT_DB_PASSWORD: "${CHAT_DB_PASSWORD:?Set CHAT_DB_PASSWORD in .env}"
+      ONBOARDING_DB_PASSWORD: "${ONBOARDING_DB_PASSWORD:?Set ONBOARDING_DB_PASSWORD in .env}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "ai_buddy"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  user:
+    build:
+      context: .
+      dockerfile: user/Dockerfile
+    environment:
+      GRPC_HOST: "0.0.0.0"
+      USER_SEED_DEMO: "${USER_SEED_DEMO:-false}"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: users
+      POSTGRES_USER: users_app
+      POSTGRES_PASSWORD: "${USER_DB_PASSWORD:?Set USER_DB_PASSWORD in .env}"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8084:8080"    
+
+  auth:
+    build: ./auth
+    environment:
+      AUTH_DATABASE_URL: "postgresql://auth_app:${AUTH_DB_PASSWORD}@db:5432/auth_db?sslmode=disable"
+      AUTH_JWT_SECRET: "${AUTH_JWT_SECRET:-}"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  ai-migrate:
+    image: golang:1.27.0
+    profiles: ["tools"]
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: &ai_dsn "postgresql://ai_app:${AI_DB_PASSWORD:?Set AI_DB_PASSWORD in .env}@db:5432/ai_buddy?sslmode=disable"
+      GOOSE_MIGRATION_DIR: /migrations
+    volumes:
+      - ./ai/migrations:/migrations:ro
+    command: ["go", "run", "github.com/pressly/goose/v3/cmd/goose@v3.27.0", "up"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ai:
+    build: ./ai
+    environment:
+      KNOWLEDGE_DB_DSN: *ai_dsn
+      AI_MODE: "${AI_MODE:-demo}"
+      QUESTIONS_ONLY: "${QUESTIONS_ONLY:-true}"
+      AI_SERVICE_TOKEN: "${AI_SERVICE_TOKEN:-}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://api.openai.com/v1}"
+      EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL:-}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-text-embedding-3-small}"
+      EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
+      EMBEDDING_PROVIDER: "${EMBEDDING_PROVIDER:-}"
+      KNOWLEDGE_PROCESSING_APPROVED: "${KNOWLEDGE_PROCESSING_APPROVED:-false}"
+      EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS}"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8080"
+
+  kafka:
+    image: apache/kafka:4.1.2
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "kafka:9092", "--list"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  kafka-init:
+    image: apache/kafka:4.1.2
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/opt/kafka/bin/kafka-topics.sh"]
+    command:
+      - --bootstrap-server
+      - kafka:9092
+      - --create
+      - --if-not-exists
+      - --topic
+      - task.access_requests.create
+      - --partitions
+      - "1"
+      - --replication-factor
+      - "1"
+
+  chat:
+    build:
+      context: .
+      dockerfile: chat/Dockerfile
+    environment:
+      CHAT_POSTGRES_URL: "postgresql://chat_app:${CHAT_DB_PASSWORD:?Set CHAT_DB_PASSWORD in .env}@db:5432/chat?sslmode=disable"
+      AUTH_BASE_URL: "http://auth:8080"
+      CHAT_HTTP_PORT: "8080"
+      CHAT_GRPC_PORT: "50051"
+      USER_GRPC_ADDR: "user:9090"
+      AI_BASE_URL: "http://ai:8080"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TASK_COMMANDS_TOPIC: "task.access_requests.create"
+      CHAT_TASK_EVENTS_TOKEN: "${CHAT_TASK_EVENTS_TOKEN:-}"
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8082:8080"
+
+
+  onboarding:
+    build:
+      context: .
+      dockerfile: onboarding/Dockerfile
+    environment:
+      ONBOARDING_POSTGRES_URL: "postgresql://onboarding_app:${ONBOARDING_DB_PASSWORD:?Set ONBOARDING_DB_PASSWORD in .env}@db:5432/onboarding?sslmode=disable"
+      ONBOARDING_SERVICE_TOKEN: "${ONBOARDING_SERVICE_TOKEN:-}"
+      USER_GRPC_ADDR: "user:9090"
+      AUTH_BASE_URL: "http://auth:8080"
+      ONBOARDING_HTTP_PORT: "8080"
+      ONBOARDING_GRPC_PORT: "50051"
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_started
+      user:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8083:8080"
+
+volumes:
+  postgres_data:
+  kafka_data:
