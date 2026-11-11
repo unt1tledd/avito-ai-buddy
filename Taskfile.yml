@@ -40,38 +40,7 @@ tasks:
     dir: '{{.USER_WORKING_DIR}}'
     silent: true
     cmds:
-      - |
-        set -e
-        set -o pipefail
-        packages=$(go list ./...)
-        packages=$(printf '%s\n' "$packages" | awk '
-          $0 !~ /\/(mock|mocks|sqlc|entity|errors|port|adapter|adapters|config|migrations)(\/|$)/ &&
-          $0 !~ /\/(cmd\/app|internal\/(app|controller|controller\/converter))$/
-        ')
-        if [ -n "$packages" ]; then
-          width=$(printf '%s\n' "$packages" | awk 'length > width { width = length } END { print width }')
-          profile=$(mktemp "${TMPDIR:-/tmp}/go-coverage.XXXXXX")
-          trap 'rm -f "$profile"' EXIT
-          go test -coverprofile="$profile" $packages | awk -v width="$width" '
-            BEGIN {
-              if (width < length("PACKAGE")) width = length("PACKAGE")
-              printf "%-*s  %8s\n", width, "PACKAGE", "COVERAGE"
-            }
-            NF >= 5 && $(NF - 3) == "coverage:" {
-              package = $1 == "ok" ? $2 : $1
-              printf "%-*s  %8s\n", width, package, $(NF - 2)
-              next
-            }
-            $1 == "?" && /\[no test files\]$/ {
-              printf "%-*s  %8s\n", width, $2, "-"
-              next
-            }
-            { print }
-          '
-          go tool cover -func="$profile" | awk -v width="$width" '
-            $1 == "total:" { printf "%-*s  %8s\n", width, "TOTAL", $NF }
-          '
-        fi
+      - bash "{{.ROOT_DIR}}/infra/scripts/coverage.sh" .
   mocks:
     dir: '{{.USER_WORKING_DIR}}'
     silent: true

@@ -93,6 +93,9 @@ jobs:
             (cd "$module" && go test -race -count=1 ./...)
           done
 
+      - name: Go coverage
+        run: bash scripts/coverage.sh auth user chat onboarding pkg
+
       - name: Validate Compose and build images
         env:
           POSTGRES_PASSWORD: ci-postgres
