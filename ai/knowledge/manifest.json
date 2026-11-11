@@ -1,0 +1,193 @@
+{
+  "dataset": "avito-synthetic-wiki",
+  "version": "1.0",
+  "created_on": "2026-11-11",
+  "synthetic": true,
+  "notice": "Синтетический сценарий «Авито» для демо; сведения вымышлены.",
+  "source_of_structure": "Пять разделов и пятнадцать подразделов из схемы пользователя.",
+  "timezone": "Europe/Moscow",
+  "currency": "RUB",
+  "source_domain": "wiki.avito.example",
+  "links": "Все домены .example и адрес Примерск, Тестовая, 10 вымышлены; страницы не опубликованы.",
+  "document_count": 45,
+  "eval_case_count": 99,
+  "roles": {
+    "intern": "Стажёр: общие статьи",
+    "mentor": "Наставник: общие и три закрытые статьи"
+  },
+  "team_policy": "teams=[]: командных ограничений нет. team=101 в примерах — произвольный тестовый ID, не реальная команда.",
+  "max_text_characters": 788,
+  "sections": [
+    {
+      "id": "newcomers",
+      "title": "Новичкам",
+      "topics": [
+        {
+          "id": "access",
+          "title": "Доступы",
+          "document_ids": [
+            "synth-account-activation",
+            "synth-vpn-access",
+            "synth-repository-access"
+          ]
+        },
+        {
+          "id": "office",
+          "title": "Офис",
+          "document_ids": [
+            "synth-first-day",
+            "synth-permanent-badge",
+            "synth-buddy-tour"
+          ]
+        },
+        {
+          "id": "benefits",
+          "title": "Льготы",
+          "document_ids": [
+            "synth-benefits-start",
+            "synth-benefits-registration",
+            "synth-mentor-onboarding-check"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "office",
+      "title": "Как устроен офис",
+      "topics": [
+        {
+          "id": "locations",
+          "title": "Что где лежит",
+          "document_ids": [
+            "synth-office-navigation",
+            "synth-supplies-printing",
+            "synth-lockers-storage"
+          ]
+        },
+        {
+          "id": "rules",
+          "title": "Правила",
+          "document_ids": [
+            "synth-office-hours-guests",
+            "synth-quiet-clean-desk",
+            "synth-kitchen-meals"
+          ]
+        },
+        {
+          "id": "rooms",
+          "title": "Переговорки",
+          "document_ids": [
+            "synth-book-meeting-room",
+            "synth-room-checkin-cancel",
+            "synth-meeting-room-equipment"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "workplace",
+      "title": "Организация рабочего места",
+      "topics": [
+        {
+          "id": "desk",
+          "title": "Рабочее место",
+          "document_ids": [
+            "synth-desk-booking",
+            "synth-ergonomics-desk",
+            "synth-remote-workplace"
+          ]
+        },
+        {
+          "id": "mail",
+          "title": "Почта",
+          "document_ids": [
+            "synth-email-first-login",
+            "synth-email-clients-mobile",
+            "synth-email-signature-calendar"
+          ]
+        },
+        {
+          "id": "equipment",
+          "title": "Техника",
+          "document_ids": [
+            "synth-laptop-issue",
+            "synth-software-dev-environment",
+            "synth-broken-lost-laptop"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rewards",
+      "title": "Зарплаты и льготы",
+      "topics": [
+        {
+          "id": "salary",
+          "title": "Зарплата",
+          "document_ids": [
+            "synth-salary-dates",
+            "synth-payslip-missing-payment",
+            "synth-bank-details-change"
+          ]
+        },
+        {
+          "id": "bonus",
+          "title": "Бонусы",
+          "document_ids": [
+            "synth-intern-completion-bonus",
+            "synth-sport-compensation",
+            "synth-mentor-bonus-review"
+          ]
+        },
+        {
+          "id": "insurance",
+          "title": "ДМС",
+          "document_ids": [
+            "synth-insurance-activation",
+            "synth-insurance-appointment",
+            "synth-insurance-family"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "communication",
+      "title": "Коммуникации",
+      "topics": [
+        {
+          "id": "connection",
+          "title": "Корпоративная связь",
+          "document_ids": [
+            "synth-messenger-channels",
+            "synth-mobile-connection",
+            "synth-communication-response"
+          ]
+        },
+        {
+          "id": "mail",
+          "title": "Почта",
+          "document_ids": [
+            "synth-email-etiquette",
+            "synth-mailing-lists",
+            "synth-suspicious-email"
+          ]
+        },
+        {
+          "id": "meetings",
+          "title": "Встречи",
+          "document_ids": [
+            "synth-meeting-invitation",
+            "synth-standup-notes",
+            "synth-mentor-one-on-one"
+          ]
+        }
+      ]
+    }
+  ],
+  "files": {
+    "import_data": "documents.json",
+    "human_readable": "knowledge.md",
+    "evaluation": "eval_cases.json",
+    "instructions": "README.md"
+  }
+}
