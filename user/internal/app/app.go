@@ -50,6 +50,11 @@ func Run(logger *zap.Logger, cfg *config.Config) error {
 	if err := migrations.SetupPostgres(ctx, db); err != nil {
 		return fmt.Errorf("migrate PostgreSQL: %w", err)
 	}
+	if cfg.SeedDemo {
+		if err := migrations.SeedDemo(ctx, db); err != nil {
+			return fmt.Errorf("seed user demo data: %w", err)
+		}
+	}
 
 	repository := userrepo.NewPostgresRepository(db)
 	service := userusecase.NewUserService(repository)

@@ -15,7 +15,8 @@ const (
 )
 
 type Config struct {
-	GRPC struct {
+	SeedDemo bool `env:"USER_SEED_DEMO"`
+	GRPC     struct {
 		Host        string `env:"GRPC_HOST" envDefault:"127.0.0.1"`
 		Port        string `env:"GRPC_PORT" envDefault:"9090"`
 		GatewayPort string `env:"GRPC_GATEWAY_PORT" envDefault:"8080"`
