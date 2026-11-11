@@ -19,15 +19,20 @@ type sessionService interface {
 	GetSession(ctx context.Context, token string) (userID string, expiresAt time.Time, err error)
 }
 
+// Handler serves the WebSocket event subscription endpoint.
 type Handler struct {
 	hub      *Hub
 	sessions sessionService
 }
 
+// NewHandler builds the handler over the event hub and the session service
+// used to authenticate the access token cookie.
 func NewHandler(hub *Hub, sessions sessionService) *Handler {
 	return &Handler{hub: hub, sessions: sessions}
 }
 
+// Subscribe upgrades the request to a WebSocket connection and streams the
+// user's events until the connection or the session expires.
 func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(controller.AccessTokenCookie)
 	if err != nil || cookie.Value == "" {

@@ -32,9 +32,14 @@ type (
 	}
 )
 
+// GlobalHandler resolves the delivery handler for a message kind, returning
+// an error for kinds the service does not dispatch.
 type GlobalHandler = func(kind int32) (KindHandler, error)
+
+// KindHandler delivers a single outbox message payload.
 type KindHandler = func(ctx context.Context, data []byte) error
 
+// Outbox runs the dispatch workers until the context is cancelled.
 type Outbox interface {
 	Start(ctx context.Context, workers int)
 }
@@ -48,6 +53,9 @@ type outboxImpl struct {
 	failureNotifier  FailureNotifier
 }
 
+// New builds the dispatcher: it needs the outbox repository, the kind
+// handler resolver, the config, a transaction manager and the notifier used
+// to inform users about messages parked as FAILED.
 func New(
 	logger *zap.Logger,
 	outboxRepository outboxRepository,
@@ -66,6 +74,7 @@ func New(
 	}
 }
 
+// Start launches the dispatch workers and blocks until they finish.
 func (o *outboxImpl) Start(ctx context.Context, workers int) {
 	wg := new(sync.WaitGroup)
 

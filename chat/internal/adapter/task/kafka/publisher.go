@@ -15,11 +15,15 @@ import (
 
 const publisherDeliveryTimeout = 30000
 
+// Publisher publishes chat commands to a Kafka topic and waits for the
+// broker acknowledgement before returning.
 type Publisher struct {
 	producer *ckafka.Producer
 	topic    string
 }
 
+// NewPublisher creates a producer with all-acks reliability; brokers must be
+// non-empty.
 func NewPublisher(brokers []string, topic string) (*Publisher, error) {
 	if len(brokers) == 0 {
 		return nil, errors.New("no kafka brokers configured")
@@ -36,6 +40,7 @@ func NewPublisher(brokers []string, topic string) (*Publisher, error) {
 	return &Publisher{producer: producer, topic: topic}, nil
 }
 
+// Close flushes the pending messages and releases librdkafka resources.
 func (p *Publisher) Close() {
 	p.producer.Close()
 }
@@ -47,6 +52,8 @@ type createAccessRequestPayload struct {
 	AccessLevel string `json:"access_level"`
 }
 
+// PublishCreateAccessRequest sends the confirmed access request keyed by the
+// proposal ID and blocks until the broker confirms the delivery.
 func (p *Publisher) PublishCreateAccessRequest(ctx context.Context, request port.CreateAccessRequest) error {
 	proposalID := strconv.FormatInt(request.ProposalID, 10)
 	body, err := json.Marshal(createAccessRequestPayload{

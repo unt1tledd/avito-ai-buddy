@@ -31,6 +31,7 @@ import (
 	"avito-ai-buddy/chat/internal/usecase/action"
 	"avito-ai-buddy/chat/internal/usecase/conversation"
 	"avito-ai-buddy/chat/internal/usecase/message"
+	"avito-ai-buddy/chat/internal/usecase/taskstatus"
 	"avito-ai-buddy/chat/migrations"
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 	"avito-ai-buddy/pkg/transactor"
@@ -42,6 +43,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// Run boots the chat service: it wires the dependencies, serves gRPC and
+// HTTP gateway, runs the outbox worker and the Kafka consumer, and blocks
+// until the context is cancelled or a server fails.
 func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 	authClient := authadapter.NewClient(&http.Client{
 		Timeout:       cfg.Auth.Timeout,
@@ -201,13 +205,15 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 		<-cleanupDone
 		closeDependencies()
 	}
-	taskNotifier := inboxsvc.New(inboxRepository, hub)
-
 	actions := actionrepo.NewPostgresRepository(db)
 	conversations := conversation.NewService(conversationrepo.NewPostgresRepository(db))
+	msgRepository := messagerepo.NewPostgresRepository(db)
+	taskstatusService := taskstatus.New(logger, conversations, msgRepository, hub)
+	taskNotifier := inboxsvc.New(inboxRepository, taskstatusService)
+
 	messages := message.NewService(
 		conversations,
-		messagerepo.NewPostgresRepository(db),
+		msgRepository,
 		actions,
 		useradapter.NewClient(userConn),
 		onboardingadapter.NewClient(planConn),

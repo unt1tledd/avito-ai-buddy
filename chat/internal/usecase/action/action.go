@@ -32,6 +32,8 @@ type actionService struct {
 	tx      port.Transactor
 }
 
+// NewService builds the action usecase: it needs the proposal repository,
+// the outbox repository, the auth token validator and a transaction manager.
 func NewService(actions repository, outbox outboxRepository, auth port.TokenValidator, tx port.Transactor) *actionService {
 	return &actionService{actions: actions, outbox: outbox, auth: auth, tx: tx}
 }

@@ -15,14 +15,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// PostgresRepository stores the processed Kafka event markers in PostgreSQL.
 type PostgresRepository struct {
 	queries sqlc.Querier
 }
 
+// NewPostgresRepository builds the repository over a pgx pool or transaction.
 func NewPostgresRepository(db sqlc.DBTX) *PostgresRepository {
 	return &PostgresRepository{queries: sqlc.New(db)}
 }
 
+// getQueries prefers the transaction from the context when present, so all
+// statements of a usecase run atomically.
 func (r *PostgresRepository) getQueries(ctx context.Context) sqlc.Querier {
 	if tx, err := transactor.ExtractTx(ctx); err == nil {
 		return sqlc.New(tx)

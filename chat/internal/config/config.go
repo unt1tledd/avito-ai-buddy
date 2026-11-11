@@ -8,6 +8,8 @@ import (
 	"github.com/caarlos0/env/v10"
 )
 
+// Config aggregates every configurable knob of the chat service, parsed
+// from the environment.
 type Config struct {
 	Clients struct {
 		UserGRPCAddr       string `env:"USER_GRPC_ADDR" envDefault:"user:50051"`
@@ -65,6 +67,8 @@ type KafkaConfig struct {
 	MaxAttempts       int           `env:"KAFKA_NOTIFY_MAX_ATTEMPTS" envDefault:"3"`
 }
 
+// New parses the configuration from the environment and validates the
+// values the service cannot start with.
 func New() (*Config, error) {
 	var cfg Config
 	if err := env.Parse(&cfg); err != nil {
@@ -94,6 +98,8 @@ func New() (*Config, error) {
 	return &cfg, nil
 }
 
+// BrokerAddrs returns the configured broker addresses as a clean list,
+// dropping empty entries around commas.
 func (c KafkaConfig) BrokerAddrs() []string {
 	var brokers []string
 	for _, part := range strings.Split(c.Brokers, ",") {

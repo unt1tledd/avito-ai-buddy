@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// MessageToProto converts a domain message into its protobuf representation.
 func MessageToProto(message entity.Message) *chatpb.Message {
 	result := &chatpb.Message{
 		Id:   strconv.FormatInt(message.ID, 10),
@@ -44,6 +45,8 @@ func MessageToProto(message entity.Message) *chatpb.Message {
 	return result
 }
 
+// AccessRequestToProto converts an access request into its protobuf
+// representation.
 func AccessRequestToProto(request entity.AccessRequest) *chatpb.AccessRequest {
 	return &chatpb.AccessRequest{
 		TaskId:            request.TaskID,
@@ -52,6 +55,8 @@ func AccessRequestToProto(request entity.AccessRequest) *chatpb.AccessRequest {
 	}
 }
 
+// HistoryToProto converts a history page into the protobuf response with the
+// cursor for the next page.
 func HistoryToProto(messages []entity.Message, nextPageToken string) *chatpb.GetHistoryResponse {
 	response := &chatpb.GetHistoryResponse{
 		Messages:      make([]*chatpb.Message, 0, len(messages)),

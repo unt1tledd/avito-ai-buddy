@@ -2,6 +2,7 @@ package entity
 
 import "time"
 
+// Conversation is a one-on-one dialog between the service and an intern.
 type Conversation struct {
 	ID        int64
 	UserID    int64

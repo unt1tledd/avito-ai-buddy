@@ -32,6 +32,7 @@ type (
 	}
 )
 
+// New wraps the next notifier with idempotent delivery backed by the queue.
 func New(queue Queue, next port.TaskEventsNotifier) *Inbox {
 	return &Inbox{queue: queue, next: next}
 }
@@ -47,7 +48,7 @@ func (i *Inbox) PublishTaskStatus(ctx context.Context, event port.TaskEvent) err
 		return fmt.Errorf("encode inbox payload: %w", err)
 	}
 	message := entity.InboxMessage{
-		IdempotencyKey: eventKey(event),
+		IdempotencyKey: event.IdempotencyKey(),
 		Data:           payload,
 		Kind:           inboxKindTaskStatusChange,
 	}
@@ -68,11 +69,4 @@ func (i *Inbox) PublishTaskStatus(ctx context.Context, event port.TaskEvent) err
 		return err
 	}
 	return nil
-}
-
-func eventKey(event port.TaskEvent) string {
-	if event.ExternalRequestID != "" {
-		return event.ExternalRequestID
-	}
-	return event.TaskID + "|" + event.Status
 }

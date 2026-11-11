@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"avito-ai-buddy/chat/internal/entity"
 	"avito-ai-buddy/chat/internal/port"
 )
 
@@ -12,14 +13,18 @@ import (
 type Event struct {
 	Type string `json:"type"`
 	StatusUpdate
+	Message *entity.Message `json:"message,omitempty"`
 }
 
-// Status update event types delivered over the WebSocket channel.
+// Event types delivered over the WebSocket channel.
 const (
 	EventTypeTaskStatusChanged   = "task.status_changed"
 	EventTypeAccessRequestFailed = "access_request.failed"
+	EventTypeMessageCreated      = "message.created"
 )
 
+// StatusUpdate is the payload of task status events: the affected task, the
+// external request that produced the update and the new status.
 type StatusUpdate struct {
 	TaskID            string `json:"task_id"`
 	ExternalRequestID string `json:"external_request_id,omitempty"`
@@ -34,6 +39,7 @@ type Hub struct {
 	subscribers map[string]map[chan Event]struct{}
 }
 
+// NewHub creates an empty hub without subscribers.
 func NewHub() *Hub {
 	return &Hub{subscribers: make(map[string]map[chan Event]struct{})}
 }
@@ -74,6 +80,14 @@ func (h *Hub) PublishAccessRequestFailed(_ context.Context, userID string, propo
 		Type:         EventTypeAccessRequestFailed,
 		StatusUpdate: StatusUpdate{TaskID: fmt.Sprintf("%d", proposalID), ExternalRequestID: idempotencyKey, Status: "failed"},
 	})
+	return nil
+}
+
+// PublishMessage pushes a newly created conversation message to the owner's
+// live subscribers. The message is persisted by the caller, so a failed push
+// only delays the live update.
+func (h *Hub) PublishMessage(_ context.Context, userID string, message entity.Message) error {
+	h.publish(userID, Event{Type: EventTypeMessageCreated, Message: &message})
 	return nil
 }
 

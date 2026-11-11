@@ -14,14 +14,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// PostgresRepository stores and dispatches the outbox messages in
+// PostgreSQL.
 type PostgresRepository struct {
 	queries sqlc.Querier
 }
 
+// NewPostgresRepository builds the repository over a pgx pool or transaction.
 func NewPostgresRepository(db sqlc.DBTX) *PostgresRepository {
 	return &PostgresRepository{queries: sqlc.New(db)}
 }
 
+// getQueries prefers the transaction from the context when present, so all
+// statements of a usecase run atomically.
 func (r *PostgresRepository) getQueries(ctx context.Context) sqlc.Querier {
 	if tx, err := transactor.ExtractTx(ctx); err == nil {
 		return sqlc.New(tx)
@@ -29,6 +34,8 @@ func (r *PostgresRepository) getQueries(ctx context.Context) sqlc.Querier {
 	return r.queries
 }
 
+// SendOutboxMessage enqueues a message for dispatch, skipping a message with
+// the same idempotency key.
 func (r *PostgresRepository) SendOutboxMessage(ctx context.Context, message entity.OutboxMessage) error {
 	return r.getQueries(ctx).SendOutboxMessage(ctx, sqlc.SendOutboxMessageParams{
 		IdempotencyKey: message.IdempotencyKey,
@@ -58,6 +65,8 @@ func FetchOptionsFromContext(ctx context.Context) (FetchOptions, bool) {
 	return options, ok
 }
 
+// GetMessages claims a batch of messages for dispatch, including ones stuck
+// in progress longer than the configured TTL.
 func (r *PostgresRepository) GetMessages(ctx context.Context) ([]entity.OutboxMessage, error) {
 	options, ok := FetchOptionsFromContext(ctx)
 	if !ok {
@@ -82,10 +91,13 @@ func (r *PostgresRepository) GetMessages(ctx context.Context) ([]entity.OutboxMe
 	return messages, nil
 }
 
+// MarkAsProcessed stores the successful delivery of the messages.
 func (r *PostgresRepository) MarkAsProcessed(ctx context.Context, keys []string) error {
 	return r.getQueries(ctx).MarkOutboxMessagesAsProcessed(ctx, keys)
 }
 
+// MarkAsRetryable returns the messages to CREATED and bumps the attempt
+// counter after a failed dispatch.
 func (r *PostgresRepository) MarkAsRetryable(ctx context.Context, keys []string) error {
 	return r.getQueries(ctx).MarkOutboxMessagesAsRetryable(ctx, keys)
 }

@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// main boots the chat service and exits with a non-zero code on failure.
 func main() {
 	if err := run(); err != nil {
 		os.Exit(1)

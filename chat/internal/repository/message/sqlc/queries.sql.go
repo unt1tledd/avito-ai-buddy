@@ -59,6 +59,36 @@ func (q *Queries) Create(ctx context.Context, arg CreateParams) (int64, error) {
 	return id, err
 }
 
+const createIdempotentMessage = `-- name: CreateIdempotentMessage :one
+INSERT INTO chat.message (conversation_id, role, body, sources, created_at, idempotency_key)
+VALUES ($1, $2, $3, $4, $5, $6::bigint)
+ON CONFLICT (conversation_id, idempotency_key) DO NOTHING
+RETURNING id
+`
+
+type CreateIdempotentMessageParams struct {
+	ConversationID int64              `json:"conversation_id"`
+	Role           ChatMessageRole    `json:"role"`
+	Body           string             `json:"body"`
+	Sources        []byte             `json:"sources"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	IdempotencyKey int64              `json:"idempotency_key"`
+}
+
+func (q *Queries) CreateIdempotentMessage(ctx context.Context, arg CreateIdempotentMessageParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createIdempotentMessage,
+		arg.ConversationID,
+		arg.Role,
+		arg.Body,
+		arg.Sources,
+		arg.CreatedAt,
+		arg.IdempotencyKey,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const finishReply = `-- name: FinishReply :execrows
 UPDATE chat.message
 SET assistant_message_id = $1, reply_claim_until = NULL

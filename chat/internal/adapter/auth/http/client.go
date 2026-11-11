@@ -11,15 +11,20 @@ import (
 	chaterrors "avito-ai-buddy/chat/internal/errors"
 )
 
+// Client validates access tokens against the auth service over HTTP.
 type Client struct {
 	client *http.Client
 	url    string
 }
 
+// NewClient builds a client for the auth validate endpoint.
 func NewClient(client *http.Client, baseURL, validatePath string) *Client {
 	return &Client{client: client, url: strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(validatePath, "/")}
 }
 
+// ValidateToken checks the token with the auth service and returns the
+// authenticated user ID. Invalid tokens are reported as ErrInvalidToken,
+// transport and server failures as ErrAuthUnavailable.
 func (c *Client) ValidateToken(ctx context.Context, token string) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, nil)
 	if err != nil {

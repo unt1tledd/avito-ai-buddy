@@ -11,15 +11,18 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Client implements port.userClient over the user service gRPC API.
+// Client implements the user context port over the user service gRPC API.
 type Client struct {
 	client userv1.UserServiceClient
 }
 
+// NewClient builds a client on top of an established gRPC connection.
 func NewClient(conn grpc.ClientConnInterface) *Client {
 	return &Client{client: userv1.NewUserServiceClient(conn)}
 }
 
+// GetUserContext fetches the intern profile snippet needed by the AI service:
+// the user and team IDs plus the intern role.
 func (c *Client) GetUserContext(ctx context.Context, userID string) (port.UserContext, error) {
 	id, err := strconv.ParseInt(userID, 10, 64)
 	if err != nil || id <= 0 {
