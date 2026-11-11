@@ -1,0 +1,138 @@
+:root {
+  --avito-green: #04E061;
+  --avito-green-soft: #C9FFBF;
+  --avito-blue: #00AAFF;
+  --avito-blue-soft: #BADAFB;
+  --avito-purple: #965EEB;
+  --avito-purple-soft: #DFCDF3;
+  --avito-coral: #FF4053;
+  --avito-coral-soft: #F7C1C5;
+  --avito-black: #141414;
+  --avito-gray: #5C5C5C;
+  --avito-light: #F3F4F6;
+  --avito-white: #FFFFFF;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--avito-white);
+  color: var(--avito-black);
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input {
+  font-family: inherit;
+}
+
+/* Фирменный четырёхцветный бейдж AIBUDDY в шапке */
+.aibuddy-logo-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 28px;
+  border-radius: 999px;
+  border: 2px solid var(--avito-black);
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  color: var(--avito-black);
+  background: linear-gradient(
+    90deg,
+    #4ADE80 0%,
+    #4ADE80 25%,
+    #60A5FA 25%,
+    #60A5FA 50%,
+    #A78BFA 50%,
+    #A78BFA 75%,
+    #FB7185 75%,
+    #FB7185 100%
+  );
+  user-select: none;
+}
+
+/* Круглые кнопки слева вверху (История и Roadmap) */
+.circle-icon-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--avito-black);
+  background: var(--avito-light);
+  color: var(--avito-black);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+.circle-icon-btn:hover {
+  transform: scale(1.04);
+  background: var(--avito-blue-soft);
+}
+
+.circle-icon-btn.active {
+  background: var(--avito-black);
+  color: var(--avito-white);
+}
+
+/* Пилюли предлагаемых запросов */
+.suggestion-pill {
+  border: 2px solid var(--avito-black);
+  background: var(--avito-light);
+  color: var(--avito-black);
+  border-radius: 999px;
+  padding: 10px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.suggestion-pill:hover {
+  background: var(--avito-blue-soft);
+  transform: translateY(-1px);
+}
+
+/* Строка ввода вопроса */
+.chat-input-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  border: 2px solid var(--avito-black);
+  background: var(--avito-light);
+  border-radius: 999px;
+  padding: 10px 18px;
+}
+
+.chat-input-bar input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  color: var(--avito-black);
+  outline: none;
+}
+
+.chat-input-bar input::placeholder {
+  color: var(--avito-gray);
+}
