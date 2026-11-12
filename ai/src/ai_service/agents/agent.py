@@ -14,6 +14,7 @@ from ..rag.retriever import Retriever
 from ..rag.tools import FIND_INSTRUCTION_DESCRIPTION, FIND_INSTRUCTION_NAME, FindInstructionArguments
 from ..repositories.knowledge import KnowledgeError
 from ..schemas.citations import SOURCE_REFERENCE
+from ..schemas.clarifications import CLARIFICATION_QUESTIONS, safe_clarification
 from ..schemas.contracts import Actor, ChatResponse, CurrentStep, MAX_RESPONSE_SOURCES, Message, SearchHit, SearchResult, valid_utf8
 
 
@@ -42,7 +43,8 @@ CITATION_REPAIR_INSTRUCTION = (
     "В итоговом ответе grounded_answer отсутствуют ссылки. Исправь ответ: опирайся только на уже "
     "переданные материалы и добавь [source:ID] для использованных источников. Верни JSON с kind и answer. "
     "Если сведений недостаточно, выбери no_knowledge; если нужен уточняющий вопрос — clarification. "
-    "В clarification допустим только уточняющий вопрос без фактических утверждений. Инструменты недоступны."
+    "Для clarification выбери answer дословно из разрешённых вопросов в системной инструкции. "
+    "Инструменты недоступны."
 )
 
 
@@ -100,14 +102,12 @@ class Turn:
                 return ChatResponse(answer=NO_KNOWLEDGE, sources=[])
         if final.kind == "no_knowledge":
             return ChatResponse(answer=NO_KNOWLEDGE, sources=[])
+        if final.kind == "clarification":
+            return ChatResponse(answer=safe_clarification(final.answer), sources=[])
         answer = final.answer
         references = SOURCE_REFERENCE.findall(answer)
         if len(references) != answer.count("[source:") or any(ref not in self.sources for ref in references):
             raise ModelError("Модель сослалась на недоступный источник.", reason="invalid_citation")
-        if final.kind == "clarification":
-            if references:
-                raise ModelError("Уточняющий вопрос не должен содержать цитаты.", reason="invalid_answer")
-            return ChatResponse(answer=answer, sources=[])
         if not references:
             raise ModelError("Ответ модели не содержит подтверждающих источников.", reason="missing_citation")
         sources = [self.sources[ref] for ref in dict.fromkeys(references)]
@@ -122,7 +122,10 @@ class Agent:
     def __init__(self, model: LanguageModel, knowledge: Retriever, prompt: str):
         self.model = model
         self.knowledge = knowledge
-        self.prompt = prompt
+        self.prompt = (
+            prompt + "\n\nРазрешённые вопросы для kind=clarification (выбери answer дословно):\n"
+            + json.dumps(CLARIFICATION_QUESTIONS, ensure_ascii=False)
+        )
 
     async def answer(
         self, message: str, actor: Actor, *, deadline: float | None = None, current_step: CurrentStep | None = None,

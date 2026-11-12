@@ -69,8 +69,9 @@ class Message(Payload):
     ]
     source_ids: list[Identifier] = Field(
         default_factory=list, max_length=MAX_RESPONSE_SOURCES,
-        description="Source IDs stored with a past assistant reply. Replies without provenance are excluded "
-        "from model context; every listed source must still be accessible to the current actor.",
+        description="Source IDs stored with a past assistant reply. Source-free replies are excluded unless "
+        "their complete text matches a service-defined clarification question; every listed source must "
+        "still be accessible to the current actor.",
     )
 
 

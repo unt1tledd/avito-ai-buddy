@@ -2,6 +2,7 @@ import json
 from collections.abc import Sequence
 
 from ..schemas.citations import SOURCE_REFERENCE
+from ..schemas.clarifications import CLARIFICATION_QUESTIONS
 from ..schemas.contracts import Actor, Message
 from .retriever import Retriever
 
@@ -23,6 +24,9 @@ async def prepare_history(history: Sequence[Message], actor: Actor, knowledge: R
     candidates = []
     for message in history[-MAX_HISTORY_MESSAGES:]:
         if message.role == "assistant":
+            if not message.source_ids and message.content in CLARIFICATION_QUESTIONS:
+                candidates.append(message)
+                continue
             references = SOURCE_REFERENCE.findall(message.content)
             if (
                 not message.source_ids

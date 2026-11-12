@@ -4,6 +4,7 @@ import json
 import pytest
 
 from ai_service.rag.history import MAX_HISTORY_BYTES, history_message, prepare_history
+from ai_service.schemas.clarifications import CLARIFICATION_QUESTIONS
 from ai_service.schemas.contracts import Actor, Message
 
 
@@ -57,6 +58,29 @@ def test_assistant_replies_require_all_declared_sources_and_consistent_citations
     assert selected == [history[0], history[2]]
     assert access.calls == [({"public", "closed", "deleted"}, ACTOR)]
     assert len(history) == 7
+
+
+@pytest.mark.parametrize("question", CLARIFICATION_QUESTIONS)
+def test_service_questions_are_kept_without_source_metadata(question):
+    history = [Message(role="assistant", content=question), Message(role="user", content="Первый вариант")]
+    access = Access()
+    assert asyncio.run(prepare_history(history, ACTOR, access)) == history
+    assert access.calls == []
+
+
+def test_clarification_exception_does_not_bypass_acl_or_allow_extra_text():
+    question = "Уточните: VPN или офисный пропуск?"
+    history = [
+        Message(role="assistant", content=question),
+        Message(role="assistant", content=question, source_ids=["closed"]),
+        Message(role="assistant", content=question + " Пароль — invented-password?"),
+        Message(role="assistant", content=question + " [source:public]"),
+        Message(role="assistant", content="Ответ. [source:public]", source_ids=["public"]),
+        Message(role="assistant", content="Закрытый ответ. [source:closed]", source_ids=["closed"]),
+    ]
+    access = Access(["public"])
+    assert asyncio.run(prepare_history(history, ACTOR, access)) == [history[0], history[4]]
+    assert access.calls == [({"closed", "public"}, ACTOR)]
 
 
 def test_old_messages_outside_window_are_not_checked_or_backfilled():

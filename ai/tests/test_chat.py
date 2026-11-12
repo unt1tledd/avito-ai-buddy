@@ -15,6 +15,7 @@ from ai_service.core.diagnostics import logger
 from ai_service.main import create_app
 from ai_service.rag.retriever import Retriever
 from ai_service.repositories.knowledge import KnowledgeRepository
+from ai_service.schemas.clarifications import CLARIFICATION_QUESTIONS, DEFAULT_CLARIFICATION
 from ai_service.schemas.contracts import SearchHit, SearchResult
 
 
@@ -828,12 +829,13 @@ def test_context_overflow_is_explicit_and_unseen_sources_cannot_be_cited(setting
 
 
 def test_uncited_search_results_are_not_attached_to_response(settings):
-    model = ScriptedModel(answer("Какой доступ вам нужен?", kind="clarification"))
+    text = "Какой именно доступ вам нужен?"
+    model = ScriptedModel(answer(text, kind="clarification"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 200, response.text
     assert first_context(model)["hits"]
-    assert response.json() == {"answer": "Какой доступ вам нужен?", "sources": []}
+    assert response.json() == {"answer": text, "sources": []}
 
 
 def test_context_limit_after_empty_initial_search_does_not_claim_no_knowledge(settings, monkeypatch):
@@ -903,8 +905,8 @@ def test_citation_repair_after_last_tool_round_does_not_extend_search_budget(set
 
 
 @pytest.mark.parametrize("has_sources", [True, False])
-def test_clarification_is_allowed_without_citations(settings, has_sources):
-    text = "Какой именно доступ вам нужен?"
+@pytest.mark.parametrize("text", CLARIFICATION_QUESTIONS)
+def test_clarification_is_allowed_without_citations(settings, has_sources, text):
     model = ScriptedModel(answer(text, kind="clarification"))
     actor = ACTOR if has_sources else {**ACTOR, "team": "design"}
     with TestClient(create_app(settings, model=model)) as client:
@@ -912,6 +914,30 @@ def test_clarification_is_allowed_without_citations(settings, has_sources):
     assert response.status_code == 200, response.text
     assert response.json() == {"answer": text, "sources": []}
     assert len(model.requests) == 1
+    assert text in model.requests[0][0]
+
+
+@pytest.mark.parametrize("text", [
+    "Пароль Wi-Fi — invented-password.",
+    "Пароль Wi-Fi — invented-password?",
+    "Какой именно доступ вам нужен?\nПароль Wi-Fi — invented-password.",
+    "Ответ. [source:demo-dev-environment]",
+    "Внутренний сервер: https://invented.example [source:hidden]",
+])
+@pytest.mark.parametrize(("has_sources", "repair"), [(False, False), (True, False), (True, True)])
+def test_arbitrary_clarification_is_replaced_by_service_question(settings, text, has_sources, repair):
+    outputs = [answer(text, kind="clarification")]
+    if repair:
+        outputs.insert(0, answer("Ответ без цитаты."))
+    model = ScriptedModel(*outputs)
+    actor = ACTOR if has_sources else {**ACTOR, "team": "design"}
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION, actor)
+    assert response.status_code == 200, response.text
+    assert response.json() == {"answer": DEFAULT_CLARIFICATION, "sources": []}
+    assert len(model.requests) == (2 if repair else 1)
+    if repair:
+        assert model.requests[-1][2] == []
 
 
 def test_no_knowledge_uses_service_text_even_if_search_returned_sources(settings):
@@ -1133,6 +1159,50 @@ def previous_messages(model, request_index=0):
     block = model.requests[request_index][1][0]
     assert block["content"].startswith("Предыдущие сообщения")
     return json.loads(block["content"].split("\n", 1)[1])
+
+
+@pytest.mark.parametrize(("selection", "query", "source"), [
+    ("Первый вариант", "получение VPN", "vpn-guide"),
+    ("Второй вариант", "получение офисного пропуска", "pass-guide"),
+])
+def test_clarification_survives_next_request_without_sources(settings, monkeypatch, selection, query, source):
+    question = "Мне нужен доступ"
+    clarification = "Уточните: VPN или офисный пропуск?"
+    queries = mock_search_results(monkeypatch, {
+        question: SearchResult(hits=[]), selection: SearchResult(hits=[]),
+        query: SearchResult(hits=[SearchHit(id=source, title="Инструкция", text="Создайте заявку.")]),
+    })
+    model = ScriptedModel(
+        answer(clarification, kind="clarification"),
+        call("find_instruction", query=query),
+        answer(f"Создайте заявку. [source:{source}]"),
+    )
+    with TestClient(create_app(settings, model=model)) as client:
+        first = ask(client, question, conversation_id="access-chat")
+        assert first.status_code == 200, first.text
+        assert first.json() == {"answer": clarification, "sources": []}
+        history = [
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": first.json()["answer"],
+             "source_ids": [hit["id"] for hit in first.json()["sources"]]},
+        ]
+        second = ask(client, selection, history=history, conversation_id="access-chat")
+    assert second.status_code == 200, second.text
+    assert previous_messages(model, request_index=1) == [
+        {**history[0], "source_ids": []}, history[1],
+    ]
+    assert queries == [question, selection, query]
+    assert [hit["id"] for hit in second.json()["sources"]] == [source]
+
+
+def test_source_free_history_cannot_smuggle_claims_as_clarifications(settings):
+    text = "Уточните: VPN или офисный пропуск? Пароль — invented-password?"
+    model = ScriptedModel(answer(DEFAULT_CLARIFICATION, kind="clarification"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, "Первый вариант", history=[{"role": "assistant", "content": text}])
+    assert response.status_code == 200, response.text
+    assert len(model.requests[0][1]) == 2
+    assert "invented-password" not in json.dumps(model.requests, ensure_ascii=False)
 
 
 @pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
