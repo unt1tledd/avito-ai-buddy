@@ -5,7 +5,6 @@ from importlib.resources import files
 
 import httpx
 from fastapi import FastAPI, Request, Response
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
@@ -73,15 +72,12 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
 
     @app.exception_handler(RequestValidationError)
     async def invalid_body(_request: Request, error: RequestValidationError) -> Response:
-        try:
-            detail = json.dumps(jsonable_encoder(error.errors()))
-            # Python's JSON decoder accepts NaN and Infinity, which aren't JSON values.
-            safe_detail = json.loads(detail, parse_constant=lambda _: None)
-        except RecursionError:
-            safe_detail = [
-                {key: issue[key] for key in ("type", "loc", "msg")}
-                for issue in error.errors()
-            ]
-        return Response(json.dumps({"detail": safe_detail}), status_code=422, media_type="application/json")
+        # Raw input may contain binary data, NaN, deep nesting or exception objects.
+        detail = [{key: issue[key] for key in ("type", "loc", "msg")} for issue in error.errors()]
+        # Escaping also handles unpaired surrogates in untrusted field names.
+        return Response(
+            json.dumps({"detail": detail}, ensure_ascii=True, allow_nan=False),
+            status_code=422, media_type="application/json",
+        )
 
     return app

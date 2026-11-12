@@ -40,4 +40,4 @@ class ChatService:
                 if self.agent is None:
                     raise ChatUnavailable("Чат с базой знаний недоступен.")
                 profile = Actor(user_id=actor.user_id, team=actor.team, role=actor.role)
-                return await self.agent.answer(message, profile)
+                return await self.agent.answer(message, profile, deadline=deadline)

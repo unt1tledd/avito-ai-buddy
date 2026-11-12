@@ -85,4 +85,7 @@ class SearchResult(Payload):
 
 class ChatResponse(Payload):
     answer: str
-    sources: list[SearchHit] = Field(max_length=MAX_RESPONSE_SOURCES)
+    sources: list[SearchHit] = Field(
+        max_length=MAX_RESPONSE_SOURCES,
+        description="Only sources cited in the answer, in order of first citation, without duplicates.",
+    )

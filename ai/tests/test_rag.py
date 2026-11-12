@@ -327,7 +327,8 @@ def test_long_document_tail_reaches_model_and_preserves_acl_after_reimport(pg_sc
                 text = f"Два рабочих дня. [source:{hits[0]['id']}]"
             else:
                 text = "Нет данных."
-            return ModelResponse(output=[{"type": "message", "content": [{"type": "output_text", "text": text}]}])
+            final = json.dumps({"kind": "grounded_answer" if hits else "no_knowledge", "answer": text})
+            return ModelResponse(output=[{"type": "message", "content": [{"type": "output_text", "text": final}]}])
 
     headers = {"Authorization": "Bearer chat-key"}
     with TestClient(create_app(settings, model=Model())) as client:
@@ -336,7 +337,7 @@ def test_long_document_tail_reaches_model_and_preserves_acl_after_reimport(pg_sc
         reply = client.post("/api/v1/get_answer", headers=headers, json=payload)
         assert reply.status_code == 200, reply.text
         assert "Два рабочих дня" in reply.json()["answer"]
-        assert reply.json()["sources"] == contexts[0]["hits"]
+        assert reply.json()["sources"] == contexts[0]["hits"][:1]
         assert all(hit["title"] == original.title and hit["url"] == str(original.url) for hit in reply.json()["sources"])
         for actor in ({"user_id": "42", "role": "mentor", "team": "51"},
                       {"user_id": "42", "role": "intern", "team": "52"}):

@@ -149,6 +149,8 @@ components:
           type: array
           maxItems: 6
           title: Sources
+          description: Only sources cited in the answer, in order of first citation,
+            without duplicates.
       additionalProperties: false
       type: object
       required:
