@@ -26,7 +26,7 @@ services:
       dockerfile: user/Dockerfile
     environment:
       GRPC_HOST: "0.0.0.0"
-      USER_SEED_DEMO: "${USER_SEED_DEMO:-false}"
+      USER_SEED_DEMO: "${USER_SEED_DEMO:-true}"
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: users
@@ -161,7 +161,7 @@ services:
     environment:
       ONBOARDING_POSTGRES_URL: "postgresql://onboarding_app:${ONBOARDING_DB_PASSWORD}@db:5432/onboarding?sslmode=disable"
       ONBOARDING_SERVICE_TOKEN: "${ONBOARDING_SERVICE_TOKEN:-}"
-      ONBOARDING_SEED_DEMO: "${ONBOARDING_SEED_DEMO:-false}"
+      ONBOARDING_SEED_DEMO: "${ONBOARDING_SEED_DEMO:-true}"
       USER_GRPC_ADDR: "user:9090"
       AUTH_BASE_URL: "http://auth:8080"
       ONBOARDING_HTTP_PORT: "8080"

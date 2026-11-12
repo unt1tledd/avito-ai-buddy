@@ -1,11 +1,18 @@
 """Select onboarding tracks and answer snapshot questions without inventing state."""
 
 import re
+import tomllib
 from collections.abc import Sequence
+from importlib.resources import files
 from unicodedata import normalize
 
 from ..schemas.clarifications import CLARIFICATION_QUESTIONS, ONBOARDING_TRACK_CLARIFICATION
 from ..schemas.contracts import ChatResponse, Message, OnboardingPlan
+
+
+TRACK_ALIASES = tomllib.loads(
+    files("ai_service.rag").joinpath("track_aliases.toml").read_text(encoding="utf-8")
+)
 
 
 # This is intentionally a vocabulary for bare follow-ups, not an extractor of names.
@@ -67,8 +74,10 @@ def mentioned_plans(text: str, plans: Sequence[OnboardingPlan]) -> list[Onboardi
                 identifier, title = step.resource_id, None
             else:
                 continue
+            aliases = TRACK_ALIASES.get(plan.id, ()) if level == "track" else ()
+            titles = (title, *aliases)
             if ((identifier and f" {normalized(identifier)} " in exact_text)
-                    or (title and f" {title_tokens(title)} " in inflected_text)):
+                    or any(name and f" {title_tokens(name)} " in inflected_text for name in titles)):
                 matches.append(plan)
         if matches:
             return matches

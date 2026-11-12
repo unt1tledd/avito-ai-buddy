@@ -140,7 +140,11 @@ class Agent:
         if ambiguous:
             return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
         recent_history = await prepare_history(history, actor, self.knowledge)
-        retrieved = await self._search(message, actor, turn)
+        query = message
+        if selected_plan is not None and selected_plan.current_step is not None:
+            step = selected_plan.current_step
+            query = f"{message} Текущий шаг: {step.title} ({step.id})"
+        retrieved = await self._search(query, actor, turn)
         context = retrieved.model_dump(mode="json")
         if onboarding_plans:
             context["onboarding_plans"] = [plan.model_dump(mode="json") for plan in onboarding_plans]

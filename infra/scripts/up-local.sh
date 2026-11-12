@@ -57,7 +57,8 @@ run_migration compose run --rm --no-deps \
   'go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir /migrations postgres "$AUTH_DATABASE_URL" up'
 
 printf '\n== Apply AI migrations ==\n'
-run_migration compose --profile tools run --rm ai-migrate
+# PostgreSQL is already healthy after the explicit wait above.
+run_migration compose --profile tools run --rm --no-deps ai-migrate
 
 if [[ "$import_ai" == true ]]; then
   printf '\n== Import the AI knowledge corpus ==\n'

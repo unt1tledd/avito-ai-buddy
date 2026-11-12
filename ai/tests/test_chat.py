@@ -1087,7 +1087,7 @@ def test_plan_step_is_accepted_and_used_for_search_and_model(settings, monkeypat
         })
 
     assert response.status_code == 200, response.text
-    assert queries == ["Как выполнить этот шаг?"]
+    assert queries == ["Как выполнить этот шаг? Текущий шаг: Настроить VPN (setup-vpn)"]
     context = first_context(model)
     assert context["onboarding_plans"][0]["current_step"] == {
         "id": "setup-vpn", "title": "Настроить VPN", "resource_id": resource.get("resource_id") or None,
@@ -1220,7 +1220,7 @@ def test_chat_onboarding_plans_reach_model_and_refined_search(settings, monkeypa
             "actor": ACTOR, "message": question, "onboarding_plans": plans,
         })
     assert response.status_code == 200, response.text
-    assert queries == [question, "Получить VPN vpn"]
+    assert queries == [f"{question} Текущий шаг: Получить VPN (vpn-step)", "Получить VPN vpn"]
     context = first_context(model)
     assert context["onboarding_plans"] == [
         plans[0],
@@ -1234,7 +1234,7 @@ def test_chat_onboarding_plans_reach_model_and_refined_search(settings, monkeypa
 
 @pytest.mark.parametrize("optional_fields", [{}, {"resource_id": "", "action_type": ""},
                                          {"resource_id": "vpn", "action_type": "request_access"}])
-def test_single_active_plan_is_context_without_changing_initial_search(settings, monkeypatch, optional_fields):
+def test_single_active_plan_provides_step_for_initial_search(settings, monkeypatch, optional_fields):
     queries = []
 
     async def embed(self, texts):
@@ -1251,7 +1251,7 @@ def test_single_active_plan_is_context_without_changing_initial_search(settings,
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, "Как выполнить этот шаг?", onboarding_plans=plans)
     assert response.status_code == 200, response.text
-    assert queries == ["Как выполнить этот шаг?"]
+    assert queries == ["Как выполнить этот шаг? Текущий шаг: Получить VPN (vpn-step)"]
     context = first_context(model)
     assert context["onboarding_plans"][1]["current_step"] == {
         **step, "resource_id": optional_fields.get("resource_id") or None,
@@ -1393,12 +1393,14 @@ def test_ambiguous_step_references_cannot_reach_search_or_generation(settings, m
     ], "company"),
 ])
 def test_explicit_track_choices_and_step_followups_reach_model(settings, monkeypatch, question, history, selected):
-    queries = mock_search_results(monkeypatch, {question: search_hits("guide")})
+    step = next(plan["current_step"] for plan in ONBOARDING_TRACKS if plan["id"] == selected)
+    query = f'{question} Текущий шаг: {step["title"]} ({step["id"]})'
+    queries = mock_search_results(monkeypatch, {query: search_hits("guide")})
     model = ScriptedModel(answer("Инструкция. [source:guide-0]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, question, history=history, onboarding_plans=ONBOARDING_TRACKS)
     assert response.status_code == 200, response.text
-    assert queries == [question]
+    assert queries == [query]
     assert first_context(model)["selected_onboarding_plan_id"] == selected
 
 
@@ -1565,13 +1567,35 @@ def test_snapshot_titles_cannot_inject_citations_or_instructions():
     "Какой у меня текущий шаг и как его выполнить?", "Какие доступы нужны на текущем шаге?",
 ])
 def test_instruction_requests_are_not_replaced_with_snapshot_summary(settings, monkeypatch, question):
-    queries = mock_search_results(monkeypatch, {question: search_hits("guide")})
+    query = f"{question} Текущий шаг: Настроить VPN (vpn-step)"
+    queries = mock_search_results(monkeypatch, {query: search_hits("guide")})
     model = ScriptedModel(answer("Инструкция. [source:guide-0]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, question, onboarding_plans=ONBOARDING_TRACKS[:1])
     assert response.status_code == 200, response.text
-    assert queries == [question]
+    assert queries == [query]
     assert response.json()["answer"] == "Инструкция. [source:guide-0]"
+
+
+@pytest.mark.parametrize("track_name", ["backend", "бекенд", "бэкенда"])
+def test_backend_step_instruction_searches_for_environment_setup(settings, monkeypatch, track_name):
+    plans = [
+        {"id": "backend", "title": "Backend", "current_step": {
+            "id": "dev-environment", "title": "Настрой рабочее окружение",
+        }},
+        ONBOARDING_TRACKS[1],
+    ]
+    question = f"Как выполнить текущий шаг в треке {track_name}?"
+    query = f"{question} Текущий шаг: Настрой рабочее окружение (dev-environment)"
+    source = SearchHit(id="synth-software-dev-environment", title="Настройка окружения", text="Запусти сервис по README.")
+    queries = mock_search_results(monkeypatch, {query: SearchResult(hits=[source])})
+    model = ScriptedModel(answer("Запусти сервис по README. [source:synth-software-dev-environment]"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, question, onboarding_plans=plans)
+    assert response.status_code == 200, response.text
+    assert queries == [query]
+    assert first_context(model)["selected_onboarding_plan_id"] == "backend"
+    assert [hit["id"] for hit in response.json()["sources"]] == ["synth-software-dev-environment"]
 
 
 def test_shared_resource_does_not_select_first_track(settings):

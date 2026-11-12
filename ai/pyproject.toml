@@ -26,6 +26,7 @@ dev = [
 
 [tool.setuptools.package-data]
 "ai_service.agents" = ["prompts/*.txt"]
+"ai_service.rag" = ["track_aliases.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
