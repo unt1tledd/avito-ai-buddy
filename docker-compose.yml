@@ -10,6 +10,7 @@ services:
       AUTH_DB_PASSWORD: "${AUTH_DB_PASSWORD:?Set AUTH_DB_PASSWORD in .env}"
       CHAT_DB_PASSWORD: "${CHAT_DB_PASSWORD:?Set CHAT_DB_PASSWORD in .env}"
       ONBOARDING_DB_PASSWORD: "${ONBOARDING_DB_PASSWORD:?Set ONBOARDING_DB_PASSWORD in .env}"
+      TASK_DB_PASSWORD: "${TASK_DB_PASSWORD:?Set TASK_DB_PASSWORD in .env}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -35,7 +36,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8084:8080"    
+      - "127.0.0.1:8084:8080"
 
   auth:
     build: ./auth
@@ -49,7 +50,7 @@ services:
       - "127.0.0.1:8081:8080"
 
   ai-migrate:
-    image: golang:1.27.0
+    image: golang:1.27.3
     profiles: ["tools"]
     environment:
       GOOSE_DRIVER: postgres
@@ -66,8 +67,6 @@ services:
     build: ./ai
     environment:
       KNOWLEDGE_DB_DSN: *ai_dsn
-      AI_MODE: "${AI_MODE:-demo}"
-      QUESTIONS_ONLY: "${QUESTIONS_ONLY:-true}"
       AI_SERVICE_TOKEN: "${AI_SERVICE_TOKEN:-}"
       LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_MODEL: "${LLM_MODEL:-}"
@@ -76,8 +75,9 @@ services:
       EMBEDDING_MODEL: "${EMBEDDING_MODEL:-text-embedding-3-small}"
       EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
       EMBEDDING_PROVIDER: "${EMBEDDING_PROVIDER:-}"
+      EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS:-}"
+      EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
       KNOWLEDGE_PROCESSING_APPROVED: "${KNOWLEDGE_PROCESSING_APPROVED:-false}"
-      EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS}"
     depends_on:
       db:
         condition: service_healthy
@@ -113,7 +113,7 @@ services:
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        for topic in task.access_requests.create task.status.changed task.status.changed-dlq; do
+        for topic in task.access_requests.create task.access_requests.create-dlq task.status.changed task.status.changed-dlq; do
           /opt/kafka/bin/kafka-topics.sh \
             --bootstrap-server kafka:9092 \
             --create \
@@ -128,33 +128,40 @@ services:
       context: .
       dockerfile: chat/Dockerfile
     environment:
-      CHAT_POSTGRES_URL: "postgresql://chat_app:${CHAT_DB_PASSWORD:?Set CHAT_DB_PASSWORD in .env}@db:5432/chat?sslmode=disable"
+      CHAT_POSTGRES_URL: "postgresql://chat_app:${CHAT_DB_PASSWORD}@db:5432/chat?sslmode=disable"
       AUTH_BASE_URL: "http://auth:8080"
       CHAT_HTTP_PORT: "8080"
       CHAT_GRPC_PORT: "50051"
       USER_GRPC_ADDR: "user:9090"
+      ONBOARDING_GRPC_ADDR: "onboarding:50051"
       AI_BASE_URL: "http://ai:8080"
+      AI_SERVICE_TOKEN: "${AI_SERVICE_TOKEN:-}"
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_TASK_COMMANDS_TOPIC: "task.access_requests.create"
-      CHAT_TASK_EVENTS_TOKEN: "${CHAT_TASK_EVENTS_TOKEN:-}"
     depends_on:
       db:
         condition: service_healthy
       auth:
+        condition: service_started
+      user:
+        condition: service_started
+      onboarding:
+        condition: service_started
+      ai:
         condition: service_started
       kafka-init:
         condition: service_completed_successfully
     ports:
       - "127.0.0.1:8082:8080"
 
-
   onboarding:
     build:
       context: .
       dockerfile: onboarding/Dockerfile
     environment:
-      ONBOARDING_POSTGRES_URL: "postgresql://onboarding_app:${ONBOARDING_DB_PASSWORD:?Set ONBOARDING_DB_PASSWORD in .env}@db:5432/onboarding?sslmode=disable"
+      ONBOARDING_POSTGRES_URL: "postgresql://onboarding_app:${ONBOARDING_DB_PASSWORD}@db:5432/onboarding?sslmode=disable"
       ONBOARDING_SERVICE_TOKEN: "${ONBOARDING_SERVICE_TOKEN:-}"
+      ONBOARDING_SEED_DEMO: "${ONBOARDING_SEED_DEMO:-false}"
       USER_GRPC_ADDR: "user:9090"
       AUTH_BASE_URL: "http://auth:8080"
       ONBOARDING_HTTP_PORT: "8080"
@@ -168,6 +175,37 @@ services:
         condition: service_started
     ports:
       - "127.0.0.1:8083:8080"
+
+  task:
+    build:
+      context: .
+      dockerfile: task/Dockerfile
+    environment:
+      TASK_DATABASE_URL: "postgresql://task_app:${TASK_DB_PASSWORD}@db:5432/task_db?sslmode=disable"
+      TASK_TRACKER_TOKEN: "${TASK_TRACKER_TOKEN:-}"
+      TASK_USER_BASE_URL: "http://user:8080"
+      TASK_HTTP_ADDR: "0.0.0.0:8084"
+      TASK_GRPC_ADDR: "0.0.0.0:9094"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TASK_COMMANDS_TOPIC: "task.access_requests.create"
+      KAFKA_TASK_COMMANDS_DLQ_TOPIC: "task.access_requests.create-dlq"
+      KAFKA_TASK_EVENTS_TOPIC: "task.status.changed"
+    depends_on:
+      db:
+        condition: service_healthy
+      user:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8086:8084"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8085:80"
 
 volumes:
   postgres_data:
