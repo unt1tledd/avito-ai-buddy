@@ -1,12 +1,13 @@
 import asyncio
 import json
+from collections.abc import Sequence
 
 import psycopg
 from psycopg_pool import AsyncConnectionPool, PoolTimeout, TooManyRequests
 from pydantic import ValidationError
 
 from ..core.diagnostics import UpstreamError, operation
-from ..schemas.contracts import Actor, Document, MAX_SOURCE_TEXT, SearchHit, SearchResult
+from ..schemas.contracts import Actor, Document, DocumentChunk, MAX_CHUNK_TEXT, SearchHit, SearchResult
 
 
 SEARCH_DB_TIMEOUT_SECONDS = 3
@@ -20,7 +21,7 @@ SEARCH_SQL = """
         SELECT 1 FROM document_chunks WHERE embedding_profile = %(profile)s
     ) AS present) AS profile
     LEFT JOIN LATERAL (
-        SELECT c.source_id AS id, d.title, d.url, left(c.body, %(snippet)s) AS text,
+        SELECT c.source_id AS id, d.title, d.url, c.body AS text,
                c.embedding <=> %(vector)s::vector AS distance
         FROM document_chunks AS c
         JOIN documents AS d ON d.id = c.document_id
@@ -83,7 +84,7 @@ class KnowledgeRepository:
                     cursor = await db.execute(SEARCH_SQL, {
                         "profile": profile, "role": actor.role, "team": actor.team,
                         "vector": json.dumps(embedding), "limit": MAX_SEARCH_HITS,
-                        "max_distance": 1 - min_similarity, "snippet": MAX_SOURCE_TEXT,
+                        "max_distance": 1 - min_similarity,
                     })
                     rows = await cursor.fetchall()
                 if not rows[0]["present"]:
@@ -107,17 +108,27 @@ class KnowledgeRepository:
                         JOIN document_access AS a ON a.document_id = d.id
                         WHERE a.principal_type = 'role' LIMIT 0
                     """)
-                    cursor = await db.execute(
-                        "SELECT 1 FROM document_chunks WHERE embedding_profile = %s LIMIT 1", (profile,)
-                    )
-                    if await cursor.fetchone() is None:
+                    cursor = await db.execute("""
+                        SELECT count(*) AS chunks,
+                               coalesce(bool_or(char_length(body) > %s), false) AS oversized
+                        FROM document_chunks WHERE embedding_profile = %s
+                    """, (MAX_CHUNK_TEXT, profile))
+                    state = await cursor.fetchone()
+                    if not state["chunks"]:
                         raise missing_profile()
+                    if state["oversized"]:
+                        raise KnowledgeError(
+                            "База знаний содержит длинные фрагменты; выполните повторный импорт.",
+                            reason="reindex_required",
+                        )
             except (psycopg.Error, PoolTimeout, TimeoutError) as error:
                 raise KnowledgeError("База знаний не готова.", reason=db_failure(error)) from error
 
     async def replace(
-        self, documents: list[Document], vectors: list[list[float]], model: str, profile: str
+        self, documents: Sequence[Document], vectors: list[list[float]], model: str, profile: str
     ) -> None:
+        # Vectors must already correspond to bounded chunks. Never split after embedding.
+        chunks = [DocumentChunk.model_validate(document.model_dump()) for document in documents]
         rows = [
             (
                 document.title,
@@ -130,7 +141,7 @@ class KnowledgeRepository:
                 sorted(document.roles),
                 sorted(document.teams),
             )
-            for document, vector in zip(documents, vectors, strict=True)
+            for document, vector in zip(chunks, vectors, strict=True)
         ]
         with operation("db.import"):
             try:

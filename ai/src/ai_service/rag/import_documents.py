@@ -10,6 +10,7 @@ from ..core.diagnostics import UpstreamError
 from ..core.config import Settings
 from ..repositories.knowledge import KnowledgeRepository
 from ..schemas.contracts import Document
+from .chunking import chunk_documents
 
 
 IMPORT_EMBEDDING_TIMEOUT_SECONDS = 25
@@ -33,11 +34,12 @@ async def import_documents(source: Path, settings: Settings) -> None:
         ]
         raise ValueError(f"Некорректный файл базы знаний. Ошибки: {issues}") from None
     if len(documents) > MAX_IMPORT_DOCUMENTS:
-        raise ValueError("База знаний превышает 1000 фрагментов.")
+        raise ValueError("База знаний превышает 1000 документов.")
     if not documents:
-        raise ValueError("Для импорта нужен хотя бы один фрагмент.")
+        raise ValueError("Для импорта нужен хотя бы один документ.")
     if len({document.id for document in documents}) != len(documents):
-        raise ValueError("ID фрагментов должны быть уникальными.")
+        raise ValueError("ID документов должны быть уникальными.")
+    chunks = chunk_documents(documents)
     if not settings.knowledge_db_dsn:
         raise ValueError("Укажи KNOWLEDGE_DB_DSN.")
 
@@ -47,11 +49,11 @@ async def import_documents(source: Path, settings: Settings) -> None:
     vectors: list[list[float]] = []
     async with httpx.AsyncClient(timeout=IMPORT_EMBEDDING_TIMEOUT_SECONDS) as http:
         embeddings = Embeddings(http, settings)
-        for start in range(0, len(documents), IMPORT_EMBEDDING_BATCH_SIZE):
-            batch = documents[start:start + IMPORT_EMBEDDING_BATCH_SIZE]
-            vectors.extend(await embeddings.embed([document.embedding_text() for document in batch]))
+        for start in range(0, len(chunks), IMPORT_EMBEDDING_BATCH_SIZE):
+            batch = chunks[start:start + IMPORT_EMBEDDING_BATCH_SIZE]
+            vectors.extend(await embeddings.embed([chunk.embedding_text() for chunk in batch]))
 
-    await KnowledgeRepository(settings.knowledge_db_dsn).replace(documents, vectors, embeddings.model, embeddings.profile)
+    await KnowledgeRepository(settings.knowledge_db_dsn).replace(chunks, vectors, embeddings.model, embeddings.profile)
 
 
 if __name__ == "__main__":

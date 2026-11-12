@@ -6,7 +6,8 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, Stri
 
 MAX_CHAT_MESSAGE_LENGTH = 4000
 MAX_DOCUMENT_TEXT = 4000
-MAX_SOURCE_TEXT = 1200
+MAX_CHUNK_TEXT = 1200
+MAX_SOURCE_TEXT = MAX_CHUNK_TEXT
 MAX_RESPONSE_SOURCES = 6
 
 Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
@@ -70,6 +71,12 @@ class Document(Source):
 
     def embedding_text(self) -> str:
         return "\n".join([self.title, self.text, *self.keywords])
+
+
+class DocumentChunk(Document):
+    """The complete text indexed by one embedding and returned by search."""
+
+    text: str = Field(min_length=1, max_length=MAX_CHUNK_TEXT)
 
 
 class SearchResult(Payload):
