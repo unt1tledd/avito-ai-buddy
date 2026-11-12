@@ -7,6 +7,7 @@ interface OnboardingPageProps {
   isClosing: boolean;
   onAnimationEnd?: React.AnimationEventHandler<HTMLElement>;
   onClose: () => void;
+  onToggleStep: (stepId: string) => void;
   onSelectStepQuestion: (question: string) => void;
 }
 
@@ -23,15 +24,12 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   isClosing,
   onAnimationEnd,
   onClose,
+  onToggleStep,
   onSelectStepQuestion,
 }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<'1 неделя' | '2 неделя' | '1 месяц' | '3+ месяца'>('1 неделя');
   const [viewMode, setViewMode] = useState<'graph' | 'cards'>('graph');
 
-  const completedCount = steps.filter((s) => s.completed).length;
-  const percent = Math.round((completedCount / steps.length) * 100);
-
-  // Связываем шаги и заявки по resource_id
   const getStepTask = (resourceId?: string) => {
     if (!resourceId) return undefined;
     return tasks.find((t) => t.resource_id === resourceId);
@@ -41,6 +39,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
     const linkedTask = getStepTask(step.resource_id);
     return step.completed || linkedTask?.status === 'approved';
   };
+
+  const completedCount = steps.filter((s) => isStepCompleted(s)).length;
+  const percent = Math.round((completedCount / steps.length) * 100);
 
   const filteredSteps = steps.filter((s) => s.period === selectedPeriod);
 
@@ -60,7 +61,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingBottom: '14px',
-          borderBottom: '2px solid #141414',
+          borderBottom: '2px solid var(--border-color)',
           marginBottom: '14px',
         }}
       >
@@ -86,8 +87,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
             width: '32px',
             height: '32px',
             borderRadius: '50%',
-            border: '2px solid #141414',
-            background: '#FFFFFF',
+            border: '2px solid var(--border-color)',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
             fontWeight: 800,
             fontSize: '16px',
           }}
@@ -99,10 +101,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
       {/* Блок прогресса */}
       <div
         style={{
-          border: '2px solid #141414',
+          border: '2px solid var(--border-color)',
           borderRadius: '14px',
           padding: '12px 14px',
           marginBottom: '12px',
+          background: 'var(--bg-surface)',
         }}
       >
         <div
@@ -123,10 +126,10 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           style={{
             width: '100%',
             height: '12px',
-            border: '1.5px solid #141414',
+            border: '1.5px solid var(--border-color)',
             borderRadius: '999px',
             overflow: 'hidden',
-            background: '#F3F4F6',
+            background: 'var(--bg-muted)',
           }}
         >
           <div
@@ -155,9 +158,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
             flex: 1,
             padding: '7px 10px',
             borderRadius: '8px',
-            border: '2px solid #141414',
-            background: viewMode === 'graph' ? '#141414' : '#FFFFFF',
-            color: viewMode === 'graph' ? '#FFFFFF' : '#141414',
+            border: '2px solid var(--border-color)',
+            background: viewMode === 'graph' ? 'var(--btn-primary-bg)' : 'var(--bg-surface)',
+            color: viewMode === 'graph' ? 'var(--btn-primary-text)' : 'var(--text-primary)',
             fontSize: '12px',
             fontWeight: 700,
           }}
@@ -171,9 +174,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
             flex: 1,
             padding: '7px 10px',
             borderRadius: '8px',
-            border: '2px solid #141414',
-            background: viewMode === 'cards' ? '#141414' : '#FFFFFF',
-            color: viewMode === 'cards' ? '#FFFFFF' : '#141414',
+            border: '2px solid var(--border-color)',
+            background: viewMode === 'cards' ? 'var(--btn-primary-bg)' : 'var(--bg-surface)',
+            color: viewMode === 'cards' ? 'var(--btn-primary-text)' : 'var(--text-primary)',
             fontSize: '12px',
             fontWeight: 700,
           }}
@@ -193,9 +196,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                 flex: 1,
                 padding: '6px 4px',
                 borderRadius: '8px',
-                border: '1.5px solid #141414',
-                background: selectedPeriod === period ? '#141414' : '#FFFFFF',
-                color: selectedPeriod === period ? '#FFFFFF' : '#141414',
+                border: '1.5px solid var(--border-color)',
+                background: selectedPeriod === period ? 'var(--btn-primary-bg)' : 'var(--bg-surface)',
+                color: selectedPeriod === period ? 'var(--btn-primary-text)' : 'var(--text-primary)',
                 fontSize: '11px',
                 fontWeight: 700,
               }}
@@ -206,7 +209,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
         </div>
       )}
 
-      {/* Отображение Этапов: вершины строго посередине своего уровня и непрерывные линии */}
+      {/* Отображение Этапов: интерактивные пустые кружочки с кликом для галочки и снятия */}
       {viewMode === 'graph' ? (
         <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '4px' }}>
           {steps.map((step, idx) => {
@@ -233,7 +236,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                   gap: '14px',
                 }}
               >
-                {/* Левая колонка: верхняя полулиния + кружок ровно по центру + нижняя полулиния */}
+                {/* Левая колонка: верхняя полулиния + интерактивный кружок по центру + нижняя полулиния */}
                 <div
                   style={{
                     display: 'flex',
@@ -253,31 +256,27 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                           ? 'transparent'
                           : isTopConnectorGreen
                           ? '#04E061'
-                          : '#141414',
+                          : 'var(--line-color)',
+                      transition: 'background-color 0.25s ease',
                     }}
                   />
-                  <div
-                    style={{
-                      width: '34px',
-                      height: '34px',
-                      borderRadius: '50%',
-                      border: '2px solid #141414',
-                      background: isDone
-                        ? '#04E061'
-                        : isCurrent
-                        ? '#00AAFF'
-                        : '#FFFFFF',
-                      color: '#141414',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '13px',
-                      flexShrink: 0,
-                    }}
+                  <button
+                    type="button"
+                    className={`roadmap-check-circle${isDone ? ' roadmap-check-circle--done' : ''}`}
+                    onClick={() => onToggleStep(step.step_id)}
+                    title={
+                      isDone
+                        ? `Снять отметку с шага ${step.step_number}`
+                        : `Отметить шаг ${step.step_number} выполненным`
+                    }
+                    aria-label={
+                      isDone
+                        ? `Снять отметку с шага ${step.step_number}`
+                        : `Отметить шаг ${step.step_number} выполненным`
+                    }
                   >
-                    {isDone ? '✓' : step.step_number}
-                  </div>
+                    <span className="roadmap-check-icon">✓</span>
+                  </button>
                   <div
                     style={{
                       width: '3px',
@@ -288,7 +287,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                           ? 'transparent'
                           : isBottomConnectorGreen
                           ? '#04E061'
-                          : '#141414',
+                          : 'var(--line-color)',
+                      transition: 'background-color 0.25s ease',
                     }}
                   />
                 </div>
@@ -297,15 +297,16 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                 <div
                   style={{
                     flex: 1,
-                    border: '2px solid #141414',
+                    border: '2px solid var(--border-color)',
                     borderRadius: '12px',
                     padding: '10px 12px',
                     margin: '6px 0',
                     background: isDone
-                      ? '#FFFFFF'
+                      ? 'var(--bg-surface)'
                       : isCurrent
-                      ? '#EAF4FF'
-                      : '#F9FAFB',
+                      ? 'var(--bg-active-card)'
+                      : 'var(--bg-subtle)',
+                    transition: 'background-color 0.25s ease, border-color 0.25s ease',
                   }}
                 >
                   <div
@@ -317,7 +318,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                       gap: '6px',
                     }}
                   >
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#5C5C5C' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}>
                       ШАГ {step.step_number} • {step.period.toUpperCase()}
                     </span>
                     <span
@@ -327,13 +328,14 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                         padding: '2px 8px',
                         borderRadius: '999px',
                         border: '1.5px solid #141414',
+                        color: '#141414',
                         background: isDone
                           ? '#C9FFBF'
                           : isPending
                           ? '#DFCDF3'
                           : isCurrent
                           ? '#BADAFB'
-                          : '#FFFFFF',
+                          : '#F3F4F6',
                       }}
                     >
                       {isDone
@@ -349,7 +351,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                   <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>
                     {step.title}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#5C5C5C', lineHeight: 1.35 }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
                     {step.description}
                   </div>
 
@@ -364,8 +366,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                         width: '100%',
                         padding: '6px 10px',
                         borderRadius: '8px',
-                        border: '1.5px solid #141414',
-                        background: '#FFFFFF',
+                        border: '1.5px solid var(--border-color)',
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
                         fontSize: '12px',
                         fontWeight: 700,
                         textAlign: 'left',
@@ -380,7 +383,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           })}
         </div>
       ) : (
-        /* Отображение карточками выбранной недели */
+        /* Отображение карточками выбранной недели (тоже с интерактивным кружочком-галочкой) */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {filteredSteps.map((step) => {
             const isDone = isStepCompleted(step);
@@ -390,10 +393,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
               <div
                 key={step.step_id}
                 style={{
-                  border: '2px solid #141414',
+                  border: '2px solid var(--border-color)',
                   borderRadius: '14px',
                   padding: '14px',
-                  background: isCurrent ? '#EAF4FF' : '#FFFFFF',
+                  background: isCurrent ? 'var(--bg-active-card)' : 'var(--bg-surface)',
+                  transition: 'background-color 0.25s ease, border-color 0.25s ease',
                 }}
               >
                 <div
@@ -404,9 +408,24 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                     marginBottom: '8px',
                   }}
                 >
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#5C5C5C' }}>
-                    ШАГ {step.step_number}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                      type="button"
+                      className={`roadmap-check-circle${isDone ? ' roadmap-check-circle--done' : ''}`}
+                      onClick={() => onToggleStep(step.step_id)}
+                      style={{ width: '28px', height: '28px', fontSize: '14px' }}
+                      title={
+                        isDone
+                          ? `Снять отметку с шага ${step.step_number}`
+                          : `Отметить шаг ${step.step_number} выполненным`
+                      }
+                    >
+                      <span className="roadmap-check-icon">✓</span>
+                    </button>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      ШАГ {step.step_number}
+                    </span>
+                  </div>
                   <span
                     style={{
                       fontSize: '11px',
@@ -414,6 +433,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                       padding: '3px 10px',
                       borderRadius: '999px',
                       border: '1.5px solid #141414',
+                      color: '#141414',
                       background: isDone ? '#C9FFBF' : isCurrent ? '#BADAFB' : '#F3F4F6',
                     }}
                   >
@@ -423,7 +443,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                 <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px' }}>
                   {step.title}
                 </div>
-                <div style={{ fontSize: '12px', color: '#5C5C5C', lineHeight: 1.4 }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                   {step.description}
                 </div>
                 {isCurrent && (
@@ -436,8 +456,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                       marginTop: '10px',
                       padding: '7px 12px',
                       borderRadius: '8px',
-                      border: '1.5px solid #141414',
-                      background: '#FFFFFF',
+                      border: '1.5px solid var(--border-color)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
                       fontSize: '12px',
                       fontWeight: 700,
                     }}

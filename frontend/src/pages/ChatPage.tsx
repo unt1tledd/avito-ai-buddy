@@ -13,15 +13,16 @@ import { OnboardingPage } from './OnboardingPage';
 interface ChatPageProps {
   steps: OnboardingStep[];
   tasks: AccessTask[];
+  onToggleStep: (stepId: string) => void;
   onProposalConfirmed: (resourceId: string, issueKey: string) => void;
 }
 
 export const ChatPage: React.FC<ChatPageProps> = ({
   steps,
   tasks,
+  onToggleStep,
   onProposalConfirmed,
 }) => {
-  // Какая левая панель выбрана и открыта ли она сейчас
   const [activeDrawer, setActiveDrawer] = useState<'history' | 'roadmap'>('history');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -31,16 +32,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Состояние демонстрации карточки доступа: 'draft' | 'sending' | 'approved'
   const [proposalStage, setProposalStage] = useState<'draft' | 'sending' | 'approved'>('approved');
-
-  // Режим демонстрации ошибки и повтора (Схема 04)
   const [showRetryComparison, setShowRetryComparison] = useState(false);
 
-  // Реф для автоскролла чата вниз при переполнении экрана
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
-  // Реф для автоматического увеличения высоты поля ввода (как в Gemini)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -72,7 +67,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     setIsDrawerOpen(false);
   };
 
-  // Создание нового диалога в панели «История запросов»
   const handleStartNewQuestion = () => {
     setMessages([]);
     setShowRetryComparison(false);
@@ -213,7 +207,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     setIsLoading(false);
   };
 
-  // Быстрые подсказки над строкой ввода: строго по убыванию длины (длинный -> помельче -> ещё помельче)
   const lastAssistant = [...messages].reverse().find((m) => m.sender === 'assistant');
   const rawSuggestions = lastAssistant?.proposal
     ? [
@@ -266,7 +259,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 paddingBottom: '14px',
-                borderBottom: '2px solid #141414',
+                borderBottom: '2px solid var(--border-color)',
                 marginBottom: '14px',
               }}
             >
@@ -290,8 +283,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   width: '32px',
                   height: '32px',
                   borderRadius: '50%',
-                  border: '2px solid #141414',
-                  background: '#FFFFFF',
+                  border: '2px solid var(--border-color)',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
                   fontWeight: 800,
                 }}
               >
@@ -306,9 +300,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 width: '100%',
                 padding: '12px',
                 borderRadius: '10px',
-                border: '2px solid #141414',
-                background: '#141414',
-                color: '#FFFFFF',
+                border: '2px solid var(--border-color)',
+                background: 'var(--btn-primary-bg)',
+                color: 'var(--btn-primary-text)',
                 fontWeight: 700,
                 fontSize: '14px',
                 marginBottom: '16px',
@@ -323,7 +317,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   style={{
                     fontSize: '11px',
                     fontWeight: 800,
-                    color: '#5C5C5C',
+                    color: 'var(--text-secondary)',
                     marginBottom: '8px',
                   }}
                 >
@@ -344,15 +338,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                             setShowRetryComparison(false);
                           }}
                           style={{
-                            border: '2px solid #141414',
+                            border: '2px solid var(--border-color)',
                             borderRadius: '12px',
                             padding: '12px',
                             background: isSelected
-                              ? '#EAF4FF'
-                              : item.badgeTone === 'green'
-                              ? '#F5FAFF'
-                              : '#FFFFFF',
-                            boxShadow: isSelected ? '0 2px 0 #141414' : undefined,
+                              ? 'var(--bg-active-card)'
+                              : 'var(--bg-surface)',
+                            boxShadow: isSelected ? '0 2px 0 var(--shadow-color)' : undefined,
                             cursor: 'pointer',
                           }}
                         >
@@ -364,7 +356,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                               marginBottom: '6px',
                             }}
                           >
-                            <span style={{ fontSize: '11px', color: '#5C5C5C' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                               {item.timeLabel}
                             </span>
                             <span
@@ -374,6 +366,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                                 padding: '2px 8px',
                                 borderRadius: '999px',
                                 border: '1.5px solid #141414',
+                                color: '#141414',
                                 background:
                                   item.badgeTone === 'green'
                                     ? '#C9FFBF'
@@ -427,8 +420,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 width: '100%',
                 padding: '10px',
                 borderRadius: '10px',
-                border: '2px solid #141414',
-                background: '#F3F4F6',
+                border: '2px solid var(--border-color)',
+                background: 'var(--bg-muted)',
+                color: 'var(--text-primary)',
                 fontWeight: 700,
                 fontSize: '13px',
               }}
@@ -442,6 +436,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             tasks={tasks}
             isClosing={!isDrawerOpen}
             onClose={closeDrawer}
+            onToggleStep={onToggleStep}
             onSelectStepQuestion={(q) => {
               handleSend(q);
             }}
@@ -503,7 +498,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           </button>
         </div>
 
-        {/* Прокручиваемая область сообщений (внутри выровнена ровно по ширине строки запроса) */}
+        {/* Прокручиваемая область сообщений */}
         <div className="chat-scroll-area">
           <div className="chat-feed-column">
             {/* Начальный пустой экран */}
@@ -514,7 +509,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#737373',
+                  color: 'var(--text-muted)',
                   fontSize: '18px',
                   fontWeight: 600,
                   textAlign: 'center',
@@ -530,19 +525,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 {/* Левая карточка: Сбой */}
                 <div
                   style={{
-                    border: '2px solid #141414',
+                    border: '2px solid var(--border-color)',
                     borderRadius: '16px',
                     padding: '18px',
-                    background: '#FFFFFF',
+                    background: 'var(--bg-surface)',
                   }}
                 >
                   <div
                     style={{
-                      color: '#E11D48',
+                      color: '#FF4053',
                       fontWeight: 800,
                       fontSize: '14px',
                       paddingBottom: '10px',
-                      borderBottom: '2px solid #141414',
+                      borderBottom: '2px solid var(--border-color)',
                       marginBottom: '14px',
                     }}
                   >
@@ -551,10 +546,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
                     <div
                       style={{
-                        border: '2px solid #141414',
+                        border: '2px solid var(--border-color)',
                         borderRadius: '999px',
                         padding: '8px 18px',
-                        background: '#F3F4F6',
+                        background: 'var(--bg-muted)',
+                        color: 'var(--text-primary)',
                         fontWeight: 700,
                         fontSize: '13px',
                       }}
@@ -568,6 +564,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       borderRadius: '14px',
                       padding: '14px',
                       background: '#F7C1C5',
+                      color: '#141414',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
@@ -588,7 +585,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         !
                       </span>
                       <div>
-                        <div style={{ fontWeight: 800, fontSize: '13px' }}>
+                        <div style={{ fontWeight: 800, fontSize: '13px', color: '#141414' }}>
                           Не удалось получить ответ. Твой вопрос сохранён
                         </div>
                         <div style={{ fontSize: '12px', color: '#141414' }}>
@@ -608,6 +605,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         borderRadius: '10px',
                         border: '2px solid #141414',
                         background: '#FFFFFF',
+                        color: '#141414',
                         fontWeight: 800,
                         fontSize: '13px',
                       }}
@@ -620,16 +618,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 {/* Правая карточка: После нажатия */}
                 <div
                   style={{
-                    border: '2px solid #141414',
+                    border: '2px solid var(--border-color)',
                     borderRadius: '16px',
                     padding: '18px',
-                    background: '#FFFFFF',
+                    background: 'var(--bg-surface)',
                   }}
                 >
                   <div
                     style={{
                       display: 'inline-block',
                       background: '#C9FFBF',
+                      color: '#141414',
                       border: '1.5px solid #141414',
                       borderRadius: '6px',
                       padding: '4px 10px',
@@ -643,10 +642,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
                     <div
                       style={{
-                        border: '2px solid #141414',
+                        border: '2px solid var(--border-color)',
                         borderRadius: '999px',
                         padding: '8px 18px',
-                        background: '#F3F4F6',
+                        background: 'var(--bg-muted)',
+                        color: 'var(--text-primary)',
                         fontWeight: 700,
                         fontSize: '13px',
                       }}
@@ -656,10 +656,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   </div>
                   <div
                     style={{
-                      border: '2px solid #141414',
+                      border: '2px solid var(--border-color)',
                       borderRadius: '14px',
                       padding: '14px',
-                      background: '#FFFFFF',
+                      background: 'var(--bg-subtle)',
                     }}
                   >
                     <div style={{ marginBottom: '10px' }}>
@@ -746,10 +746,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 ) : (
                   <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-start' }}>
                     <div
-                      className="assistant-msg-card"
-                      style={{
-                        background: msg.error ? '#F7C1C5' : '#FFFFFF',
-                      }}
+                      className={`assistant-msg-card${
+                        msg.error ? ' assistant-msg-card--error' : ''
+                      }`}
                     >
                       <div style={{ marginBottom: '12px' }}>
                         <span
@@ -797,6 +796,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                             borderRadius: '10px',
                             border: '2px solid #141414',
                             background: '#FFFFFF',
+                            color: '#141414',
                             fontWeight: 800,
                           }}
                         >
@@ -809,6 +809,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         <div
                           style={{
                             background: '#BADAFB',
+                            color: '#141414',
                             border: '2px solid #141414',
                             borderRadius: '12px',
                             padding: '14px',
@@ -847,17 +848,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       {msg.proposal && (
                         <div
                           style={{
-                            border: '2px solid #141414',
+                            border: '2px solid var(--border-color)',
                             borderRadius: '14px',
                             overflow: 'hidden',
-                            background: '#FFFFFF',
+                            background: 'var(--bg-surface)',
                           }}
                         >
                           <div style={{ padding: '16px' }}>
                             <div style={{ fontSize: '16px', fontWeight: 800, marginBottom: '4px' }}>
                               {msg.proposal.title}
                             </div>
-                            <div style={{ fontSize: '13px', color: '#5C5C5C' }}>
+                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                               Роль: <strong>{msg.proposal.role_label}</strong> • Раздел:{' '}
                               <strong>{msg.proposal.resource_label}</strong>
                             </div>
@@ -866,17 +867,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                           <div
                             style={{
                               padding: '10px 16px',
-                              borderTop: '1.5px solid #141414',
-                              borderBottom: '1.5px solid #141414',
+                              borderTop: '1.5px solid var(--border-color)',
+                              borderBottom: '1.5px solid var(--border-color)',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               flexWrap: 'wrap',
                               gap: '8px',
-                              background: '#F9FAFB',
+                              background: 'var(--bg-subtle)',
                             }}
                           >
-                            <span style={{ fontSize: '12px', color: '#5C5C5C', fontWeight: 600 }}>
+                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
                               Посмотреть вид карточки:
                             </span>
                             <div style={{ display: 'flex', gap: '6px' }}>
@@ -886,9 +887,15 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                                 style={{
                                   padding: '5px 10px',
                                   borderRadius: '6px',
-                                  border: '1.5px solid #141414',
-                                  background: proposalStage === 'draft' ? '#141414' : '#FFFFFF',
-                                  color: proposalStage === 'draft' ? '#FFFFFF' : '#141414',
+                                  border: '1.5px solid var(--border-color)',
+                                  background:
+                                    proposalStage === 'draft'
+                                      ? 'var(--btn-primary-bg)'
+                                      : 'var(--bg-surface)',
+                                  color:
+                                    proposalStage === 'draft'
+                                      ? 'var(--btn-primary-text)'
+                                      : 'var(--text-primary)',
                                   fontSize: '12px',
                                   fontWeight: 700,
                                 }}
@@ -901,9 +908,15 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                                 style={{
                                   padding: '5px 10px',
                                   borderRadius: '6px',
-                                  border: '1.5px solid #141414',
-                                  background: proposalStage === 'sending' ? '#141414' : '#FFFFFF',
-                                  color: proposalStage === 'sending' ? '#FFFFFF' : '#141414',
+                                  border: '1.5px solid var(--border-color)',
+                                  background:
+                                    proposalStage === 'sending'
+                                      ? 'var(--btn-primary-bg)'
+                                      : 'var(--bg-surface)',
+                                  color:
+                                    proposalStage === 'sending'
+                                      ? 'var(--btn-primary-text)'
+                                      : 'var(--text-primary)',
                                   fontSize: '12px',
                                   fontWeight: 700,
                                 }}
@@ -916,9 +929,15 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                                 style={{
                                   padding: '5px 10px',
                                   borderRadius: '6px',
-                                  border: '1.5px solid #141414',
-                                  background: proposalStage === 'approved' ? '#141414' : '#FFFFFF',
-                                  color: proposalStage === 'approved' ? '#FFFFFF' : '#141414',
+                                  border: '1.5px solid var(--border-color)',
+                                  background:
+                                    proposalStage === 'approved'
+                                      ? 'var(--btn-primary-bg)'
+                                      : 'var(--bg-surface)',
+                                  color:
+                                    proposalStage === 'approved'
+                                      ? 'var(--btn-primary-text)'
+                                      : 'var(--text-primary)',
                                   fontSize: '12px',
                                   fontWeight: 700,
                                 }}
@@ -929,7 +948,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                           </div>
 
                           {proposalStage === 'draft' && (
-                            <div style={{ padding: '14px 16px', background: '#FFFFFF' }}>
+                            <div style={{ padding: '14px 16px', background: 'var(--bg-surface)' }}>
                               <button
                                 className="ui-btn-green"
                                 onClick={() =>
@@ -944,6 +963,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                                   borderRadius: '10px',
                                   border: '2px solid #141414',
                                   background: '#04E061',
+                                  color: '#141414',
                                   fontWeight: 800,
                                   fontSize: '14px',
                                 }}
@@ -958,6 +978,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                               style={{
                                 padding: '14px 16px',
                                 background: '#BADAFB',
+                                color: '#141414',
                                 fontWeight: 700,
                                 fontSize: '14px',
                               }}
@@ -971,6 +992,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                               style={{
                                 padding: '14px 16px',
                                 background: '#C9FFBF',
+                                color: '#141414',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
@@ -991,7 +1013,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               )}
 
             {isLoading && (
-              <div style={{ fontSize: '14px', color: '#5C5C5C', fontWeight: 600 }}>
+              <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 600 }}>
                 AI-buddy сверяется с базой знаний и планом адаптации...
               </div>
             )}
@@ -1040,8 +1062,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 height: '36px',
                 flexShrink: 0,
                 borderRadius: '50%',
-                border: '2px solid #141414',
-                background: '#FFFFFF',
+                border: '2px solid var(--border-color)',
+                background: 'var(--bg-surface)',
+                color: 'var(--text-primary)',
                 fontSize: '22px',
                 display: 'flex',
                 alignItems: 'center',

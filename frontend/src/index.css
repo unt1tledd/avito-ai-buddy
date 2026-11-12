@@ -13,9 +13,47 @@
   --avito-hover-gray: #E5E7EB;
   --avito-hover-gray-strong: #D1D5DB;
   --avito-white: #FFFFFF;
+
+  /* Переменные темы (по умолчанию светлая) */
+  --bg-main: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F9FAFB;
+  --bg-muted: #F3F4F6;
+  --bg-active-card: #EAF4FF;
+  --bg-hover: #E5E7EB;
+  --bg-hover-strong: #D1D5DB;
+  --text-primary: #141414;
+  --text-secondary: #5C5C5C;
+  --text-muted: #737373;
+  --border-color: #141414;
+  --line-color: #141414;
+  --shadow-color: #141414;
+  --btn-primary-bg: #141414;
+  --btn-primary-text: #FFFFFF;
+
   --drawer-duration: 260ms;
   --drawer-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --theme-transition: 320ms cubic-bezier(0.22, 1, 0.36, 1);
   --chat-column-width: min(76%, 820px);
+}
+
+/* Мягкая тёмная тема в стиле Gemini, гармонирующая с палитрой Авито */
+[data-theme='dark'] {
+  --bg-main: #131314;
+  --bg-surface: #1E1F20;
+  --bg-subtle: #232527;
+  --bg-muted: #282A2C;
+  --bg-active-card: #172A3A;
+  --bg-hover: #333639;
+  --bg-hover-strong: #3E4246;
+  --text-primary: #F3F4F6;
+  --text-secondary: #A6ADB4;
+  --text-muted: #8E959E;
+  --border-color: #3E4246;
+  --line-color: #4B5563;
+  --shadow-color: rgba(0, 0, 0, 0.55);
+  --btn-primary-bg: #F3F4F6;
+  --btn-primary-text: #131314;
 }
 
 * {
@@ -26,11 +64,14 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: var(--avito-white);
-  color: var(--avito-black);
+  background-color: var(--bg-main);
+  color: var(--text-primary);
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+  transition:
+    background-color var(--theme-transition),
+    color var(--theme-transition);
 }
 
 #root {
@@ -54,17 +95,20 @@ textarea {
 .app-header {
   height: 68px;
   min-height: 68px;
-  border-bottom: 2px solid var(--avito-black);
+  border-bottom: 2px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   padding: 0 24px;
-  background: var(--avito-white);
+  background: var(--bg-surface);
   z-index: 30;
+  transition:
+    background-color var(--theme-transition),
+    border-color var(--theme-transition);
 }
 
-/* Чистый логотип AI BUDDY с 4 кружочками БЕЗ рамки/кнопки вокруг */
+/* Чистый логотип AI BUDDY с 4 кружочками БЕЗ рамки кнопки и с плавной сменой цвета текста */
 .aibuddy-logo-pill {
   display: inline-flex;
   align-items: center;
@@ -77,9 +121,10 @@ textarea {
   font-weight: 800;
   font-size: 22px;
   letter-spacing: 0.06em;
-  color: var(--avito-black);
+  color: var(--text-primary);
   user-select: none;
   cursor: default;
+  transition: color var(--theme-transition);
 }
 
 .aibuddy-logo-dots {
@@ -93,7 +138,74 @@ textarea {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  border: 1.5px solid var(--avito-black);
+  border: 1.5px solid var(--border-color);
+  transition: border-color var(--theme-transition);
+}
+
+/* Горизонтальный переключатель темы (Луна справа в светлой -> Солнце слева в тёмной) */
+.theme-toggle-btn {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 68px;
+  height: 36px;
+  border-radius: 999px;
+  border: 2px solid var(--border-color);
+  background: var(--bg-muted);
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition:
+    transform 0.18s var(--drawer-easing),
+    background-color var(--theme-transition),
+    border-color var(--theme-transition),
+    box-shadow 0.18s ease;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--bg-hover);
+  transform: translateY(-50%) scale(1.06);
+  box-shadow: 0 2px 0 var(--shadow-color);
+}
+
+.theme-toggle-btn:active {
+  transform: translateY(-50%) scale(0.95);
+  box-shadow: none;
+}
+
+.theme-toggle-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.8px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* В светлой теме шарик справа (32px), при клике плавно уезжает влево (0px) */
+  transform: translateX(32px) rotate(0deg);
+  transition:
+    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color var(--theme-transition),
+    border-color var(--theme-transition),
+    color var(--theme-transition);
+}
+
+.theme-toggle-btn--dark .theme-toggle-thumb {
+  transform: translateX(0px) rotate(-360deg);
+}
+
+.theme-toggle-thumb svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Универсальная подсветка и анимация нажатия для кнопок и карточек */
@@ -101,17 +213,19 @@ textarea {
   transition:
     transform 0.16s var(--drawer-easing),
     background-color 0.16s ease,
+    border-color var(--theme-transition),
+    color var(--theme-transition),
     box-shadow 0.16s ease;
 }
 
 .ui-btn:hover {
-  background-color: var(--avito-hover-gray) !important;
+  background-color: var(--bg-hover) !important;
   transform: scale(1.03);
-  box-shadow: 0 2px 0 var(--avito-black);
+  box-shadow: 0 2px 0 var(--shadow-color);
 }
 
 .ui-btn:active {
-  background-color: var(--avito-hover-gray-strong) !important;
+  background-color: var(--bg-hover-strong) !important;
   transform: scale(0.97);
   box-shadow: none;
 }
@@ -120,13 +234,15 @@ textarea {
   transition:
     transform 0.16s var(--drawer-easing),
     background-color 0.16s ease,
+    color var(--theme-transition),
+    border-color var(--theme-transition),
     box-shadow 0.16s ease;
 }
 
 .ui-btn-dark:hover {
-  background-color: #2E2E2E !important;
+  opacity: 0.92;
   transform: scale(1.02);
-  box-shadow: 0 3px 0 rgba(20, 20, 20, 0.28);
+  box-shadow: 0 3px 0 var(--shadow-color);
 }
 
 .ui-btn-dark:active {
@@ -144,7 +260,7 @@ textarea {
 .ui-btn-green:hover {
   background-color: #00C853 !important;
   transform: scale(1.02);
-  box-shadow: 0 3px 0 var(--avito-black);
+  box-shadow: 0 3px 0 var(--shadow-color);
 }
 
 .ui-btn-green:active {
@@ -156,17 +272,19 @@ textarea {
   transition:
     transform 0.16s var(--drawer-easing),
     background-color 0.16s ease,
+    border-color var(--theme-transition),
+    color var(--theme-transition),
     box-shadow 0.16s ease;
 }
 
 .ui-icon-circle:hover {
-  background-color: var(--avito-hover-gray) !important;
+  background-color: var(--bg-hover) !important;
   transform: scale(1.08);
-  box-shadow: 0 2px 0 var(--avito-black);
+  box-shadow: 0 2px 0 var(--shadow-color);
 }
 
 .ui-icon-circle:active {
-  background-color: var(--avito-hover-gray-strong) !important;
+  background-color: var(--bg-hover-strong) !important;
   transform: scale(0.94);
   box-shadow: none;
 }
@@ -175,18 +293,97 @@ textarea {
   transition:
     transform 0.16s var(--drawer-easing),
     background-color 0.16s ease,
+    border-color var(--theme-transition),
     box-shadow 0.16s ease;
 }
 
 .ui-card-interactive:hover {
-  background-color: var(--avito-hover-gray) !important;
+  background-color: var(--bg-hover) !important;
   transform: translateY(-1px) scale(1.015);
-  box-shadow: 0 3px 0 var(--avito-black);
+  box-shadow: 0 3px 0 var(--shadow-color);
 }
 
 .ui-card-interactive:active {
   transform: scale(0.985);
   box-shadow: none;
+}
+
+/* Интерактивные кружочки-галочки в Roadmap (изначально пустые, с подсветкой и анимацией клика) */
+.roadmap-check-circle {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  color: #141414;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition:
+    transform 0.18s var(--drawer-easing),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.18s ease;
+}
+
+.roadmap-check-circle:hover {
+  background: var(--bg-hover);
+  transform: scale(1.13);
+  box-shadow: 0 2px 0 var(--shadow-color);
+}
+
+.roadmap-check-circle:active {
+  transform: scale(0.88);
+  box-shadow: none;
+}
+
+.roadmap-check-circle--done {
+  background: var(--avito-green);
+  border-color: var(--border-color);
+  color: #141414;
+  animation: check-pop 240ms cubic-bezier(0.22, 1.35, 0.36, 1);
+}
+
+.roadmap-check-circle--done:hover {
+  background: #22EB74;
+  transform: scale(1.11);
+  box-shadow: 0 2px 0 var(--shadow-color);
+}
+
+.roadmap-check-icon {
+  display: inline-block;
+  line-height: 1;
+  transition: transform 0.18s var(--drawer-easing), opacity 0.18s ease;
+}
+
+/* При наведении на пустой кружок показываем полупрозрачную подсказку-галочку */
+.roadmap-check-circle:not(.roadmap-check-circle--done) .roadmap-check-icon {
+  opacity: 0;
+  transform: scale(0.5);
+  color: var(--text-secondary);
+}
+
+.roadmap-check-circle:not(.roadmap-check-circle--done):hover .roadmap-check-icon {
+  opacity: 0.55;
+  transform: scale(0.92);
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(0.75);
+  }
+  65% {
+    transform: scale(1.16);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Контейнер двух левых иконок (История и Roadmap) */
@@ -207,7 +404,7 @@ textarea {
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: var(--avito-black);
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -215,6 +412,7 @@ textarea {
   transition:
     transform 0.16s var(--drawer-easing),
     background-color 0.16s ease,
+    color var(--theme-transition),
     box-shadow 0.16s ease;
 }
 
@@ -229,20 +427,20 @@ textarea {
 
 .drawer-toggle-btn:hover {
   transform: scale(1.09);
-  background: var(--avito-hover-gray);
+  background: var(--bg-hover);
 }
 
 .drawer-toggle-btn:active {
   transform: scale(0.94);
-  background: var(--avito-hover-gray-strong);
+  background: var(--bg-hover-strong);
 }
 
 .drawer-toggle-btn--active {
-  background: var(--avito-hover-gray);
+  background: var(--bg-hover);
 }
 
 .drawer-toggle-btn:focus-visible {
-  outline: 2px solid var(--avito-black);
+  outline: 2px solid var(--border-color);
   outline-offset: 2px;
 }
 
@@ -250,13 +448,14 @@ textarea {
   width: 34px;
   height: 34px;
   flex: 0 0 34px;
-  stroke: var(--avito-black);
+  stroke: var(--text-primary);
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition: stroke var(--theme-transition);
 }
 
-/* Плавная оболочка левой панели: одинаковая скорость открытия и закрытия без рывков чата */
+/* Плавная оболочка левой панели */
 .drawer-shell {
   width: 0;
   min-width: 0;
@@ -282,8 +481,10 @@ textarea {
 
 .drawer-panel {
   height: 100%;
-  border-right: 2px solid var(--avito-black);
-  background: var(--avito-white);
+  border-right: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  display: 'flex';
   display: flex;
   flex-direction: column;
   padding: 18px;
@@ -292,7 +493,10 @@ textarea {
   opacity: 1;
   transition:
     transform var(--drawer-duration) var(--drawer-easing),
-    opacity var(--drawer-duration) var(--drawer-easing);
+    opacity var(--drawer-duration) var(--drawer-easing),
+    background-color var(--theme-transition),
+    border-color var(--theme-transition),
+    color var(--theme-transition);
   will-change: transform, opacity;
 }
 
@@ -302,7 +506,6 @@ textarea {
   pointer-events: none;
 }
 
-/* Затемнение фона при открытии панели на мобильном */
 .mobile-drawer-backdrop {
   display: none;
 }
@@ -325,6 +528,8 @@ textarea {
   padding: 22px 32px;
   position: relative;
   overflow: hidden;
+  background: var(--bg-main);
+  transition: background-color var(--theme-transition);
 }
 
 .chat-scroll-area {
@@ -354,30 +559,46 @@ textarea {
   margin-top: 8px;
 }
 
-/* Сообщения в чате: перенос длинных слов без вылезания за края */
+/* Сообщения в чате */
 .user-msg-bubble {
-  border: 2px solid var(--avito-black);
+  border: 2px solid var(--border-color);
   border-radius: 24px;
   padding: 10px 24px;
-  background: var(--avito-light);
+  background: var(--bg-muted);
+  color: var(--text-primary);
   font-weight: 700;
   font-size: 15px;
   max-width: 78%;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
+  transition:
+    background-color var(--theme-transition),
+    border-color var(--theme-transition),
+    color var(--theme-transition);
 }
 
 .assistant-msg-card {
   width: 100%;
-  border: 2px solid var(--avito-black);
+  border: 2px solid var(--border-color);
   border-radius: 18px;
   padding: 20px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
   overflow-wrap: anywhere;
   word-break: break-word;
+  transition:
+    background-color var(--theme-transition),
+    border-color var(--theme-transition),
+    color var(--theme-transition);
 }
 
-/* Центрированная нижняя зона ввода (ровно той же ширины, что и колонка сообщений) */
+.assistant-msg-card--error {
+  background: var(--avito-coral-soft);
+  color: #141414;
+}
+
+/* Центрированная нижняя зона ввода */
 .chat-composer {
   display: flex;
   flex-direction: column;
@@ -397,9 +618,9 @@ textarea {
 }
 
 .suggestion-pill {
-  border: 2px solid var(--avito-black);
-  background: var(--avito-light);
-  color: var(--avito-black);
+  border: 2px solid var(--border-color);
+  background: var(--bg-muted);
+  color: var(--text-primary);
   border-radius: 999px;
   padding: 10px 22px;
   font-size: 14px;
@@ -411,18 +632,20 @@ textarea {
   text-align: left;
   transition:
     background-color 0.16s ease,
+    border-color var(--theme-transition),
+    color var(--theme-transition),
     transform 0.16s var(--drawer-easing),
     box-shadow 0.16s ease;
 }
 
 .suggestion-pill:hover {
-  background: var(--avito-hover-gray);
+  background: var(--bg-hover);
   transform: translateY(-1px) scale(1.025);
-  box-shadow: 0 2px 0 var(--avito-black);
+  box-shadow: 0 2px 0 var(--shadow-color);
 }
 
 .suggestion-pill:active {
-  background: var(--avito-hover-gray-strong);
+  background: var(--bg-hover-strong);
   transform: scale(0.975);
   box-shadow: none;
 }
@@ -434,18 +657,19 @@ textarea {
   gap: 14px;
   width: 100%;
   min-width: 0;
-  border: 2px solid var(--avito-black);
-  background: var(--avito-light);
+  border: 2px solid var(--border-color);
+  background: var(--bg-muted);
   border-radius: 28px;
   padding: 10px 18px;
   transition:
-    background-color 0.16s ease,
+    background-color var(--theme-transition),
+    border-color var(--theme-transition),
     box-shadow 0.16s ease;
 }
 
 .chat-input-bar:focus-within {
-  background: var(--avito-white);
-  box-shadow: 0 3px 0 var(--avito-black);
+  background: var(--bg-surface);
+  box-shadow: 0 3px 0 var(--shadow-color);
 }
 
 .chat-input-bar textarea {
@@ -455,7 +679,7 @@ textarea {
   background: transparent;
   font-size: 16px;
   line-height: 24px;
-  color: var(--avito-black);
+  color: var(--text-primary);
   outline: none;
   resize: none;
   max-height: 160px;
@@ -463,18 +687,17 @@ textarea {
   padding: 6px 0;
   overflow-wrap: anywhere;
   word-break: break-word;
+  transition: color var(--theme-transition);
 }
 
 .chat-input-bar textarea::placeholder {
-  color: var(--avito-gray);
+  color: var(--text-secondary);
 }
 
 /* ==========================================================================
    АДАПТАЦИЯ ПОД МОБИЛЬНЫЕ УСТРОЙСТВА (Вертикальный и Горизонтальный телефон)
-   На ноутбуке (> 900px и высота > 520px) всё остаётся 1-в-1 как было!
    ========================================================================== */
 
-/* 1. Вертикальный телефон и узкие экраны (например 390 x 844) */
 @media (max-width: 860px) {
   :root {
     --chat-column-width: 100%;
@@ -483,7 +706,7 @@ textarea {
   .app-header {
     height: 56px;
     min-height: 56px;
-    padding: 0 16px;
+    padding: 0 14px;
   }
 
   .aibuddy-logo-pill {
@@ -491,11 +714,26 @@ textarea {
     gap: 10px;
   }
 
+  .theme-toggle-btn {
+    right: 14px;
+    width: 60px;
+    height: 32px;
+  }
+
+  .theme-toggle-thumb {
+    width: 22px;
+    height: 22px;
+    transform: translateX(28px) rotate(0deg);
+  }
+
+  .theme-toggle-btn--dark .theme-toggle-thumb {
+    transform: translateX(0px) rotate(-360deg);
+  }
+
   .chat-main {
     padding: 12px 14px 14px;
   }
 
-  /* На телефоне иконки Истории и Roadmap аккуратно встают в компактную верхнюю панель, чтобы не налезать на сообщения */
   .floating-nav-icons {
     position: static;
     flex-direction: row;
@@ -516,14 +754,13 @@ textarea {
     height: 34px;
   }
 
-  /* Выдвижные панели на телефоне открываются поверх чата (overlay), не сжимая чат */
   .drawer-shell {
     position: absolute;
     top: 0;
     left: 0;
     bottom: 0;
     z-index: 45;
-    box-shadow: 6px 0 24px rgba(20, 20, 20, 0.18);
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.25);
   }
 
   .drawer-shell--open-history,
@@ -542,7 +779,7 @@ textarea {
     display: block;
     position: absolute;
     inset: 0;
-    background: rgba(20, 20, 20, 0.32);
+    background: rgba(0, 0, 0, 0.42);
     z-index: 40;
   }
 
@@ -589,7 +826,6 @@ textarea {
   }
 }
 
-/* 2. Горизонтальный телефон (например 844 x 390 — малая высота экрана) */
 @media (max-height: 520px) {
   :root {
     --chat-column-width: 100%;
@@ -604,6 +840,22 @@ textarea {
   .aibuddy-logo-pill {
     font-size: 17px;
     gap: 8px;
+  }
+
+  .theme-toggle-btn {
+    right: 16px;
+    width: 58px;
+    height: 30px;
+  }
+
+  .theme-toggle-thumb {
+    width: 20px;
+    height: 20px;
+    transform: translateX(28px) rotate(0deg);
+  }
+
+  .theme-toggle-btn--dark .theme-toggle-thumb {
+    transform: translateX(0px) rotate(-360deg);
   }
 
   .chat-main {
@@ -652,12 +904,10 @@ textarea {
     display: block;
     position: absolute;
     inset: 0;
-    background: rgba(20, 20, 20, 0.32);
+    background: rgba(0, 0, 0, 0.42);
     z-index: 40;
   }
 
-  /* В горизонтальном режиме подсказки выстраиваются в одну компактную полосу,
-     чтобы не перекрывать половину экрана белым блоком */
   .chat-composer {
     gap: 6px;
     margin-top: 6px;
