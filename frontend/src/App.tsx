@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ChatPage } from './pages/ChatPage';
 import {
   INITIAL_ONBOARDING_STEPS,
@@ -8,15 +8,25 @@ import {
   fetchAccessTasks,
 } from './lib/api';
 
-const normalizeInitialSteps = (rawSteps: OnboardingStep[]): OnboardingStep[] =>
-  rawSteps.map((step, index) => ({
-    ...step,
-    completed: false,
-    current: index === 0,
+const recomputeCurrentFlags = (list: OnboardingStep[]): OnboardingStep[] => {
+  const firstUncompletedIdx = list.findIndex((s) => !s.completed);
+  return list.map((s, idx) => ({
+    ...s,
+    current: firstUncompletedIdx !== -1 && idx === firstUncompletedIdx,
   }));
+};
+
+const normalizeInitialSteps = (rawSteps: OnboardingStep[]): OnboardingStep[] =>
+  recomputeCurrentFlags(
+    rawSteps.map((step) => ({
+      ...step,
+      completed: false,
+    }))
+  );
+
+const LOGO_DOT_COLORS = ['#04E061', '#00AAFF', '#965EEB', '#FF4053'] as const;
 
 export const App: React.FC = () => {
-  // Изначально все кружочки в Roadmap пустые, чтобы стажёр сам отмечал и снимал галочки
   const [steps, setSteps] = useState<OnboardingStep[]>(() =>
     normalizeInitialSteps(INITIAL_ONBOARDING_STEPS)
   );
@@ -32,48 +42,40 @@ export const App: React.FC = () => {
     fetchAccessTasks().then(setTasks);
   }, []);
 
-  const recomputeCurrentFlags = (list: OnboardingStep[]): OnboardingStep[] => {
-    const firstUncompletedIdx = list.findIndex((s) => !s.completed);
-    return list.map((s, idx) => ({
-      ...s,
-      current: firstUncompletedIdx !== -1 && idx === firstUncompletedIdx,
-    }));
-  };
+  const handleToggleStep = useCallback((stepId: string) => {
+    setSteps((prev) => {
+      const target = prev.find((s) => s.step_id === stepId);
+      const nextCompleted = target ? !target.completed : true;
 
-  // Ручное переключение галочки стажёром (поставить / убрать)
-  const handleToggleStep = (stepId: string) => {
-    const target = steps.find((s) => s.step_id === stepId);
-    const nextCompleted = target ? !target.completed : true;
+      if (target?.resource_id && !nextCompleted) {
+        setTasks((prevTasks) =>
+          prevTasks.filter((t) => t.resource_id !== target.resource_id)
+        );
+      }
 
-    setSteps((prev) =>
-      recomputeCurrentFlags(
+      return recomputeCurrentFlags(
         prev.map((s) =>
           s.step_id === stepId ? { ...s, completed: nextCompleted } : s
         )
-      )
-    );
+      );
+    });
+  }, []);
 
-    if (target?.resource_id && !nextCompleted) {
-      setTasks((prev) => prev.filter((t) => t.resource_id !== target.resource_id));
-    }
-  };
-
-  const handleProposalConfirmed = (resourceId: string, issueKey: string) => {
+  const handleProposalConfirmed = useCallback((resourceId: string, issueKey: string) => {
     const newTask: AccessTask = {
-      task_id: 'task-' + issueKey,
-      proposal_id: 'prop-' + issueKey,
+      task_id: `task-${issueKey}`,
+      proposal_id: `prop-${issueKey}`,
       resource_id: resourceId,
-      title: 'Выдать стажёру доступ к пространству команды (' + resourceId + ')',
+      title: `Выдать стажёру доступ к пространству команды (${resourceId})`,
       assignee: 'Тимлид команды',
       tracker_issue_key: issueKey,
       status: 'approved',
       created_at: 'Сегодня',
     };
 
-    setTasks((prev) => {
-      const exists = prev.some((t) => t.resource_id === resourceId);
-      return exists ? prev : [newTask, ...prev];
-    });
+    setTasks((prev) =>
+      prev.some((t) => t.resource_id === resourceId) ? prev : [newTask, ...prev]
+    );
 
     setSteps((prev) =>
       recomputeCurrentFlags(
@@ -82,25 +84,26 @@ export const App: React.FC = () => {
         )
       )
     );
-  };
+  }, []);
 
   const isDark = theme === 'dark';
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Верхняя шапка с логотипом AI BUDDY по центру и переключателем темы справа */}
+    <div className="app-root">
       <header className="app-header">
         <div className="aibuddy-logo-pill">
           <span className="aibuddy-logo-dots" aria-hidden="true">
-            <span className="aibuddy-logo-dot" style={{ background: '#04E061' }} />
-            <span className="aibuddy-logo-dot" style={{ background: '#00AAFF' }} />
-            <span className="aibuddy-logo-dot" style={{ background: '#965EEB' }} />
-            <span className="aibuddy-logo-dot" style={{ background: '#FF4053' }} />
+            {LOGO_DOT_COLORS.map((color) => (
+              <span
+                key={color}
+                className="aibuddy-logo-dot"
+                style={{ background: color }}
+              />
+            ))}
           </span>
           <span>AI BUDDY</span>
         </div>
 
-        {/* Горизонтальный переключатель темы с шариком (Луна справа -> Солнце слева) */}
         <button
           type="button"
           className={`theme-toggle-btn${isDark ? ' theme-toggle-btn--dark' : ''}`}
@@ -110,13 +113,11 @@ export const App: React.FC = () => {
         >
           <span className="theme-toggle-thumb">
             {isDark ? (
-              /* Минималистичное солнце (на левом конце в тёмной теме) */
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="4.2" />
                 <path d="M12 2.5v2.3M12 19.2v2.3M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2.5 12h2.3M19.2 12h2.3M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6" />
               </svg>
             ) : (
-              /* Минималистичная луна (на правом конце в светлой теме) */
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M20.2 14.8A8.5 8.5 0 0 1 9.2 3.8a8.5 8.5 0 1 0 11 11Z" />
               </svg>
@@ -125,7 +126,6 @@ export const App: React.FC = () => {
         </button>
       </header>
 
-      {/* Основной экран чата */}
       <ChatPage
         steps={steps}
         tasks={tasks}

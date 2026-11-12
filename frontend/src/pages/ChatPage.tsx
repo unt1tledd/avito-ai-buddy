@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   ChatMessage,
   HistoryItem,
@@ -16,6 +16,37 @@ interface ChatPageProps {
   onToggleStep: (stepId: string) => void;
   onProposalConfirmed: (resourceId: string, issueKey: string) => void;
 }
+
+const HISTORY_GROUPS = ['СЕГОДНЯ', 'ВЧЕРА (ДЕНЬ 1)'] as const;
+
+const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.2" />
+    <path
+      d="M12 6.2V12l4.2 4.2"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="butt"
+      strokeLinejoin="miter"
+    />
+  </svg>
+);
+
+const RoadmapIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.2" />
+    <path
+      d="M12 19.2C12 16.3 11.7 13.4 11.4 9.5M12 16.8C10.4 14.3 7.2 12.8 7.1 6.8M11.6 14.4C14.1 13.5 16.7 11.6 16.7 7.6"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const formatNowTime = () =>
+  new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 export const ChatPage: React.FC<ChatPageProps> = ({
   steps,
@@ -49,25 +80,28 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [inputValue]);
 
-  const toggleDrawer = (drawer: 'history' | 'roadmap') => {
-    if (isDrawerOpen && activeDrawer === drawer) {
-      setIsDrawerOpen(false);
-      return;
-    }
+  const toggleDrawer = useCallback(
+    (drawer: 'history' | 'roadmap') => {
+      if (isDrawerOpen && activeDrawer === drawer) {
+        setIsDrawerOpen(false);
+        return;
+      }
+      setActiveDrawer(drawer);
+      setIsDrawerOpen(true);
+    },
+    [isDrawerOpen, activeDrawer]
+  );
+
+  const openDrawer = useCallback((drawer: 'history' | 'roadmap') => {
     setActiveDrawer(drawer);
     setIsDrawerOpen(true);
-  };
+  }, []);
 
-  const openDrawer = (drawer: 'history' | 'roadmap') => {
-    setActiveDrawer(drawer);
-    setIsDrawerOpen(true);
-  };
-
-  const closeDrawer = () => {
+  const closeDrawer = useCallback(() => {
     setIsDrawerOpen(false);
-  };
+  }, []);
 
-  const handleStartNewQuestion = () => {
+  const handleStartNewQuestion = useCallback(() => {
     setMessages([]);
     setShowRetryComparison(false);
 
@@ -79,12 +113,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       return;
     }
 
-    const nowLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newId = 'hist-new-' + Date.now();
+    const newId = `hist-new-${Date.now()}`;
     const newItem: HistoryItem = {
       id: newId,
       dayGroup: 'СЕГОДНЯ',
-      timeLabel: `Сегодня, ${nowLabel}`,
+      timeLabel: `Сегодня, ${formatNowTime()}`,
       title: '«Новый вопрос...»',
       badgeText: 'Новый диалог',
       badgeTone: 'blue',
@@ -93,207 +126,194 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
     setHistoryItems((prev) => [newItem, ...prev]);
     setActiveHistoryId(newId);
-  };
+  }, [historyItems]);
 
-  const syncHistoryWithMessages = (
-    targetId: string,
-    questionText: string,
-    nextMessages: ChatMessage[],
-    hasApprovedProposal = false
-  ) => {
-    const nowLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const formattedTitle = `«${questionText}»`;
+  const syncHistoryWithMessages = useCallback(
+    (
+      targetId: string,
+      questionText: string,
+      nextMessages: ChatMessage[],
+      hasApprovedProposal = false
+    ) => {
+      const formattedTitle = `«${questionText}»`;
 
-    setHistoryItems((prev) => {
-      const exists = prev.some((item) => item.id === targetId);
-      if (exists) {
-        return prev.map((item) =>
-          item.id === targetId
-            ? {
-                ...item,
-                title: item.title === '«Новый вопрос...»' ? formattedTitle : item.title,
-                badgeText: hasApprovedProposal ? 'Заявка подтверждена' : 'Есть ответ',
-                badgeTone: hasApprovedProposal ? 'green' : 'blue',
-                messages: nextMessages,
-              }
-            : item
-        );
+      setHistoryItems((prev) => {
+        const exists = prev.some((item) => item.id === targetId);
+        if (exists) {
+          return prev.map((item) =>
+            item.id === targetId
+              ? {
+                  ...item,
+                  title: item.title === '«Новый вопрос...»' ? formattedTitle : item.title,
+                  badgeText: hasApprovedProposal ? 'Заявка подтверждена' : 'Есть ответ',
+                  badgeTone: hasApprovedProposal ? 'green' : 'blue',
+                  messages: nextMessages,
+                }
+              : item
+          );
+        }
+
+        const created: HistoryItem = {
+          id: targetId,
+          dayGroup: 'СЕГОДНЯ',
+          timeLabel: `Сегодня, ${formatNowTime()}`,
+          title: formattedTitle,
+          badgeText: hasApprovedProposal ? 'Заявка подтверждена' : 'Есть ответ',
+          badgeTone: hasApprovedProposal ? 'green' : 'blue',
+          messages: nextMessages,
+        };
+        return [created, ...prev];
+      });
+    },
+    []
+  );
+
+  const handleSend = useCallback(
+    async (rawText?: string, forceErrorDemo = false) => {
+      const text = (rawText ?? inputValue).trim();
+      if (!text) return;
+
+      setShowRetryComparison(false);
+      const idempotencyKey = `idem-${Date.now()}`;
+      const currentHistId = activeHistoryId ?? `hist-session-${Date.now()}`;
+      if (!activeHistoryId) {
+        setActiveHistoryId(currentHistId);
       }
 
-      const created: HistoryItem = {
-        id: targetId,
-        dayGroup: 'СЕГОДНЯ',
-        timeLabel: `Сегодня, ${nowLabel}`,
-        title: formattedTitle,
-        badgeText: hasApprovedProposal ? 'Заявка подтверждена' : 'Есть ответ',
-        badgeTone: hasApprovedProposal ? 'green' : 'blue',
-        messages: nextMessages,
-      };
-      return [created, ...prev];
-    });
-  };
-
-  const handleSend = async (rawText?: string, forceErrorDemo = false) => {
-    const text = (rawText ?? inputValue).trim();
-    if (!text) return;
-
-    setShowRetryComparison(false);
-    const idempotencyKey = 'idem-' + Date.now();
-    const currentHistId = activeHistoryId ?? 'hist-session-' + Date.now();
-    if (!activeHistoryId) {
-      setActiveHistoryId(currentHistId);
-    }
-
-    const userMsg: ChatMessage = {
-      id: 'u-' + Date.now(),
-      sender: 'user',
-      text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      idempotency_key: idempotencyKey,
-    };
-
-    const updatedWithUser = [...messages, userMsg];
-    setMessages(updatedWithUser);
-    syncHistoryWithMessages(currentHistId, text, updatedWithUser, false);
-
-    if (!rawText) setInputValue('');
-    setIsLoading(true);
-
-    try {
-      const reply = await sendChatMessage(text, idempotencyKey, forceErrorDemo);
-      const hasProposal = Boolean(reply.proposal);
-      if (reply.proposal) {
-        setProposalStage('approved');
-        onProposalConfirmed(
-          reply.proposal.resource_id,
-          reply.proposal.tracker_issue_key || '1042'
-        );
-      }
-      const finalMessages = [...updatedWithUser, reply];
-      setMessages(finalMessages);
-      syncHistoryWithMessages(currentHistId, text, finalMessages, hasProposal);
-    } catch {
-      const errMsg: ChatMessage = {
-        id: 'err-' + Date.now(),
-        sender: 'assistant',
-        text: 'Не удалось получить ответ. Твой вопрос сохранён.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      const userMsg: ChatMessage = {
+        id: `u-${Date.now()}`,
+        sender: 'user',
+        text,
+        timestamp: formatNowTime(),
         idempotency_key: idempotencyKey,
-        error: true,
       };
-      const failedMessages = [...updatedWithUser, errMsg];
-      setMessages(failedMessages);
-      syncHistoryWithMessages(currentHistId, text, failedMessages, false);
-    } finally {
+
+      const updatedWithUser = [...messages, userMsg];
+      setMessages(updatedWithUser);
+      syncHistoryWithMessages(currentHistId, text, updatedWithUser, false);
+
+      if (!rawText) setInputValue('');
+      setIsLoading(true);
+
+      try {
+        const reply = await sendChatMessage(text, idempotencyKey, forceErrorDemo);
+        const hasProposal = Boolean(reply.proposal);
+        if (reply.proposal) {
+          setProposalStage('approved');
+          onProposalConfirmed(
+            reply.proposal.resource_id,
+            reply.proposal.tracker_issue_key || '1042'
+          );
+        }
+        const finalMessages = [...updatedWithUser, reply];
+        setMessages(finalMessages);
+        syncHistoryWithMessages(currentHistId, text, finalMessages, hasProposal);
+      } catch {
+        const errMsg: ChatMessage = {
+          id: `err-${Date.now()}`,
+          sender: 'assistant',
+          text: 'Не удалось получить ответ. Твой вопрос сохранён.',
+          timestamp: formatNowTime(),
+          idempotency_key: idempotencyKey,
+          error: true,
+        };
+        const failedMessages = [...updatedWithUser, errMsg];
+        setMessages(failedMessages);
+        syncHistoryWithMessages(currentHistId, text, failedMessages, false);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [inputValue, activeHistoryId, messages, syncHistoryWithMessages, onProposalConfirmed]
+  );
+
+  const handleConfirmProposal = useCallback(
+    async (proposalId: string, resourceId: string) => {
+      setProposalStage('sending');
+      const res = await confirmAccessProposal(proposalId);
+      setProposalStage('approved');
+      onProposalConfirmed(resourceId, res.tracker_issue_key);
+    },
+    [onProposalConfirmed]
+  );
+
+  const handleRetryMessage = useCallback(
+    async (failedMsgId: string, questionText: string, idempotencyKey: string) => {
+      setIsLoading(true);
+      const reply = await sendChatMessage(questionText, idempotencyKey, false);
+      setMessages((prev) => prev.map((m) => (m.id === failedMsgId ? reply : m)));
       setIsLoading(false);
-    }
-  };
+    },
+    []
+  );
 
-  const handleConfirmProposal = async (proposalId: string, resourceId: string) => {
-    setProposalStage('sending');
-    const res = await confirmAccessProposal(proposalId);
-    setProposalStage('approved');
-    onProposalConfirmed(resourceId, res.tracker_issue_key);
-  };
+  const suggestions = useMemo(() => {
+    const lastAssistant = [...messages].reverse().find((m) => m.sender === 'assistant');
+    const rawSuggestions = lastAssistant?.proposal
+      ? [
+          'Перейти к следующему шагу адаптации',
+          'Какие доступы нужны стажёру дальше?',
+          'Открыть мой Roadmap',
+        ]
+      : lastAssistant?.text.includes('отгул')
+      ? [
+          'Создать черновик заявки на отгул в сервисе',
+          'Как оформить учебный отпуск?',
+          'Открыть мой Roadmap',
+        ]
+      : [
+          'Правила защиты персональных данных ...',
+          'Как выполнить текущий шаг? ...',
+          'Оформить отгул',
+        ];
 
-  const handleRetryMessage = async (
-    failedMsgId: string,
-    questionText: string,
-    idempotencyKey: string
-  ) => {
-    setIsLoading(true);
-    const reply = await sendChatMessage(questionText, idempotencyKey, false);
-    setMessages((prev) => prev.map((m) => (m.id === failedMsgId ? reply : m)));
-    setIsLoading(false);
-  };
+    return [...rawSuggestions]
+      .sort((first, second) => second.length - first.length)
+      .slice(0, 3);
+  }, [messages]);
 
-  const lastAssistant = [...messages].reverse().find((m) => m.sender === 'assistant');
-  const rawSuggestions = lastAssistant?.proposal
-    ? [
-        'Перейти к следующему шагу адаптации',
-        'Какие доступы нужны стажёру дальше?',
-        'Открыть мой Roadmap',
+  const shellClassName = useMemo(
+    () =>
+      [
+        'drawer-shell',
+        isDrawerOpen
+          ? activeDrawer === 'history'
+            ? 'drawer-shell--open-history'
+            : 'drawer-shell--open-roadmap'
+          : '',
       ]
-    : lastAssistant?.text.includes('отгул')
-    ? [
-        'Создать черновик заявки на отгул в сервисе',
-        'Как оформить учебный отпуск?',
-        'Открыть мой Roadmap',
-      ]
-    : [
-        'Правила защиты персональных данных ...',
-        'Как выполнить текущий шаг? ...',
-        'Оформить отгул',
-      ];
-
-  const suggestions = [...rawSuggestions]
-    .sort((first, second) => second.length - first.length)
-    .slice(0, 3);
-
-  const shellClassName = [
-    'drawer-shell',
-    isDrawerOpen
-      ? activeDrawer === 'history'
-        ? 'drawer-shell--open-history'
-        : 'drawer-shell--open-roadmap'
-      : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+        .filter(Boolean)
+        .join(' '),
+    [isDrawerOpen, activeDrawer]
+  );
 
   return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative', minHeight: 0 }}>
-      {/* Плавная левая оболочка */}
+    <div className="workspace-layout">
+      {/* Выдвижная левая оболочка */}
       <div className={shellClassName}>
         {activeDrawer === 'history' ? (
           <aside
             className={`drawer-panel${!isDrawerOpen ? ' drawer-panel--closed' : ''}`}
-            style={{
-              width: '360px',
-              minWidth: '360px',
-            }}
+            style={{ width: '360px', minWidth: '360px' }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingBottom: '14px',
-                borderBottom: '2px solid var(--border-color)',
-                marginBottom: '14px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <svg className="drawer-title-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.2" />
-                  <path
-                    d="M12 6.2V12l4.2 4.2"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="butt"
-                    strokeLinejoin="miter"
-                  />
-                </svg>
-                <h2 style={{ fontSize: '18px', fontWeight: 800 }}>История запросов</h2>
+            <div className="drawer-header">
+              <div className="drawer-header-title">
+                <ClockIcon className="drawer-title-icon" />
+                <h2>История запросов</h2>
               </div>
               <button
+                type="button"
                 className="ui-icon-circle"
                 onClick={closeDrawer}
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  border: '2px solid var(--border-color)',
-                  background: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  fontWeight: 800,
-                }}
+                title="Закрыть историю"
+                aria-label="Закрыть историю"
               >
                 ✕
               </button>
             </div>
 
             <button
+              type="button"
               className="ui-btn-dark"
               onClick={handleStartNewQuestion}
               style={{
@@ -311,7 +331,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               + Новый вопрос
             </button>
 
-            {(['СЕГОДНЯ', 'ВЧЕРА (ДЕНЬ 1)'] as const).map((group) => (
+            {HISTORY_GROUPS.map((group) => (
               <div key={group} style={{ marginBottom: '14px' }}>
                 <div
                   style={{
@@ -360,13 +380,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                               {item.timeLabel}
                             </span>
                             <span
+                              className="status-badge"
                               style={{
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                padding: '2px 8px',
-                                borderRadius: '999px',
-                                border: '1.5px solid #141414',
-                                color: '#141414',
                                 background:
                                   item.badgeTone === 'green'
                                     ? '#C9FFBF'
@@ -387,12 +402,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             ))}
 
             <button
+              type="button"
               className="ui-btn"
               onClick={() =>
                 setHistoryItems((prev) => [
                   ...prev,
                   {
-                    id: 'hist-extra-' + Date.now(),
+                    id: `hist-extra-${Date.now()}`,
                     dayGroup: 'ВЧЕРА (ДЕНЬ 1)',
                     timeLabel: 'День 1, 10:00',
                     title: '«Где найти AvitoTech Playbook?»',
@@ -437,14 +453,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             isClosing={!isDrawerOpen}
             onClose={closeDrawer}
             onToggleStep={onToggleStep}
-            onSelectStepQuestion={(q) => {
-              handleSend(q);
-            }}
+            onSelectStepQuestion={handleSend}
           />
         )}
       </div>
 
-      {/* Подложка для закрытия панели тапом вне неё на телефоне */}
       {isDrawerOpen && (
         <div
           className="mobile-drawer-backdrop"
@@ -455,9 +468,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       {/* ОСНОВНАЯ ПРАВАЯ ОБЛАСТЬ ЧАТА */}
       <main className="chat-main">
-        {/* Две увеличенные круглые иконки: Часы (История) и Дерево в круге (Roadmap) */}
         <div className="floating-nav-icons">
           <button
+            type="button"
             className={`drawer-toggle-btn${
               isDrawerOpen && activeDrawer === 'history' ? ' drawer-toggle-btn--active' : ''
             }`}
@@ -465,19 +478,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             title="История запросов"
             aria-label="История запросов"
           >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.2" />
-              <path
-                d="M12 6.2V12l4.2 4.2"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="butt"
-                strokeLinejoin="miter"
-              />
-            </svg>
+            <ClockIcon />
           </button>
 
           <button
+            type="button"
             className={`drawer-toggle-btn${
               isDrawerOpen && activeDrawer === 'roadmap' ? ' drawer-toggle-btn--active' : ''
             }`}
@@ -485,23 +490,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             title="Roadmap"
             aria-label="Roadmap"
           >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.2" />
-              <path
-                d="M12 19.2C12 16.3 11.7 13.4 11.4 9.5M12 16.8C10.4 14.3 7.2 12.8 7.1 6.8M11.6 14.4C14.1 13.5 16.7 11.6 16.7 7.6"
-                stroke="currentColor"
-                strokeWidth="2.1"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <RoadmapIcon />
           </button>
         </div>
 
-        {/* Прокручиваемая область сообщений */}
         <div className="chat-scroll-area">
           <div className="chat-feed-column">
-            {/* Начальный пустой экран */}
             {messages.length === 0 && !showRetryComparison && (
               <div
                 style={{
@@ -519,7 +513,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               </div>
             )}
 
-            {/* Демонстрация Схемы 04 (Сравнение ошибки и повтора отправки) */}
             {showRetryComparison && (
               <div className="retry-comparison-grid">
                 {/* Левая карточка: Сбой */}
@@ -594,6 +587,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       </div>
                     </div>
                     <button
+                      type="button"
                       className="ui-btn"
                       onClick={() => {
                         setShowRetryComparison(false);
@@ -664,16 +658,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   >
                     <div style={{ marginBottom: '10px' }}>
                       <span
-                        style={{
-                          display: 'inline-block',
-                          padding: '5px 14px',
-                          borderRadius: '999px',
-                          border: '1.5px solid #141414',
-                          background: '#04E061',
-                          color: '#141414',
-                          fontWeight: 800,
-                          fontSize: '14px',
-                        }}
+                        className="ai-name-badge"
+                        style={{ padding: '5px 14px', fontSize: '14px', borderWidth: '1.5px' }}
                       >
                         AI-buddy
                       </span>
@@ -736,7 +722,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               </div>
             )}
 
-            {/* Список живых сообщений чата */}
             {!showRetryComparison &&
               messages.map((msg) =>
                 msg.sender === 'user' ? (
@@ -751,21 +736,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       }`}
                     >
                       <div style={{ marginBottom: '12px' }}>
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            padding: '6px 16px',
-                            borderRadius: '999px',
-                            border: '2px solid #141414',
-                            background: '#04E061',
-                            color: '#141414',
-                            fontWeight: 800,
-                            fontSize: '15px',
-                            letterSpacing: '0.01em',
-                          }}
-                        >
-                          AI-buddy
-                        </span>
+                        <span className="ai-name-badge">AI-buddy</span>
                       </div>
 
                       <div
@@ -779,9 +750,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         {msg.text}
                       </div>
 
-                      {/* Кнопка повтора при сбое (Схема 04) */}
                       {msg.error && (
                         <button
+                          type="button"
                           className="ui-btn"
                           onClick={() =>
                             handleRetryMessage(
@@ -804,7 +775,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         </button>
                       )}
 
-                      {/* Синий блок полезных ссылок и правил (sources) */}
                       {msg.sources && msg.sources.length > 0 && (
                         <div
                           style={{
@@ -844,7 +814,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         </div>
                       )}
 
-                      {/* Карточка подтверждения доступа (Proposal Card) */}
                       {msg.proposal && (
                         <div
                           style={{
@@ -881,75 +850,45 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                               Посмотреть вид карточки:
                             </span>
                             <div style={{ display: 'flex', gap: '6px' }}>
-                              <button
-                                className={proposalStage === 'draft' ? 'ui-btn-dark' : 'ui-btn'}
-                                onClick={() => setProposalStage('draft')}
-                                style={{
-                                  padding: '5px 10px',
-                                  borderRadius: '6px',
-                                  border: '1.5px solid var(--border-color)',
-                                  background:
-                                    proposalStage === 'draft'
-                                      ? 'var(--btn-primary-bg)'
-                                      : 'var(--bg-surface)',
-                                  color:
-                                    proposalStage === 'draft'
-                                      ? 'var(--btn-primary-text)'
-                                      : 'var(--text-primary)',
-                                  fontSize: '12px',
-                                  fontWeight: 700,
-                                }}
-                              >
-                                До нажатия
-                              </button>
-                              <button
-                                className={proposalStage === 'sending' ? 'ui-btn-dark' : 'ui-btn'}
-                                onClick={() => setProposalStage('sending')}
-                                style={{
-                                  padding: '5px 10px',
-                                  borderRadius: '6px',
-                                  border: '1.5px solid var(--border-color)',
-                                  background:
-                                    proposalStage === 'sending'
-                                      ? 'var(--btn-primary-bg)'
-                                      : 'var(--bg-surface)',
-                                  color:
-                                    proposalStage === 'sending'
-                                      ? 'var(--btn-primary-text)'
-                                      : 'var(--text-primary)',
-                                  fontSize: '12px',
-                                  fontWeight: 700,
-                                }}
-                              >
-                                Отправка...
-                              </button>
-                              <button
-                                className={proposalStage === 'approved' ? 'ui-btn-dark' : 'ui-btn'}
-                                onClick={() => setProposalStage('approved')}
-                                style={{
-                                  padding: '5px 10px',
-                                  borderRadius: '6px',
-                                  border: '1.5px solid var(--border-color)',
-                                  background:
-                                    proposalStage === 'approved'
-                                      ? 'var(--btn-primary-bg)'
-                                      : 'var(--bg-surface)',
-                                  color:
-                                    proposalStage === 'approved'
-                                      ? 'var(--btn-primary-text)'
-                                      : 'var(--text-primary)',
-                                  fontSize: '12px',
-                                  fontWeight: 700,
-                                }}
-                              >
-                                Готово (Доступ получен)
-                              </button>
+                              {(
+                                [
+                                  { id: 'draft', label: 'До нажатия' },
+                                  { id: 'sending', label: 'Отправка...' },
+                                  { id: 'approved', label: 'Готово (Доступ получен)' },
+                                ] as const
+                              ).map((stage) => {
+                                const isCurrentStage = proposalStage === stage.id;
+                                return (
+                                  <button
+                                    key={stage.id}
+                                    type="button"
+                                    className={isCurrentStage ? 'ui-btn-dark' : 'ui-btn'}
+                                    onClick={() => setProposalStage(stage.id)}
+                                    style={{
+                                      padding: '5px 10px',
+                                      borderRadius: '6px',
+                                      border: '1.5px solid var(--border-color)',
+                                      background: isCurrentStage
+                                        ? 'var(--btn-primary-bg)'
+                                        : 'var(--bg-surface)',
+                                      color: isCurrentStage
+                                        ? 'var(--btn-primary-text)'
+                                        : 'var(--text-primary)',
+                                      fontSize: '12px',
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    {stage.label}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
 
                           {proposalStage === 'draft' && (
                             <div style={{ padding: '14px 16px', background: 'var(--bg-surface)' }}>
                               <button
+                                type="button"
                                 className="ui-btn-green"
                                 onClick={() =>
                                   handleConfirmProposal(
@@ -1018,17 +957,16 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               </div>
             )}
 
-            {/* Якорь для автопрокрутки к последнему ответу */}
             <div ref={messagesEndRef} />
           </div>
         </div>
 
-        {/* Нижняя зона: быстрые подсказки + автоматически растущая многострочная строка ввода */}
         <div className="chat-composer">
           <div className="suggestion-list">
             {suggestions.map((sug) => (
               <button
                 key={sug}
+                type="button"
                 className="suggestion-pill"
                 onClick={() => {
                   if (sug === 'Открыть мой Roadmap') {
@@ -1057,19 +995,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               className="ui-icon-circle"
               onClick={() => setShowRetryComparison((v) => !v)}
               title="Показать / скрыть демо повтора при сбое (Схема 04)"
-              style={{
-                width: '36px',
-                height: '36px',
-                flexShrink: 0,
-                borderRadius: '50%',
-                border: '2px solid var(--border-color)',
-                background: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                fontSize: '22px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+              style={{ width: '36px', height: '36px', fontSize: '22px' }}
             >
               +
             </button>

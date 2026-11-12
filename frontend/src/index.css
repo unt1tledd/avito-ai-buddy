@@ -14,7 +14,7 @@
   --avito-hover-gray-strong: #D1D5DB;
   --avito-white: #FFFFFF;
 
-  /* Переменные темы (по умолчанию светлая) */
+  /* Светлая тема (по умолчанию) */
   --bg-main: #FFFFFF;
   --bg-surface: #FFFFFF;
   --bg-subtle: #F9FAFB;
@@ -37,7 +37,7 @@
   --chat-column-width: min(76%, 820px);
 }
 
-/* Мягкая тёмная тема в стиле Gemini, гармонирующая с палитрой Авито */
+/* Мягкая тёмная тема в стиле Gemini */
 [data-theme='dark'] {
   --bg-main: #131314;
   --bg-surface: #1E1F20;
@@ -60,12 +60,15 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
+html,
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background-color: var(--bg-main);
   color: var(--text-primary);
+  width: 100%;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
@@ -74,24 +77,30 @@ body {
     color var(--theme-transition);
 }
 
-#root {
+#root,
+.app-root {
+  width: 100%;
   height: 100vh;
   height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-button {
-  font-family: inherit;
-  cursor: pointer;
-}
-
+button,
 input,
 textarea {
   font-family: inherit;
 }
 
-/* Верхняя шапка */
+button {
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   ШАПКА И ЛОГОТИП AI BUDDY + ПЕРЕКЛЮЧАТЕЛЬ ТЕМЫ
+   ========================================================================== */
+
 .app-header {
   height: 68px;
   min-height: 68px;
@@ -108,7 +117,6 @@ textarea {
     border-color var(--theme-transition);
 }
 
-/* Чистый логотип AI BUDDY с 4 кружочками БЕЗ рамки кнопки и с плавной сменой цвета текста */
 .aibuddy-logo-pill {
   display: inline-flex;
   align-items: center;
@@ -142,7 +150,6 @@ textarea {
   transition: border-color var(--theme-transition);
 }
 
-/* Горизонтальный переключатель темы (Луна справа в светлой -> Солнце слева в тёмной) */
 .theme-toggle-btn {
   position: absolute;
   right: 24px;
@@ -185,7 +192,6 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* В светлой теме шарик справа (32px), при клике плавно уезжает влево (0px) */
   transform: translateX(32px) rotate(0deg);
   transition:
     transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
@@ -208,7 +214,10 @@ textarea {
   stroke-linejoin: round;
 }
 
-/* Универсальная подсветка и анимация нажатия для кнопок и карточек */
+/* ==========================================================================
+   ИНТЕРАКТИВНЫЕ КНОПКИ, ИКОНКИ И КАРТОЧКИ
+   ========================================================================== */
+
 .ui-btn {
   transition:
     transform 0.16s var(--drawer-easing),
@@ -269,6 +278,18 @@ textarea {
 }
 
 .ui-icon-circle {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 800;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition:
     transform 0.16s var(--drawer-easing),
     background-color 0.16s ease,
@@ -308,85 +329,18 @@ textarea {
   box-shadow: none;
 }
 
-/* Интерактивные кружочки-галочки в Roadmap (изначально пустые, с подсветкой и анимацией клика) */
-.roadmap-check-circle {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 2px solid var(--border-color);
-  background: var(--bg-surface);
-  color: #141414;
+/* ==========================================================================
+   ЛЕВЫЕ ВЫДВИЖНЫЕ ПАНЕЛИ (ИСТОРИЯ ЗАПРОСОВ И ROADMAP)
+   ========================================================================== */
+
+.workspace-layout {
+  flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 16px;
-  flex-shrink: 0;
-  padding: 0;
-  cursor: pointer;
+  overflow: hidden;
   position: relative;
-  transition:
-    transform 0.18s var(--drawer-easing),
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.18s ease;
+  min-height: 0;
 }
 
-.roadmap-check-circle:hover {
-  background: var(--bg-hover);
-  transform: scale(1.13);
-  box-shadow: 0 2px 0 var(--shadow-color);
-}
-
-.roadmap-check-circle:active {
-  transform: scale(0.88);
-  box-shadow: none;
-}
-
-.roadmap-check-circle--done {
-  background: var(--avito-green);
-  border-color: var(--border-color);
-  color: #141414;
-  animation: check-pop 240ms cubic-bezier(0.22, 1.35, 0.36, 1);
-}
-
-.roadmap-check-circle--done:hover {
-  background: #22EB74;
-  transform: scale(1.11);
-  box-shadow: 0 2px 0 var(--shadow-color);
-}
-
-.roadmap-check-icon {
-  display: inline-block;
-  line-height: 1;
-  transition: transform 0.18s var(--drawer-easing), opacity 0.18s ease;
-}
-
-/* При наведении на пустой кружок показываем полупрозрачную подсказку-галочку */
-.roadmap-check-circle:not(.roadmap-check-circle--done) .roadmap-check-icon {
-  opacity: 0;
-  transform: scale(0.5);
-  color: var(--text-secondary);
-}
-
-.roadmap-check-circle:not(.roadmap-check-circle--done):hover .roadmap-check-icon {
-  opacity: 0.55;
-  transform: scale(0.92);
-}
-
-@keyframes check-pop {
-  0% {
-    transform: scale(0.75);
-  }
-  65% {
-    transform: scale(1.16);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-/* Контейнер двух левых иконок (История и Roadmap) */
 .floating-nav-icons {
   position: absolute;
   top: 22px;
@@ -397,7 +351,6 @@ textarea {
   z-index: 20;
 }
 
-/* Увеличенные круглые кнопки переключения левых панелей (Часы и Roadmap) */
 .drawer-toggle-btn {
   width: 54px;
   height: 54px;
@@ -455,7 +408,6 @@ textarea {
   transition: stroke var(--theme-transition);
 }
 
-/* Плавная оболочка левой панели */
 .drawer-shell {
   width: 0;
   min-width: 0;
@@ -484,7 +436,6 @@ textarea {
   border-right: 2px solid var(--border-color);
   background: var(--bg-surface);
   color: var(--text-primary);
-  display: 'flex';
   display: flex;
   flex-direction: column;
   padding: 18px;
@@ -506,18 +457,121 @@ textarea {
   pointer-events: none;
 }
 
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 14px;
+}
+
+.drawer-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drawer-header-title h2 {
+  font-size: 18px;
+  font-weight: 800;
+}
+
 .mobile-drawer-backdrop {
   display: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .drawer-shell,
-  .drawer-panel {
-    transition-duration: 1ms;
+/* Интерактивные кружочки-галочки в Roadmap */
+.roadmap-check-circle {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  color: #141414;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition:
+    transform 0.18s var(--drawer-easing),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.18s ease;
+}
+
+.roadmap-check-circle:hover {
+  background: var(--bg-hover);
+  transform: scale(1.13);
+  box-shadow: 0 2px 0 var(--shadow-color);
+}
+
+.roadmap-check-circle:active {
+  transform: scale(0.88);
+  box-shadow: none;
+}
+
+.roadmap-check-circle--done {
+  background: var(--avito-green);
+  border-color: var(--border-color);
+  color: #141414;
+  animation: check-pop 240ms cubic-bezier(0.22, 1.35, 0.36, 1);
+}
+
+.roadmap-check-circle--done:hover {
+  background: #22EB74;
+  transform: scale(1.11);
+  box-shadow: 0 2px 0 var(--shadow-color);
+}
+
+.roadmap-check-icon {
+  display: inline-block;
+  line-height: 1;
+  transition: transform 0.18s var(--drawer-easing), opacity 0.18s ease;
+}
+
+.roadmap-check-circle:not(.roadmap-check-circle--done) .roadmap-check-icon {
+  opacity: 0;
+  transform: scale(0.5);
+  color: var(--text-secondary);
+}
+
+.roadmap-check-circle:not(.roadmap-check-circle--done):hover .roadmap-check-icon {
+  opacity: 0.55;
+  transform: scale(0.92);
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(0.75);
+  }
+  65% {
+    transform: scale(1.16);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
-/* Основная правая рабочая область */
+.status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1.5px solid #141414;
+  color: #141414;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   ОСНОВНАЯ ОБЛАСТЬ ЧАТА И ВВОДА
+   ========================================================================== */
+
 .chat-main {
   flex: 1;
   min-width: 0;
@@ -540,7 +594,6 @@ textarea {
   scroll-behavior: smooth;
 }
 
-/* Единая центральная колонка для сообщений чата и строки ввода */
 .chat-feed-column {
   width: var(--chat-column-width);
   margin: 0 auto;
@@ -551,7 +604,6 @@ textarea {
   transition: width var(--drawer-duration) var(--drawer-easing);
 }
 
-/* Сетка сравнения ошибки/повтора (Схема 04) */
 .retry-comparison-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -559,7 +611,6 @@ textarea {
   margin-top: 8px;
 }
 
-/* Сообщения в чате */
 .user-msg-bubble {
   border: 2px solid var(--border-color);
   border-radius: 24px;
@@ -598,7 +649,18 @@ textarea {
   color: #141414;
 }
 
-/* Центрированная нижняя зона ввода */
+.ai-name-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 2px solid #141414;
+  background: var(--avito-green);
+  color: #141414;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
 .chat-composer {
   display: flex;
   flex-direction: column;
@@ -650,7 +712,6 @@ textarea {
   box-shadow: none;
 }
 
-/* Многострочная растягивающаяся строка ввода вопроса (как в Gemini) */
 .chat-input-bar {
   display: flex;
   align-items: flex-end;
@@ -694,8 +755,17 @@ textarea {
   color: var(--text-secondary);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .drawer-shell,
+  .drawer-panel {
+    transition-duration: 1ms;
+  }
+}
+
 /* ==========================================================================
-   АДАПТАЦИЯ ПОД МОБИЛЬНЫЕ УСТРОЙСТВА (Вертикальный и Горизонтальный телефон)
+   УНИВЕРСАЛЬНАЯ АДАПТИВНОСТЬ ДЛЯ ЛЮБЫХ МОДЕЛЕЙ ТЕЛЕФОНОВ И ПЛАНШЕТОВ
+   (Poco, Xiaomi, Samsung, iPhone SE / Pro Max, раскладушки, от 320px до 860px)
+   На ноутбуках (> 860px и высота > 520px) ничего не меняется!
    ========================================================================== */
 
 @media (max-width: 860px) {
@@ -704,18 +774,18 @@ textarea {
   }
 
   .app-header {
-    height: 56px;
-    min-height: 56px;
-    padding: 0 14px;
+    height: clamp(50px, 13vw, 58px);
+    min-height: clamp(50px, 13vw, 58px);
+    padding: 0 clamp(12px, 4vw, 20px);
   }
 
   .aibuddy-logo-pill {
-    font-size: 19px;
-    gap: 10px;
+    font-size: clamp(17px, 4.8vw, 20px);
+    gap: 9px;
   }
 
   .theme-toggle-btn {
-    right: 14px;
+    right: clamp(12px, 4vw, 20px);
     width: 60px;
     height: 32px;
   }
@@ -731,7 +801,7 @@ textarea {
   }
 
   .chat-main {
-    padding: 12px 14px 14px;
+    padding: clamp(10px, 3vw, 14px) clamp(12px, 3.8vw, 18px) calc(12px + env(safe-area-inset-bottom, 0px));
   }
 
   .floating-nav-icons {
@@ -745,13 +815,13 @@ textarea {
   }
 
   .drawer-toggle-btn {
-    width: 44px;
-    height: 44px;
+    width: clamp(40px, 11vw, 46px);
+    height: clamp(40px, 11vw, 46px);
   }
 
   .drawer-toggle-btn svg {
-    width: 34px;
-    height: 34px;
+    width: clamp(30px, 8.5vw, 35px);
+    height: clamp(30px, 8.5vw, 35px);
   }
 
   .drawer-shell {
@@ -760,26 +830,27 @@ textarea {
     left: 0;
     bottom: 0;
     z-index: 45;
-    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.25);
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.28);
   }
 
   .drawer-shell--open-history,
   .drawer-shell--open-roadmap {
-    width: min(100vw, 370px);
-    min-width: min(100vw, 370px);
+    width: min(100vw, 390px);
+    min-width: min(100vw, 390px);
   }
 
   .drawer-panel {
     width: 100% !important;
     min-width: 100% !important;
-    padding: 14px;
+    padding: clamp(12px, 4vw, 18px);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 
   .mobile-drawer-backdrop {
     display: block;
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.42);
+    background: rgba(0, 0, 0, 0.44);
     z-index: 40;
   }
 
@@ -789,14 +860,14 @@ textarea {
   }
 
   .assistant-msg-card {
-    padding: 14px;
+    padding: clamp(12px, 4vw, 16px);
     border-radius: 14px;
   }
 
   .user-msg-bubble {
     max-width: 88%;
     padding: 9px 18px;
-    font-size: 14px;
+    font-size: clamp(14px, 3.8vw, 15px);
   }
 
   .chat-composer {
@@ -809,8 +880,8 @@ textarea {
   }
 
   .suggestion-pill {
-    padding: 8px 16px;
-    font-size: 13px;
+    padding: clamp(7px, 2vw, 9px) clamp(14px, 4vw, 18px);
+    font-size: clamp(12px, 3.4vw, 13.5px);
   }
 
   .chat-input-bar {
@@ -820,12 +891,32 @@ textarea {
   }
 
   .chat-input-bar textarea {
-    font-size: 15px;
+    font-size: 16px; /* 16px предотвращает авто-зум экрана при фокусе на iOS и Android */
     line-height: 22px;
     max-height: 110px;
   }
 }
 
+/* Очень узкие экраны (320px–355px: компактные модели и старые iPhone SE) */
+@media (max-width: 360px) {
+  .aibuddy-logo-pill {
+    font-size: 16px;
+    gap: 7px;
+  }
+
+  .theme-toggle-btn {
+    width: 54px;
+    height: 28px;
+  }
+
+  .theme-toggle-thumb {
+    width: 20px;
+    height: 20px;
+    transform: translateX(24px) rotate(0deg);
+  }
+}
+
+/* Любой телефон в горизонтальной ориентации (малая высота экрана) */
 @media (max-height: 520px) {
   :root {
     --chat-column-width: 100%;
@@ -859,13 +950,13 @@ textarea {
   }
 
   .chat-main {
-    padding: 8px 16px 10px 76px;
+    padding: 8px max(16px, env(safe-area-inset-right, 16px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(72px, env(safe-area-inset-left, 72px));
   }
 
   .floating-nav-icons {
     position: absolute;
     top: 10px;
-    left: 14px;
+    left: max(14px, env(safe-area-inset-left, 14px));
     flex-direction: column;
     gap: 8px;
   }
@@ -890,8 +981,8 @@ textarea {
 
   .drawer-shell--open-history,
   .drawer-shell--open-roadmap {
-    width: min(85vw, 360px);
-    min-width: min(85vw, 360px);
+    width: min(85vw, 370px);
+    min-width: min(85vw, 370px);
   }
 
   .drawer-panel {
@@ -904,7 +995,7 @@ textarea {
     display: block;
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.42);
+    background: rgba(0, 0, 0, 0.44);
     z-index: 40;
   }
 
@@ -937,9 +1028,9 @@ textarea {
   }
 
   .chat-input-bar textarea {
-    font-size: 14px;
+    font-size: 16px;
     line-height: 20px;
     padding: 4px 0;
-    max-height: 72px;
+    max-height: 68px;
   }
 }
