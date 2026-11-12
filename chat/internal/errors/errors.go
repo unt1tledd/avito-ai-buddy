@@ -13,7 +13,7 @@ var (
 	ErrGetConversation      = errors.New("get chat conversation")
 	ErrListMessages         = errors.New("list conversation messages")
 	ErrGetUserContext       = errors.New("get user context")
-	ErrGetOnboardingStep    = errors.New("get onboarding step")
+	ErrGetOnboardingPlans   = errors.New("get onboarding plans")
 	ErrGetAIAnswer          = errors.New("get AI answer")
 	ErrSaveUserMessage      = errors.New("save user message")
 	ErrSaveAssistantMessage = errors.New("save assistant message")

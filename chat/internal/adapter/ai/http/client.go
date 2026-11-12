@@ -1,26 +1,190 @@
 package http
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
-	"avito-ai-buddy/chat/internal/port"
+	"avito-ai-buddy/chat/internal/entity"
 )
 
-// Client calls the AI service over HTTP to produce assistant answers.
+const (
+	maxHistoryMessages = 12
+	maxMessageLength   = 4000
+)
+
+type answerRequest struct {
+	Message         string        `json:"message"`
+	Actor           actor         `json:"actor"`
+	History         []historyTurn `json:"history,omitempty"`
+	OnboardingPlans *[]plan       `json:"onboarding_plans,omitempty"`
+}
+
+type actor struct {
+	UserID        string `json:"user_id"`
+	Role          string `json:"role"`
+	Team          string `json:"team"`
+	ActualEndDate string `json:"actual_end_date,omitempty"`
+}
+
+type historyTurn struct {
+	Role    entity.MessageRole `json:"role"`
+	Content string             `json:"content"`
+}
+
+type plan struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	CurrentStep *step  `json:"current_step"`
+}
+
+type step struct {
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	ResourceID string `json:"resource_id,omitempty"`
+	ActionType string `json:"action_type,omitempty"`
+}
+
+type answerResponse struct {
+	Answer   string    `json:"answer"`
+	Sources  []source  `json:"sources"`
+	Proposal *proposal `json:"proposal"`
+}
+
+type source struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+type proposal struct {
+	ResourceID    string `json:"resource_id"`
+	ResourceLabel string `json:"resource_label"`
+	AccessLevel   string `json:"access_level"`
+}
+
+type Options struct {
+	BaseURL             string
+	AnswerPath          string
+	ServiceToken        string
+	SendOnboardingPlans bool
+}
+
+// Client asks the AI service for an answer over HTTP.
 type Client struct {
-	client  *http.Client
-	baseURL string
+	client              *http.Client
+	url                 string
+	serviceToken        string
+	sendOnboardingPlans bool
 }
 
-// NewClient builds a client for the AI service base URL.
-func NewClient(client *http.Client, baseURL string) *Client {
-	return &Client{client: client, baseURL: baseURL}
+func NewClient(client *http.Client, options Options) *Client {
+	return &Client{
+		client:              client,
+		url:                 strings.TrimRight(options.BaseURL, "/") + "/" + strings.TrimLeft(options.AnswerPath, "/"),
+		serviceToken:        options.ServiceToken,
+		sendOnboardingPlans: options.SendOnboardingPlans,
+	}
 }
 
-// GetAnswer asks the AI service for an assistant reply to the question with
-// the conversation history and onboarding context.
-func (c *Client) GetAnswer(ctx context.Context, request port.AnswerRequest) (port.Answer, error) {
-	return port.Answer{}, errors.ErrUnsupported
+func (c *Client) GetAnswer(ctx context.Context, request entity.AnswerRequest) (entity.Answer, error) {
+	if strings.TrimSpace(c.serviceToken) == "" {
+		return entity.Answer{}, errors.New("AI_SERVICE_TOKEN is required to call AI")
+	}
+	if message := strings.TrimSpace(request.Message); message == "" || utf8.RuneCountInString(message) > maxMessageLength {
+		return entity.Answer{}, fmt.Errorf("AI question must contain 1 to %d characters", maxMessageLength)
+	}
+	body, err := json.Marshal(c.requestPayload(request))
+	if err != nil {
+		return entity.Answer{}, fmt.Errorf("encode AI request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return entity.Answer{}, fmt.Errorf("build AI request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.serviceToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return entity.Answer{}, fmt.Errorf("call AI service: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return entity.Answer{}, fmt.Errorf("AI service returned HTTP %d", resp.StatusCode)
+	}
+
+	var payload answerResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return entity.Answer{}, fmt.Errorf("decode AI response: %w", err)
+	}
+	if strings.TrimSpace(payload.Answer) == "" {
+		return entity.Answer{}, errors.New("AI response contains no answer")
+	}
+	return payload.toAnswer(), nil
+}
+
+func (c *Client) requestPayload(request entity.AnswerRequest) answerRequest {
+	payload := answerRequest{
+		Message: request.Message,
+		Actor: actor{
+			UserID: request.User.UserID, Role: request.User.Role, Team: request.User.TeamID,
+			ActualEndDate: request.User.ActualEndDate,
+		},
+		History: recentHistory(request.History),
+	}
+	// The current AI API rejects unknown fields. Enable this when AI accepts the plan context.
+	if c.sendOnboardingPlans {
+		plans := make([]plan, 0, len(request.OnboardingPlans))
+		for _, item := range request.OnboardingPlans {
+			track := plan{ID: item.ID, Title: item.Title}
+			if current := item.CurrentStep; current != nil {
+				track.CurrentStep = &step{
+					ID: current.ID, Title: current.Title,
+					ResourceID: current.ResourceID, ActionType: current.ActionType,
+				}
+			}
+			plans = append(plans, track)
+		}
+		payload.OnboardingPlans = &plans
+	}
+	return payload
+}
+
+func recentHistory(messages []entity.Message) []historyTurn {
+	if len(messages) > maxHistoryMessages {
+		messages = messages[len(messages)-maxHistoryMessages:]
+	}
+	history := make([]historyTurn, 0, len(messages))
+	for _, message := range messages {
+		if message.Role != entity.MessageRoleUser && message.Role != entity.MessageRoleAssistant {
+			continue
+		}
+		content := strings.TrimSpace(message.Text)
+		if content == "" || utf8.RuneCountInString(content) > maxMessageLength {
+			continue
+		}
+		history = append(history, historyTurn{Role: message.Role, Content: content})
+	}
+	return history
+}
+
+func (payload answerResponse) toAnswer() entity.Answer {
+	answer := entity.Answer{Text: payload.Answer}
+	for _, source := range payload.Sources {
+		answer.Sources = append(answer.Sources, entity.Source{DocumentID: source.ID, Title: source.Title, URL: source.URL})
+	}
+	if proposal := payload.Proposal; proposal != nil {
+		answer.Proposal = &entity.Action{
+			ResourceID: proposal.ResourceID, ResourceLabel: proposal.ResourceLabel, AccessLevel: proposal.AccessLevel,
+		}
+	}
+	return answer
 }

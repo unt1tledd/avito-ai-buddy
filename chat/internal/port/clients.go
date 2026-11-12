@@ -1,42 +1,6 @@
 package port
 
-import (
-	"context"
-
-	"avito-ai-buddy/chat/internal/entity"
-)
-
-// UserContext is the intern profile snippet the AI service needs to answer.
-type UserContext struct {
-	UserID string
-	TeamID string
-	Role   string
-}
-
-// OnboardingStep is the onboarding step the intern is currently working on.
-type OnboardingStep struct {
-	ID         string
-	Title      string
-	ResourceID string
-}
-
-// AnswerRequest carries everything the AI service needs to produce an answer:
-// the user profile, the question, the conversation history and the current
-// onboarding step.
-type AnswerRequest struct {
-	User        UserContext
-	Question    string
-	History     []entity.Message
-	CurrentStep *OnboardingStep
-}
-
-// Answer is the AI reply: the text, the cited sources and an optional access
-// proposal the intern may confirm.
-type Answer struct {
-	Text     string
-	Sources  []entity.Source
-	Proposal *entity.Action
-}
+import "context"
 
 // CreateAccessRequest is the payload published into Kafka when an intern
 // confirms an access proposal.

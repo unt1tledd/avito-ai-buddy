@@ -9,7 +9,6 @@ import (
 
 	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
-	"avito-ai-buddy/chat/internal/port"
 	"avito-ai-buddy/chat/internal/usecase/message/mocks"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -63,10 +62,14 @@ func TestInternAsksForAccessDuringOnboarding(t *testing.T) {
 			ai := mocks.NewMockaiClient(ctrl)
 
 			history := []entity.Message{{ID: 10, ConversationID: 21, Role: entity.MessageRoleAssistant, Text: "Welcome"}}
-			user := port.UserContext{UserID: "7", TeamID: "platform", Role: "intern"}
-			step := &port.OnboardingStep{ID: "setup", Title: "Set up a local environment", ResourceID: "repo"}
+			user := entity.UserContext{UserID: "7", TeamID: "platform", Role: "intern"}
+			step := &entity.OnboardingStep{ID: "setup", Title: "Set up a local environment", ResourceID: "repo"}
+			plans := []entity.OnboardingPlan{
+				{ID: "common", Title: "General track", CurrentStep: step},
+				{ID: "backend", Title: "Backend"},
+			}
 			sources := []entity.Source{{DocumentID: "doc-1", Title: "Guide", URL: "https://example.com/guide"}}
-			answer := port.Answer{Text: "Request access", Sources: sources}
+			answer := entity.Answer{Text: "Request access", Sources: sources}
 			if tc.withProposal {
 				answer.Proposal = &entity.Action{ResourceID: "repo", ResourceLabel: "Repository", AccessLevel: "read"}
 			}
@@ -79,10 +82,10 @@ func TestInternAsksForAccessDuringOnboarding(t *testing.T) {
 				}), testIdempotencyKey).Return(int64(11), question, nil),
 				messages.EXPECT().ClaimReply(gomock.Any(), int64(11), replyLease).Return(claimUntil, nil),
 				messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(0), "11").Return(history, "", nil),
-				users.EXPECT().GetUserContext(gomock.Any(), "7").Return(port.UserContext{TeamID: "platform", Role: "intern"}, nil),
-				onboarding.EXPECT().GetCurrentStep(gomock.Any(), "7").Return(step, nil),
-				ai.EXPECT().GetAnswer(gomock.Any(), port.AnswerRequest{
-					User: user, Question: question, History: history, CurrentStep: step,
+				users.EXPECT().GetUserContext(gomock.Any(), "7").Return(entity.UserContext{TeamID: "platform", Role: "intern"}, nil),
+				onboarding.EXPECT().GetOnboardingPlans(gomock.Any(), int64(7), "session").Return(plans, nil),
+				ai.EXPECT().GetAnswer(gomock.Any(), entity.AnswerRequest{
+					User: user, Message: question, History: history, OnboardingPlans: plans,
 				}).Return(answer, tc.aiErr),
 			}
 			want := entity.Message{
@@ -201,7 +204,7 @@ func TestSendMessageRetriesFailedQuestion(t *testing.T) {
 	ai := mocks.NewMockaiClient(ctrl)
 	firstClaim := time.Now().Add(replyLease)
 	secondClaim := firstClaim.Add(time.Second)
-	answerReq := port.AnswerRequest{Question: question, User: port.UserContext{UserID: "7"}}
+	answerReq := entity.AnswerRequest{Message: question, User: entity.UserContext{UserID: "7"}}
 	wantReply := entity.Message{ConversationID: 21, Role: entity.MessageRoleAssistant, Text: "Request access"}
 
 	conversations.EXPECT().GetOrCreate(ctx, int64(7)).Return(&entity.Conversation{ID: 21}, nil).Times(2)
@@ -209,14 +212,14 @@ func TestSendMessageRetriesFailedQuestion(t *testing.T) {
 		ConversationID: 21, Role: entity.MessageRoleUser, Text: question,
 	}), testIdempotencyKey).Return(int64(11), question, nil).Times(2)
 	messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(0), "11").Return(nil, "", nil).Times(2)
-	users.EXPECT().GetUserContext(gomock.Any(), "7").Return(port.UserContext{}, nil).Times(2)
-	onboarding.EXPECT().GetCurrentStep(gomock.Any(), "7").Return(nil, nil).Times(2)
+	users.EXPECT().GetUserContext(gomock.Any(), "7").Return(entity.UserContext{}, nil).Times(2)
+	onboarding.EXPECT().GetOnboardingPlans(gomock.Any(), int64(7), "session").Return(nil, nil).Times(2)
 	gomock.InOrder(
 		messages.EXPECT().ClaimReply(gomock.Any(), int64(11), replyLease).Return(firstClaim, nil),
-		ai.EXPECT().GetAnswer(gomock.Any(), answerReq).Return(port.Answer{}, context.DeadlineExceeded),
+		ai.EXPECT().GetAnswer(gomock.Any(), answerReq).Return(entity.Answer{}, context.DeadlineExceeded),
 		messages.EXPECT().FinishReply(gomock.Any(), int64(11), firstClaim, int64(0)).Return(nil),
 		messages.EXPECT().ClaimReply(gomock.Any(), int64(11), replyLease).Return(secondClaim, nil),
-		ai.EXPECT().GetAnswer(gomock.Any(), answerReq).Return(port.Answer{Text: wantReply.Text}, nil),
+		ai.EXPECT().GetAnswer(gomock.Any(), answerReq).Return(entity.Answer{Text: wantReply.Text}, nil),
 		messages.EXPECT().Create(txCtx, matchNewMessage(wantReply)).Return(int64(12), nil),
 		messages.EXPECT().FinishReply(txCtx, int64(11), secondClaim, int64(12)).Return(nil),
 	)
@@ -281,7 +284,7 @@ func TestQuestionSurvivesUnavailableOnboardingContext(t *testing.T) {
 	}{
 		{name: "history is unavailable", historyErr: unavailable, wantErr: chaterrors.ErrListMessages},
 		{name: "team data is unavailable", userErr: unavailable, wantErr: chaterrors.ErrGetUserContext},
-		{name: "current step is unavailable", stepErr: unavailable, wantErr: chaterrors.ErrGetOnboardingStep},
+		{name: "onboarding plans are unavailable", stepErr: unavailable, wantErr: chaterrors.ErrGetOnboardingPlans},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			const question = "What should I do next?"
@@ -308,10 +311,10 @@ func TestQuestionSurvivesUnavailableOnboardingContext(t *testing.T) {
 				messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(0), "11").Return(nil, "", tc.historyErr),
 			}
 			if tc.historyErr == nil {
-				calls = append(calls, users.EXPECT().GetUserContext(gomock.Any(), "7").Return(port.UserContext{}, tc.userErr))
+				calls = append(calls, users.EXPECT().GetUserContext(gomock.Any(), "7").Return(entity.UserContext{}, tc.userErr))
 			}
 			if tc.historyErr == nil && tc.userErr == nil {
-				calls = append(calls, onboarding.EXPECT().GetCurrentStep(gomock.Any(), "7").Return(nil, tc.stepErr))
+				calls = append(calls, onboarding.EXPECT().GetOnboardingPlans(gomock.Any(), int64(7), "session").Return(nil, tc.stepErr))
 			}
 			calls = append(calls, messages.EXPECT().FinishReply(gomock.Any(), int64(11), claimUntil, int64(0)).Return(nil))
 			gomock.InOrder(calls...)

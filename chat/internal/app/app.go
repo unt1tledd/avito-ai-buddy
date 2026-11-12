@@ -34,6 +34,7 @@ import (
 	"avito-ai-buddy/chat/internal/usecase/taskstatus"
 	"avito-ai-buddy/chat/migrations"
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
+	planv1 "avito-ai-buddy/pkg/generated/plan/v1"
 	"avito-ai-buddy/pkg/transactor"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -216,8 +217,16 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 		msgRepository,
 		actions,
 		useradapter.NewClient(userConn),
-		onboardingadapter.NewClient(planConn),
-		aiadapter.NewClient(&http.Client{Timeout: 30 * time.Second}, cfg.Clients.AIBaseURL),
+		onboardingadapter.NewClient(planv1.NewPlanServiceClient(planConn)),
+		aiadapter.NewClient(&http.Client{
+			Timeout: cfg.Clients.AITimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}, aiadapter.Options{
+			BaseURL: cfg.Clients.AIBaseURL, AnswerPath: cfg.Clients.AIAnswerPath,
+			ServiceToken: cfg.Clients.AIServiceToken, SendOnboardingPlans: cfg.Clients.AISendOnboardingPlans,
+		}),
 		authClient,
 		tx,
 	)
