@@ -10,12 +10,15 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, V
 from ..clients.embeddings import EmbeddingError
 from ..clients.llm import FunctionCall, LanguageModel, ModelError, ModelResponse
 from ..rag.history import history_message, prepare_history
+from ..rag.onboarding import resolve_step_reference
 from ..rag.retriever import Retriever
 from ..rag.tools import FIND_INSTRUCTION_DESCRIPTION, FIND_INSTRUCTION_NAME, FindInstructionArguments
 from ..repositories.knowledge import KnowledgeError
 from ..schemas.citations import SOURCE_REFERENCE
-from ..schemas.clarifications import CLARIFICATION_QUESTIONS, safe_clarification
-from ..schemas.contracts import Actor, ChatResponse, CurrentStep, MAX_RESPONSE_SOURCES, Message, SearchHit, SearchResult, valid_utf8
+from ..schemas.clarifications import CLARIFICATION_QUESTIONS, ONBOARDING_TRACK_CLARIFICATION, safe_clarification
+from ..schemas.contracts import (
+    Actor, ChatResponse, MAX_RESPONSE_SOURCES, Message, OnboardingPlan, SearchHit, SearchResult, valid_utf8,
+)
 
 
 MAX_TOOL_CALLS = 3
@@ -128,20 +131,21 @@ class Agent:
         )
 
     async def answer(
-        self, message: str, actor: Actor, *, deadline: float | None = None, current_step: CurrentStep | None = None,
+        self, message: str, actor: Actor, *, deadline: float | None = None,
+        onboarding_plans: Sequence[OnboardingPlan] = (),
         history: Sequence[Message] = (),
     ) -> ChatResponse:
         turn = Turn()
+        ambiguous, selected_plan = resolve_step_reference(message, onboarding_plans, history)
+        if ambiguous:
+            return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
         recent_history = await prepare_history(history, actor, self.knowledge)
-        query = message
-        if current_step is not None:
-            query = f"Вопрос: {message}\nТекущий шаг: {current_step.title}"
-            if current_step.resource_id is not None:
-                query += f"\nРесурс шага: {current_step.resource_id}"
-        retrieved = await self._search(query, actor, turn)
+        retrieved = await self._search(message, actor, turn)
         context = retrieved.model_dump(mode="json")
-        if current_step is not None:
-            context["current_step"] = current_step.model_dump(mode="json")
+        if onboarding_plans:
+            context["onboarding_plans"] = [plan.model_dump(mode="json") for plan in onboarding_plans]
+        if selected_plan is not None:
+            context["selected_onboarding_plan_id"] = selected_plan.id
         messages = [
             {"role": "user", "content": "Справочный контекст:\n" + json.dumps(context, ensure_ascii=False)},
             {"role": "user", "content": message},

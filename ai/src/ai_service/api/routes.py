@@ -100,7 +100,7 @@ def create_router(service_token: str) -> APIRouter:
             conversation_id=payload.conversation_id,
             actor=payload.actor,
             message=payload.message,
-            current_step=payload.current_step,
+            onboarding_plans=payload.onboarding_plans,
             history=payload.history,
             deadline=request.state.chat_deadline,
         ))

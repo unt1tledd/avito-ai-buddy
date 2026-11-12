@@ -20,8 +20,14 @@ def test_chat_contract_only_exposes_answers_and_sources():
     assert schemas["ChatRequest"]["properties"]["actor"]["$ref"].endswith("/ChatActor")
     assert set(schemas["ChatActor"]["required"]) == {"user_id", "team", "role"}
     assert "ActorRef" not in schemas
-    assert set(schemas["ChatRequest"]["properties"]) == {"conversation_id", "actor", "message", "current_step", "history"}
-    assert "current_step" not in schemas["ChatRequest"]["required"]
-    assert set(schemas["CurrentStep"]["required"]) == {"id", "title"}
+    assert set(schemas["ChatRequest"]["properties"]) == {
+        "conversation_id", "actor", "message", "onboarding_plans", "history",
+    }
+    assert "CurrentStep" not in schemas
+    assert "onboarding_plans" not in schemas["ChatRequest"]["required"]
+    assert schemas["ChatRequest"]["properties"]["onboarding_plans"]["maxItems"] == 128
+    assert set(schemas["OnboardingPlan"]["required"]) == {"id", "title"}
+    assert set(schemas["OnboardingStep"]["properties"]) == {"id", "title", "resource_id", "action_type"}
+    assert set(schemas["OnboardingStep"]["required"]) == {"id", "title"}
     assert set(schemas["ChatResponse"]["properties"]) == {"answer", "sources"}
     assert "ActionResult" not in schemas

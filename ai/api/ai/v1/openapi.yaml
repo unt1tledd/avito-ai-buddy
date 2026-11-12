@@ -124,13 +124,19 @@ components:
           maxLength: 4000
           minLength: 1
           title: Message
-        current_step:
-          anyOf:
-          - $ref: '#/components/schemas/CurrentStep'
-          - type: 'null'
-          description: Optional current onboarding step snapshot supplied by Chat.
-            Used to understand the question and refine knowledge search; does not
-            grant document access or confirm step completion.
+        onboarding_plans:
+          items:
+            $ref: '#/components/schemas/OnboardingPlan'
+          type: array
+          maxItems: 128
+          title: Onboarding Plans
+          description: Optional onboarding tracks supplied by Chat, each with its
+            current step or null. Step action_type is context only, not an instruction
+            to execute an action. Initial search uses the question only. Ambiguous
+            step references across multiple active tracks require clarification before
+            search and generation. Onboarding context is accepted only through this
+            field and is limited to 128 KiB of JSON context, including string escaping
+            for the model request.
         history:
           items:
             $ref: '#/components/schemas/Message'
@@ -165,32 +171,6 @@ components:
       - answer
       - sources
       title: ChatResponse
-    CurrentStep:
-      properties:
-        id:
-          type: string
-          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
-          title: Id
-        title:
-          type: string
-          maxLength: 256
-          minLength: 1
-          title: Title
-        resource_id:
-          anyOf:
-          - type: string
-            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
-          - type: string
-            const: ''
-          - type: 'null'
-          title: Resource Id
-      additionalProperties: false
-      type: object
-      required:
-      - id
-      - title
-      title: CurrentStep
-      description: Read-only onboarding step snapshot supplied by authenticated Chat.
     HTTPValidationError:
       properties:
         detail:
@@ -229,6 +209,64 @@ components:
       - role
       - content
       title: Message
+    OnboardingPlan:
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Id
+        title:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Title
+        current_step:
+          anyOf:
+          - $ref: '#/components/schemas/OnboardingStep'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - title
+      title: OnboardingPlan
+      description: Read-only track snapshot supplied by Chat, including tracks without
+        a current step.
+    OnboardingStep:
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Id
+        title:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Title
+        resource_id:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Resource Id
+        action_type:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Action Type
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - title
+      title: OnboardingStep
+      description: Current step within an onboarding track; action type is context
+        only.
     Readiness:
       properties:
         status:

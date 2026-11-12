@@ -4,7 +4,8 @@ from dataclasses import dataclass
 
 from ..agents.agent import Agent
 from ..core.diagnostics import operation
-from ..schemas.contracts import Actor, ChatActor, ChatResponse, CurrentStep, Message
+from ..rag.onboarding import snapshot_answer
+from ..schemas.contracts import Actor, ChatActor, ChatResponse, Message, OnboardingPlan
 
 
 class ChatUnavailable(Exception):
@@ -30,7 +31,7 @@ class ChatService:
         actor: ChatActor,
         message: str,
         deadline: float,
-        current_step: CurrentStep | None = None,
+        onboarding_plans: Sequence[OnboardingPlan] = (),
         history: Sequence[Message] = (),
     ) -> ChatResponse:
         if actor.actual_end_date is not None:
@@ -40,9 +41,13 @@ class ChatService:
             raise TimeoutError
         with operation("chat.answer"):
             async with asyncio.timeout_at(deadline):
+                snapshot = snapshot_answer(message, onboarding_plans)
+                if snapshot is not None:
+                    return snapshot
                 if self.agent is None:
                     raise ChatUnavailable("Чат с базой знаний недоступен.")
                 profile = Actor(user_id=actor.user_id, team=actor.team, role=actor.role)
                 return await self.agent.answer(
-                    message, profile, deadline=deadline, current_step=current_step, history=history,
+                    message, profile, deadline=deadline,
+                    onboarding_plans=onboarding_plans, history=history,
                 )

@@ -368,7 +368,7 @@ def test_readiness_requires_reimport_of_legacy_long_chunks(pg_schema):
     asyncio.run(run())
 
 
-def test_current_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch):
+def test_plan_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch):
     from fastapi.testclient import TestClient
 
     from ai_service.main import create_app
@@ -386,7 +386,7 @@ def test_current_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch
     step = {"id": "vpn-step", "title": "Получить VPN", "resource_id": "mentor-vpn"}
 
     async def embed(self, texts):
-        assert len(texts) == 1 and step["title"] in texts[0]
+        assert texts == ["Как выполнить этот шаг?"]
         return [VECTOR]
 
     monkeypatch.setattr(Embeddings, "embed", embed)
@@ -395,7 +395,7 @@ def test_current_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch
     class Model:
         async def respond(self, *, instructions, messages, tools):
             context = json.loads(messages[0]["content"].split("\n", 1)[1])
-            assert context["current_step"] == step
+            assert context["onboarding_plans"][0]["current_step"] == {**step, "action_type": "request_access"}
             contexts.append(context)
             hits = context["hits"]
             final = {
@@ -412,9 +412,13 @@ def test_current_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch
             ("intern", "52", []),
             ("mentor", "52", ["mentor-vpn"]),
         ]:
+            onboarding = {"onboarding_plans": [{
+                "id": "technical", "title": "Технический трек",
+                "current_step": {**step, "action_type": "request_access"},
+            }]}
             response = client.post("/api/v1/answer", headers={"Authorization": "Bearer chat-key"}, json={
                 "actor": {"user_id": "42", "role": role, "team": team},
-                "message": "Как выполнить этот шаг?", "current_step": step,
+                "message": "Как выполнить этот шаг?", **onboarding,
             })
             assert response.status_code == 200, response.text
             assert [hit["id"] for hit in contexts[-1]["hits"]] == expected

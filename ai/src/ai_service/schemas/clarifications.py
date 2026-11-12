@@ -2,10 +2,12 @@
 
 
 DEFAULT_CLARIFICATION = "Что именно вы хотите уточнить?"
+ONBOARDING_TRACK_CLARIFICATION = "О каком треке адаптации идёт речь?"
 CLARIFICATION_QUESTIONS = (
     DEFAULT_CLARIFICATION,
     "Какой именно доступ вам нужен?",
     "О каком шаге адаптации идёт речь?",
+    ONBOARDING_TRACK_CLARIFICATION,
     "Какой шаг вы хотите подтвердить?",
     "К какой сети вы подключаетесь?",
     "Какой операционной системой вы пользуетесь?",

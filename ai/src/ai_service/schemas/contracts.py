@@ -46,20 +46,36 @@ class ChatActor(Actor):
     actual_end_date: date | None = None
 
 
-class CurrentStep(Payload):
-    """Read-only onboarding step snapshot supplied by authenticated Chat."""
+class OnboardingStep(Payload):
+    """Current step within an onboarding track; action type is context only."""
 
     id: Identifier
     title: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256), AfterValidator(valid_utf8),
     ]
     resource_id: Identifier | None = None
+    action_type: Identifier | None = None
 
     @field_validator("resource_id", mode="before", json_schema_input_type=Identifier | Literal[""] | None)
     @classmethod
     def empty_resource_is_absent(cls, value: object) -> object:
         # Chat's Go string has an empty zero value for steps without a resource.
         return None if value == "" else value
+
+    @field_validator("action_type", mode="before", json_schema_input_type=Identifier | Literal[""] | None)
+    @classmethod
+    def empty_action_is_absent(cls, value: object) -> object:
+        return None if value == "" else value
+
+
+class OnboardingPlan(Payload):
+    """Read-only track snapshot supplied by Chat, including tracks without a current step."""
+
+    id: Identifier
+    title: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256), AfterValidator(valid_utf8),
+    ]
+    current_step: OnboardingStep | None = None
 
 
 class Message(Payload):
