@@ -14,7 +14,8 @@ from .api.middleware import RequestBoundary
 from .api.routes import create_router
 from .clients.embeddings import Embeddings
 from .clients.llm import LanguageModel, ResponsesModel
-from .core.config import Settings, validate_bearer_token
+from .core.config import Settings, resolve_embedding_profile, validate_bearer_token
+from .core.diagnostics import logger
 from .rag.retriever import Retriever
 from .repositories.knowledge import KnowledgeRepository
 from .services.chat_service import ChatService
@@ -23,6 +24,10 @@ from .services.chat_service import ChatService
 HTTP_CLIENT_TIMEOUT_SECONDS = 25
 DB_POOL_TIMEOUT_SECONDS = 2
 DB_POOL_MAX_SIZE = 4
+
+
+async def db_reconnect_failed(pool: AsyncConnectionPool) -> None:
+    logger.warning("event=db_reconnect_failed pool=%s", pool.name)
 
 
 def create_app(settings: Settings | None = None, *, model: LanguageModel | None = None) -> FastAPI:
@@ -46,14 +51,15 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
                 language_model = model or ResponsesModel(
                     http, settings.llm_base_url, settings.llm_api_key, settings.llm_model
                 )
-                embeddings = Embeddings(http, settings)
-                # Pool retries can include connection details. Emit only classified errors from the repository.
+                embeddings = Embeddings(http, resolve_embedding_profile(settings))
+                # Pool retries can include connection details. Use only safe application events.
                 logging.getLogger("psycopg.pool").disabled = True
                 pool = await stack.enter_async_context(AsyncConnectionPool(
                     settings.knowledge_db_dsn,
                     kwargs={"row_factory": dict_row, "connect_timeout": 3, "autocommit": True},
                     min_size=0, max_size=DB_POOL_MAX_SIZE, max_waiting=16,
                     timeout=DB_POOL_TIMEOUT_SECONDS, open=False, name="ai-knowledge",
+                    reconnect_failed=db_reconnect_failed,
                 ))
                 retriever = Retriever(
                     KnowledgeRepository(settings.knowledge_db_dsn, pool),

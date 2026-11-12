@@ -9,7 +9,7 @@ from ..core.diagnostics import request_id
 
 
 MAX_CHAT_BODY_BYTES = 1024 * 1024
-CHAT_PATHS = {"/api/v1/get_answer", "/api/v1/chat", "/v1/chat"}
+CHAT_PATHS = {"/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"}
 
 
 class RequestBoundary:

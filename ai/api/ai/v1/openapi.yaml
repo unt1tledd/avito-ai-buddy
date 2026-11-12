@@ -34,12 +34,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Readiness'
-  /api/v1/get_answer:
+  /api/v1/answer:
     post:
-      summary: Get Answer
+      summary: Answer
       description: Get an answer using the current user profile supplied by authenticated
         Chat. AI does not call User. Maximum request body is 1 MiB.
-      operationId: get_answer
+      operationId: answer
       requestBody:
         content:
           application/json:

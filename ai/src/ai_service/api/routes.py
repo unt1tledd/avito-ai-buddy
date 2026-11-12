@@ -8,7 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from ..core.diagnostics import UpstreamError
+from ..core.diagnostics import UpstreamError, logger, request_id
 from ..schemas.contracts import ChatResponse
 from ..services.chat_service import ChatService, ChatUnavailable, InvalidChat
 from .schemas import ChatRequest
@@ -70,7 +70,13 @@ def create_router(service_token: str) -> APIRouter:
         "/api/v1/get_answer",
         response_model=ChatResponse,
         dependencies=[Depends(authenticate)],
-        operation_id="get_answer",
+        include_in_schema=False,
+    )
+    @router.post(
+        "/api/v1/answer",
+        response_model=ChatResponse,
+        dependencies=[Depends(authenticate)],
+        operation_id="answer",
         description="Get an answer using the current user profile supplied by authenticated Chat. "
         "AI does not call User. Maximum request body is 1 MiB.",
         responses={
@@ -83,7 +89,7 @@ def create_router(service_token: str) -> APIRouter:
             HTTPStatus.GATEWAY_TIMEOUT: {"description": "Chat deadline expired"},
         },
     )
-    async def get_answer(payload: ChatRequest, request: Request) -> ChatResponse:
+    async def answer(payload: ChatRequest, request: Request) -> ChatResponse:
         service: ChatService = request.app.state.chat_service
 
         async def wait_for_disconnect() -> None:
@@ -102,6 +108,10 @@ def create_router(service_token: str) -> APIRouter:
         try:
             await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
             if not work.done():
+                logger.info(
+                    "event=chat_request_cancelled reason=client_disconnect request_id=%s",
+                    request_id.get(),
+                )
                 raise HTTPException(status_code=499, detail="Клиент закрыл соединение.")
             return work.result()
         except ChatUnavailable as error:

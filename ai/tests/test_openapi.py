@@ -15,8 +15,8 @@ def test_chat_contract_only_exposes_answers_and_sources():
     spec = create_app(Settings()).openapi()
     schemas = spec["components"]["schemas"]
 
-    assert "/api/v1/get_answer" in spec["paths"]
-    assert spec["paths"]["/api/v1/get_answer"]["post"]["operationId"] == "get_answer"
+    assert set(spec["paths"]) == {"/healthz", "/readyz", "/api/v1/answer"}
+    assert spec["paths"]["/api/v1/answer"]["post"]["operationId"] == "answer"
     assert schemas["ChatRequest"]["properties"]["actor"]["$ref"].endswith("/ChatActor")
     assert set(schemas["ChatActor"]["required"]) == {"user_id", "team", "role"}
     assert "ActorRef" not in schemas

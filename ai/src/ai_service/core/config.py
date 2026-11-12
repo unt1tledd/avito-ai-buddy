@@ -1,3 +1,6 @@
+import hashlib
+import json
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 import httpx
@@ -6,6 +9,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 DEFAULT_KNOWLEDGE_MIN_SIMILARITY = 0.3
+EMBEDDING_DIMENSIONS = 1536
+SILICONFLOW_DIMENSIONS = 1024
+SILICONFLOW_QWEN_MODELS = {
+    "Qwen/Qwen3-Embedding-8B", "Qwen/Qwen3-Embedding-4B", "Qwen/Qwen3-Embedding-0.6B",
+}
 
 
 def validate_base_url(name: str, value: str) -> None:
@@ -61,3 +69,67 @@ def _environment_name(field_name: str) -> str:
 
 class _EnvironmentSettings(Settings, BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=True, alias_generator=_environment_name)
+
+
+@dataclass(frozen=True)
+class EmbeddingProfile:
+    url: str
+    api_key: str = field(repr=False)
+    model: str
+    provider: str
+    openrouter: bool
+    request_dimensions: int | None
+    dimensions: int
+    index_id: str
+
+
+def resolve_embedding_profile(settings: Settings) -> EmbeddingProfile:
+    """Validate provider settings and preserve the existing knowledge index identity."""
+    base_url = settings.embedding_base_url or settings.llm_base_url
+    validate_base_url("EMBEDDING_BASE_URL" if settings.embedding_base_url else "LLM_BASE_URL", base_url)
+    url = str(httpx.URL(f"{base_url.rstrip('/')}/embeddings"))
+    api_key = settings.embedding_api_key or (settings.llm_api_key if not settings.embedding_base_url else "")
+    if api_key:
+        validate_bearer_token("EMBEDDING_API_KEY" if settings.embedding_api_key else "LLM_API_KEY", api_key)
+    model = settings.embedding_model
+    if not model.strip():
+        raise RuntimeError("EMBEDDING_MODEL must be configured")
+    host = urlsplit(url).hostname or ""
+    openrouter = host == "openrouter.ai" or host.endswith(".openrouter.ai")
+    provider = settings.embedding_provider
+    if openrouter and not provider:
+        raise RuntimeError("EMBEDDING_PROVIDER must pin an OpenRouter upstream")
+    siliconflow = (
+        host.removeprefix("api.") in {"siliconflow.com", "siliconflow.cn"}
+        or provider.split("/", 1)[0] == "siliconflow"
+    )
+    request_dimensions = settings.embedding_dimensions
+    qwen_model = (
+        model == "qwen/qwen3-embedding-8b" if openrouter else model in SILICONFLOW_QWEN_MODELS
+    )
+    if siliconflow:
+        if not qwen_model or request_dimensions not in (None, SILICONFLOW_DIMENSIONS):
+            raise RuntimeError("The SiliconFlow Qwen profile requires EMBEDDING_DIMENSIONS=1024")
+        request_dimensions = SILICONFLOW_DIMENSIONS
+    elif request_dimensions not in (None, EMBEDDING_DIMENSIONS):
+        raise RuntimeError(f"EMBEDDING_DIMENSIONS must be {EMBEDDING_DIMENSIONS} for the default profile")
+    if openrouter and qwen_model and not siliconflow and provider != "deepinfra":
+        raise RuntimeError("The supported OpenRouter Qwen providers are deepinfra (1536) and siliconflow (1024)")
+    if openrouter and qwen_model and not siliconflow:
+        request_dimensions = EMBEDDING_DIMENSIONS
+    if host == "api.openai.com":
+        if model not in {"text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"}:
+            raise RuntimeError("EMBEDDING_MODEL is incompatible with the OpenAI embeddings endpoint")
+        if model == "text-embedding-3-large" and request_dimensions is None:
+            raise RuntimeError("EMBEDDING_DIMENSIONS=1536 is required for text-embedding-3-large")
+        if model == "text-embedding-ada-002" and request_dimensions is not None:
+            raise RuntimeError("Leave EMBEDDING_DIMENSIONS unset for text-embedding-ada-002")
+    if (openrouter or siliconflow or host == "api.openai.com") and not api_key:
+        raise RuntimeError("EMBEDDING_API_KEY must be configured for the hosted embeddings endpoint")
+    dimensions = request_dimensions or EMBEDDING_DIMENSIONS
+    identity = (url, provider, model, dimensions, settings.embedding_index_version)
+    return EmbeddingProfile(
+        url=url, api_key=api_key, model=model, provider=provider, openrouter=openrouter,
+        request_dimensions=request_dimensions, dimensions=dimensions,
+        index_id=hashlib.sha256(json.dumps(identity).encode()).hexdigest(),
+    )

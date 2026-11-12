@@ -4,9 +4,9 @@ import json
 import httpx
 import pytest
 
-from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, SILICONFLOW_DIMENSIONS, EmbeddingError, Embeddings
+from ai_service.clients.embeddings import EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ResponsesModel
-from ai_service.core.config import Settings
+from ai_service.core.config import EMBEDDING_DIMENSIONS, SILICONFLOW_DIMENSIONS, Settings, resolve_embedding_profile
 
 
 FIRST_VECTOR = [1, 0] + [0] * (EMBEDDING_DIMENSIONS - 2)
@@ -38,7 +38,7 @@ def test_embeddings_request(status, items, expected):
             llm_api_key="llm-secret",
         )
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await Embeddings(http, settings).embed(["Первый", "Второй"])
+            return await Embeddings(http, resolve_embedding_profile(settings)).embed(["Первый", "Второй"])
 
     if expected is None:
         with pytest.raises(EmbeddingError):
@@ -69,7 +69,7 @@ def test_qwen_embeddings_use_separate_credentials_and_database_dimensions(monkey
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await Embeddings(http, Settings.from_env()).embed(["Вопрос"])
+            return await Embeddings(http, resolve_embedding_profile(Settings.from_env())).embed(["Вопрос"])
 
     assert asyncio.run(run()) == [qwen_vector]
 
@@ -81,7 +81,7 @@ def test_siliconflow_rejects_1536_before_network():
         embedding_dimensions=1536,
     )
     with pytest.raises(RuntimeError, match="1024"):
-        Embeddings(None, settings)
+        resolve_embedding_profile(settings)
 
 
 @pytest.mark.parametrize(("status", "response_fields"), [(200, {}), (200, {"status": "completed"}), (429, {})])
@@ -165,7 +165,7 @@ def test_openrouter_requires_pinned_embedding_provider():
         embedding_dimensions=1536,
     )
     with pytest.raises(RuntimeError, match="EMBEDDING_PROVIDER"):
-        Embeddings(None, settings)
+        resolve_embedding_profile(settings)
 
 
 def test_openrouter_provider_is_sent_and_changes_index_profile():
@@ -185,12 +185,12 @@ def test_openrouter_provider_is_sent_and_changes_index_profile():
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = Embeddings(http, settings)
-            other = Embeddings(http, settings.model_copy(update={
+            client = Embeddings(http, resolve_embedding_profile(settings))
+            other = Embeddings(http, resolve_embedding_profile(settings.model_copy(update={
                 "embedding_provider": "siliconflow", "embedding_dimensions": 1024,
-            }))
+            })))
             with pytest.raises(RuntimeError, match="supported OpenRouter Qwen providers"):
-                Embeddings(http, settings.model_copy(update={"embedding_provider": "nebius"}))
+                resolve_embedding_profile(settings.model_copy(update={"embedding_provider": "nebius"}))
             assert other.profile != client.profile
             assert await client.embed(["synthetic"]) == [FIRST_VECTOR]
 

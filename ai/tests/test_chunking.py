@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, EmbeddingError, Embeddings
-from ai_service.core.config import Settings
+from ai_service.clients.embeddings import EmbeddingError, Embeddings
+from ai_service.core.config import EMBEDDING_DIMENSIONS, Settings
 from ai_service.rag import chunking
 from ai_service.rag import import_documents as importer
 from ai_service.repositories.knowledge import KnowledgeRepository

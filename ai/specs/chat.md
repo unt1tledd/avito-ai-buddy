@@ -12,7 +12,7 @@ AI принимает вопрос и актуальный профиль пол
 
 ## Межсервисный контракт
 
-- Основная ручка — `POST /api/v1/get_answer`, operationId `get_answer`. Совместимые пути `POST /api/v1/chat` и `POST /v1/chat` вызывают тот же обработчик с тем же контрактом. Все пути требуют Bearer-токен `AI_SERVICE_TOKEN`.
+- Основная ручка — `POST /api/v1/answer`, operationId `answer`. Совместимые пути `POST /api/v1/get_answer`, `POST /api/v1/chat` и `POST /v1/chat` вызывают тот же обработчик с тем же контрактом. Все пути требуют Bearer-токен `AI_SERVICE_TOKEN`.
 - Chat передаёт вопрос в `message` и полный `actor`: строковые `user_id`, `team`, `role`. Только ID пользователя без команды или роли отклоняется с 422 до поиска и вызова модели. Идентификаторы содержат до 64 латинских букв, цифр, `_` или `-` и начинаются с буквы или цифры.
 - `actor.user_id` берётся из проверенной сессии Chat, `team` — из `team.team_id` профиля User в виде строки. Роль Chat определяет по авторитетному источнику прав; для профиля стажёра передаётся `intern`. Пользовательский браузер не должен определять эти поля. AI доверяет профилю только от сервиса Chat, прошедшего проверку сервисного токена.
 - Если профиль User содержит `actual_end_date`, Chat передаёт его в `actor.actual_end_date` в формате `YYYY-MM-DD`. Непустая дата завершённой стажировки отклоняется с 422 до обращения к зависимостям. Для активной стажировки поле можно опустить или передать `null`; Chat отвечает за актуальность переданного профиля.
@@ -48,7 +48,7 @@ AI принимает вопрос и актуальный профиль пол
 Пример вызова из Chat (адрес AI выбирается в конфигурации Chat):
 
 ```sh
-curl --request POST http://ai:8080/api/v1/get_answer \
+curl --request POST http://ai:8080/api/v1/answer \
   --header "Authorization: Bearer $AI_SERVICE_TOKEN" \
   --header 'Content-Type: application/json' \
   --data '{"conversation_id":"123","actor":{"user_id":"42","team":"101","role":"intern","actual_end_date":null},"message":"Как настроить окружение?"}'

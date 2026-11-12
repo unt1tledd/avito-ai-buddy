@@ -105,7 +105,7 @@ uv run --locked python -m ai_service.rag.import_documents knowledge/documents.js
 }
 ```
 
-Отправить на `POST /api/v1/get_answer` с `Authorization: Bearer <AI_SERVICE_TOKEN>`. Ожидается ответ про «Неву», третий этаж, поле «Ресурс», подтверждение «Принято», лимит 2 часа и горизонт 30 дней, со ссылкой `[source:synth-book-meeting-room]`. Это эталон, а не результат выполненного запроса к модели.
+Отправить на `POST /api/v1/answer` с `Authorization: Bearer <AI_SERVICE_TOKEN>`. Ожидается ответ про «Неву», третий этаж, поле «Ресурс», подтверждение «Принято», лимит 2 часа и горизонт 30 дней, со ссылкой `[source:synth-book-meeting-room]`. Это эталон, а не результат выполненного запроса к модели.
 
 ## Проверка RAG
 

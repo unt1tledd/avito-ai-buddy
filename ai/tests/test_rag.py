@@ -13,9 +13,9 @@ from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, Embeddings
+from ai_service.clients.embeddings import Embeddings
 from ai_service.clients.llm import ModelResponse
-from ai_service.core.config import Settings
+from ai_service.core.config import EMBEDDING_DIMENSIONS, Settings, resolve_embedding_profile
 from ai_service.mcp.server import build_server
 from ai_service.rag.import_documents import import_documents
 from ai_service.rag.chunking import chunk_documents
@@ -171,15 +171,15 @@ def test_qwen_import_query_and_atomic_reindex(pg_schema, tmp_path, monkeypatch):
         await import_documents(source, settings)
         async with pool_for(pg_schema) as pool, client(transport=transport) as http:
             repo = KnowledgeRepository(pg_schema, pool)
-            embeddings = Embeddings(http, settings)
+            embeddings = Embeddings(http, resolve_embedding_profile(settings))
             retriever = Retriever(repo, embeddings, 0.3)
             assert [hit.id for hit in (await retriever.search("Question", ACTOR)).hits] == ["qwen"]
-            changed = Embeddings(http, settings.model_copy(update={"embedding_index_version": "2"}))
+            changed = Embeddings(http, resolve_embedding_profile(settings.model_copy(update={"embedding_index_version": "2"})))
             with pytest.raises(KnowledgeError, match="не проиндексирована"):
                 await Retriever(repo, changed, 0.3).search("Question", ACTOR)
-            assert Embeddings(http, settings.model_copy(update={
+            assert Embeddings(http, resolve_embedding_profile(settings.model_copy(update={
                 "embedding_base_url": "https://api.siliconflow.cn/v1",
-            })).profile != embeddings.profile
+            }))).profile != embeddings.profile
             with pytest.raises(KnowledgeError, match="заменить"):
                 await repo.replace([doc("broken")], [[1.0]], changed.model, changed.profile)
             assert [hit.id for hit in (await retriever.search("Question", ACTOR)).hits] == ["qwen"]
@@ -262,7 +262,7 @@ def test_readiness_checks_real_pool_and_active_profile(pg_schema):
         service_token="chat-key", knowledge_db_dsn=pg_schema,
         knowledge_processing_approved=True, llm_api_key="llm-key", llm_model="test-model",
     )
-    profile = Embeddings(None, settings).profile
+    profile = Embeddings(None, resolve_embedding_profile(settings)).profile
 
     with TestClient(create_app(settings)) as client:
         response = client.get("/readyz")
@@ -334,14 +334,14 @@ def test_long_document_tail_reaches_model_and_preserves_acl_after_reimport(pg_sc
     with TestClient(create_app(settings, model=Model())) as client:
         assert client.get("/readyz").status_code == 200
         payload = {"message": question, "actor": {"user_id": "42", "role": "intern", "team": "51"}}
-        reply = client.post("/api/v1/get_answer", headers=headers, json=payload)
+        reply = client.post("/api/v1/answer", headers=headers, json=payload)
         assert reply.status_code == 200, reply.text
         assert "Два рабочих дня" in reply.json()["answer"]
         assert reply.json()["sources"] == contexts[0]["hits"][:1]
         assert all(hit["title"] == original.title and hit["url"] == str(original.url) for hit in reply.json()["sources"])
         for actor in ({"user_id": "42", "role": "mentor", "team": "51"},
                       {"user_id": "42", "role": "intern", "team": "52"}):
-            reply = client.post("/api/v1/get_answer", headers=headers, json={**payload, "actor": actor})
+            reply = client.post("/api/v1/answer", headers=headers, json={**payload, "actor": actor})
             assert reply.status_code == 200, reply.text
             assert reply.json()["sources"] == []
             assert contexts[-1]["hits"] == []
@@ -378,7 +378,7 @@ def test_current_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch
         service_token="chat-key", knowledge_db_dsn=pg_schema,
         knowledge_processing_approved=True, embedding_api_key="test-key",
     )
-    profile = Embeddings(None, settings).profile
+    profile = Embeddings(None, resolve_embedding_profile(settings)).profile
     asyncio.run(KnowledgeRepository(pg_schema).replace(
         [doc("intern-guide", team="51"), doc("mentor-vpn", role="mentor", team="52")],
         [VECTOR, VECTOR], settings.embedding_model, profile,
@@ -412,7 +412,7 @@ def test_current_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch
             ("intern", "52", []),
             ("mentor", "52", ["mentor-vpn"]),
         ]:
-            response = client.post("/api/v1/get_answer", headers={"Authorization": "Bearer chat-key"}, json={
+            response = client.post("/api/v1/answer", headers={"Authorization": "Bearer chat-key"}, json={
                 "actor": {"user_id": "42", "role": role, "team": team},
                 "message": "Как выполнить этот шаг?", "current_step": step,
             })
@@ -462,7 +462,7 @@ def test_history_is_filtered_again_after_role_team_change_or_source_deletion(pg_
         service_token="chat-key", knowledge_db_dsn=pg_schema,
         knowledge_processing_approved=True, embedding_api_key="test-key",
     )
-    profile = Embeddings(None, settings).profile
+    profile = Embeddings(None, resolve_embedding_profile(settings)).profile
     asyncio.run(KnowledgeRepository(pg_schema).replace(
         [Document(id="public", title="Общая инструкция", text="Общие сведения.", roles={"intern", "mentor"}),
          doc("mentor-guide", role="mentor", team="51")],
@@ -491,7 +491,7 @@ def test_history_is_filtered_again_after_role_team_change_or_source_deletion(pg_
 
     with TestClient(create_app(settings, model=Model())) as client:
         def ask(role, team, expect_secret):
-            response = client.post("/api/v1/get_answer", headers={"Authorization": "Bearer chat-key"}, json={
+            response = client.post("/api/v1/answer", headers={"Authorization": "Bearer chat-key"}, json={
                 "actor": {"user_id": "42", "role": role, "team": team}, "conversation_id": "same-chat",
                 "message": "А сколько ждать?", "history": history,
             })

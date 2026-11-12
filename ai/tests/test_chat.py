@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 import httpx
 import psycopg
@@ -7,9 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ai_service.agents.agent import NO_KNOWLEDGE
-from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, EmbeddingError, Embeddings
+from ai_service.clients.embeddings import EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ModelResponse
-from ai_service.core.config import Settings
+from ai_service.core.config import EMBEDDING_DIMENSIONS, Settings
+from ai_service.core.diagnostics import logger
 from ai_service.main import create_app
 from ai_service.rag.retriever import Retriever
 from ai_service.repositories.knowledge import KnowledgeRepository
@@ -112,7 +114,7 @@ def test_chat_rejects_invalid_provider_settings_on_startup(settings, overrides, 
 
 
 def ask(client, message, actor=ACTOR, **extra):
-    return client.post("/api/v1/get_answer", headers=AUTH, json={"actor": actor, "message": message, **extra})
+    return client.post("/api/v1/answer", headers=AUTH, json={"actor": actor, "message": message, **extra})
 
 
 def tool_output(model, request_index=1):
@@ -142,7 +144,7 @@ def test_chat_forwards_accessible_sources_from_search(settings, actor, ids):
     assert [tool["name"] for tool in model.requests[0][2]] == ["find_instruction"]
 
 
-def test_get_answer_uses_chat_profile_without_calling_user(settings, monkeypatch, use_mock_http):
+def test_answer_uses_chat_profile_without_calling_user(settings, monkeypatch, use_mock_http):
     def unexpected_http(request):
         pytest.fail(f"Unexpected outgoing HTTP request: {request.method} {request.url}")
 
@@ -159,7 +161,7 @@ def test_get_answer_uses_chat_profile_without_calling_user(settings, monkeypatch
     }
     with TestClient(create_app(settings, model=model)) as client:
         assert client.get("/readyz").status_code == 200
-        response = client.post("/api/v1/get_answer", headers=AUTH, json=payload)
+        response = client.post("/api/v1/answer", headers=AUTH, json=payload)
 
     assert response.status_code == 200, response.text
     assert set(response.json()) == {"answer", "sources"}
@@ -172,7 +174,7 @@ def test_get_answer_uses_chat_profile_without_calling_user(settings, monkeypatch
     assert "actual_end_date" not in json.dumps(messages)
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 def test_answer_endpoint_and_compatibility_routes(settings, path):
     model = ScriptedModel(answer("Инструкция [source:demo-dev-environment]"))
     with TestClient(create_app(settings, model=model)) as client:
@@ -191,7 +193,7 @@ def test_supplied_profile_does_not_bypass_chat_authentication(settings, monkeypa
     monkeypatch.setattr(Embeddings, "embed", unexpected_work)
     model = ScriptedModel()
     with TestClient(create_app(settings, model=model)) as client:
-        response = client.post("/api/v1/get_answer", headers=headers, json={"actor": ACTOR, "message": QUESTION})
+        response = client.post("/api/v1/answer", headers=headers, json={"actor": ACTOR, "message": QUESTION})
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
     assert model.requests == []
@@ -221,7 +223,7 @@ def test_invalid_chat_profile_is_rejected_before_dependencies(settings, monkeypa
     assert model.requests == []
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("step_id", ["dev-environment", None])
 def test_step_confirmation_is_rejected_before_any_work(
     settings, use_mock_http, monkeypatch, path, step_id
@@ -354,7 +356,7 @@ def test_model_cannot_call_write_tools(settings, model_tries_to_write):
         assert "недоступен" in tool_output(model)["error"]
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 def test_service_requires_auth_and_config(settings, path):
     payload = {"actor": ACTOR, "message": "Привет"}
     with TestClient(create_app(settings)) as client:
@@ -472,7 +474,7 @@ def test_llm_tool_follow_up_preserves_provider_items_and_call_id(settings, use_m
     assert [hit["id"] for hit in json.loads(output["output"])["hits"]] == ["demo-dev-environment"]
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("body", [
     b'{"message":NaN,"actor":{"user_id":"42"}}',
     b'{"message":"hi","actor":{"user_id":"42"},"extra":{"value":Infinity}}',
@@ -485,7 +487,7 @@ def test_invalid_json_values_return_serializable_validation_errors(settings, pat
     assert isinstance(response.json()["detail"][0]["type"], str)
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("chunked", [False, True])
 def test_chat_body_limit(settings, path, chunked):
     from ai_service.api.middleware import MAX_CHAT_BODY_BYTES
@@ -580,7 +582,8 @@ def test_duplicate_call_id_across_rounds(settings):
     assert "повторяющиеся" in response.json()["detail"]
 
 
-def test_chat_deadline_cancels_model(settings):
+def test_chat_deadline_cancels_model(settings, caplog):
+    caplog.set_level(logging.INFO, logger=logger.name)
     cancellations = []
 
     class SlowModel:
@@ -595,10 +598,13 @@ def test_chat_deadline_cancels_model(settings):
         response = ask(client, QUESTION)
     assert response.status_code == 504
     assert cancellations == ["cancelled"]
+    assert "event=chat_request_cancelled" not in caplog.text
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
-def test_disconnected_client_cancels_in_flight_request(settings, path):
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+def test_disconnected_client_cancels_in_flight_request(settings, path, caplog):
+    caplog.set_level(logging.INFO, logger=logger.name)
+
     async def run():
         started = asyncio.Event()
         cancelled = asyncio.Event()
@@ -616,6 +622,7 @@ def test_disconnected_client_cancels_in_flight_request(settings, path):
             "type": "http.request", "more_body": False,
             "body": json.dumps({"message": QUESTION, "actor": ACTOR}).encode(),
         }])
+        responses = []
 
         async def receive():
             if event := next(events, None):
@@ -623,8 +630,8 @@ def test_disconnected_client_cancels_in_flight_request(settings, path):
             await started.wait()
             return {"type": "http.disconnect"}
 
-        async def send(_):
-            pass
+        async def send(message):
+            responses.append(message)
 
         async with app.router.lifespan_context(app):
             await asyncio.wait_for(app({
@@ -634,11 +641,38 @@ def test_disconnected_client_cancels_in_flight_request(settings, path):
                 ],
             }, receive, send), timeout=1)
         assert cancelled.is_set()
+        response = next(message for message in responses if message["type"] == "http.response.start")
+        assert response["status"] == 499
+        correlation = dict(response["headers"])[b"x-request-id"].decode()
+        records = [record for record in caplog.records if "event=chat_request_cancelled" in record.getMessage()]
+        assert len(records) == 1
+        assert records[0].levelno == logging.INFO
+        assert records[0].getMessage() == (
+            f"event=chat_request_cancelled reason=client_disconnect request_id={correlation}"
+        )
 
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+def test_pool_reconnect_failure_logs_only_event_and_pool_name(settings, caplog):
+    configured = settings.model_copy(update={
+        "knowledge_db_dsn": "postgresql://private-user:private-password@private-host/private-db",
+    })
+    app = create_app(configured, model=ScriptedModel())
+
+    async def run():
+        async with app.router.lifespan_context(app):
+            pool = app.state.chat_service.agent.knowledge.repository.pool
+            await pool.reconnect_failed()
+
+    with caplog.at_level(logging.WARNING, logger=logger.name):
+        asyncio.run(run())
+    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
+        (logging.WARNING, "event=db_reconnect_failed pool=ai-knowledge"),
+    ]
+
+
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 def test_chat_deadline_includes_reading_body(settings, path):
     async def run():
         app = create_app(settings.model_copy(update={"chat_timeout_seconds": 0.05}))
@@ -951,7 +985,7 @@ def test_citation_repair_is_cancelled_by_original_deadline(settings, monkeypatch
     assert cancelled == [True]
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("content_type", ["text/plain", "application/octet-stream"])
 def test_binary_input_returns_safe_validation_error(settings, path, content_type):
     model = ScriptedModel()
@@ -972,13 +1006,13 @@ def test_binary_input_returns_safe_validation_error(settings, path, content_type
 ])
 def test_validation_details_omit_unsafe_inputs_and_context(settings, body):
     with TestClient(create_app(settings), raise_server_exceptions=False) as client:
-        response = client.post("/api/v1/get_answer", headers={**AUTH, "Content-Type": "application/json"}, content=body)
+        response = client.post("/api/v1/answer", headers={**AUTH, "Content-Type": "application/json"}, content=body)
     assert response.status_code == 422, response.text
     assert response.json()["detail"]
     assert all(set(issue) == {"type", "loc", "msg"} for issue in response.json()["detail"])
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("resource", [{}, {"resource_id": None}, {"resource_id": ""}, {"resource_id": "vpn"}])
 def test_current_step_is_accepted_and_used_for_search_and_model(settings, monkeypatch, use_mock_http, path, resource):
     queries = []
@@ -1057,7 +1091,7 @@ def test_invalid_current_step_is_rejected_before_dependencies(settings, monkeypa
     model = ScriptedModel()
     with TestClient(create_app(settings, model=model)) as client:
         response = client.post(
-            "/api/v1/get_answer", headers={**AUTH, "Content-Type": "application/json"},
+            "/api/v1/answer", headers={**AUTH, "Content-Type": "application/json"},
             content=json.dumps({"actor": ACTOR, "message": QUESTION, "current_step": step}, ensure_ascii=True),
         )
     assert response.status_code == 422, response.text
@@ -1101,7 +1135,7 @@ def previous_messages(model, request_index=0):
     return json.loads(block["content"].split("\n", 1)[1])
 
 
-@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("citation", ["fresh-vpn-duration", "demo-dev-environment"])
 def test_follow_up_uses_history_and_requires_sources_from_current_search(settings, monkeypatch, path, citation):
     from ai_service.agents.agent import MAX_CONTEXT_BYTES, json_size
@@ -1223,7 +1257,7 @@ def test_expanded_history_and_request_budgets_accept_large_conversation(settings
     model = ScriptedModel(answer("Что именно нужно уточнить?", kind="clarification"))
     with TestClient(create_app(settings, model=model)) as client:
         response = client.post(
-            "/api/v1/get_answer", headers={**AUTH, "Content-Type": "application/json"}, content=body,
+            "/api/v1/answer", headers={**AUTH, "Content-Type": "application/json"}, content=body,
         )
     assert response.status_code == 200, response.text
     selected = previous_messages(model)

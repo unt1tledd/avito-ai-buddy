@@ -7,7 +7,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from ..clients.embeddings import Embeddings
 from ..core.diagnostics import UpstreamError
-from ..core.config import Settings
+from ..core.config import Settings, resolve_embedding_profile
 from ..repositories.knowledge import KnowledgeRepository
 from ..schemas.contracts import Document
 from .chunking import chunk_documents
@@ -48,7 +48,7 @@ async def import_documents(source: Path, settings: Settings) -> None:
 
     vectors: list[list[float]] = []
     async with httpx.AsyncClient(timeout=IMPORT_EMBEDDING_TIMEOUT_SECONDS) as http:
-        embeddings = Embeddings(http, settings)
+        embeddings = Embeddings(http, resolve_embedding_profile(settings))
         for start in range(0, len(chunks), IMPORT_EMBEDDING_BATCH_SIZE):
             batch = chunks[start:start + IMPORT_EMBEDDING_BATCH_SIZE]
             vectors.extend(await embeddings.embed([chunk.embedding_text() for chunk in batch]))
