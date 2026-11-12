@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from ..schemas.contracts import ChatActor, Identifier, Message, MessageText, Payload
+from ..schemas.contracts import ChatActor, CurrentStep, Identifier, Message, MessageText, Payload
 
 
 MAX_CHAT_HISTORY_MESSAGES = 12
@@ -15,6 +15,11 @@ class ChatRequest(Payload):
         "and does not call User. Forward actual_end_date when the internship has ended.",
     )
     message: MessageText
+    current_step: CurrentStep | None = Field(
+        default=None,
+        description="Optional current onboarding step snapshot supplied by Chat. Used to understand the question "
+        "and refine knowledge search; does not grant document access or confirm step completion.",
+    )
     history: list[Message] = Field(
         default_factory=list,
         max_length=MAX_CHAT_HISTORY_MESSAGES,

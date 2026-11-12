@@ -94,6 +94,7 @@ def create_router(service_token: str) -> APIRouter:
             conversation_id=payload.conversation_id,
             actor=payload.actor,
             message=payload.message,
+            current_step=payload.current_step,
             deadline=request.state.chat_deadline,
         ))
         disconnect = asyncio.create_task(wait_for_disconnect())

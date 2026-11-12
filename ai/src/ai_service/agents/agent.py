@@ -12,7 +12,7 @@ from ..clients.llm import FunctionCall, LanguageModel, ModelError, ModelResponse
 from ..rag.retriever import Retriever
 from ..rag.tools import FIND_INSTRUCTION_DESCRIPTION, FIND_INSTRUCTION_NAME, FindInstructionArguments
 from ..repositories.knowledge import KnowledgeError
-from ..schemas.contracts import Actor, ChatResponse, MAX_RESPONSE_SOURCES, SearchHit, SearchResult, valid_utf8
+from ..schemas.contracts import Actor, ChatResponse, CurrentStep, MAX_RESPONSE_SOURCES, SearchHit, SearchResult, valid_utf8
 
 
 MAX_TOOL_CALLS = 3
@@ -120,11 +120,21 @@ class Agent:
         self.knowledge = knowledge
         self.prompt = prompt
 
-    async def answer(self, message: str, actor: Actor, *, deadline: float | None = None) -> ChatResponse:
+    async def answer(
+        self, message: str, actor: Actor, *, deadline: float | None = None, current_step: CurrentStep | None = None,
+    ) -> ChatResponse:
         turn = Turn()
-        retrieved = await self._search(message, actor, turn)
+        query = message
+        if current_step is not None:
+            query = f"Вопрос: {message}\nТекущий шаг: {current_step.title}"
+            if current_step.resource_id is not None:
+                query += f"\nРесурс шага: {current_step.resource_id}"
+        retrieved = await self._search(query, actor, turn)
+        context = retrieved.model_dump(mode="json")
+        if current_step is not None:
+            context["current_step"] = current_step.model_dump(mode="json")
         messages = [
-            {"role": "user", "content": "Справочный контекст:\n" + retrieved.model_dump_json()},
+            {"role": "user", "content": "Справочный контекст:\n" + json.dumps(context, ensure_ascii=False)},
             {"role": "user", "content": message},
         ]
         turn.add_sources(retrieved)

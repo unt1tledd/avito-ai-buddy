@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, field_validator
 
 
 MAX_CHAT_MESSAGE_LENGTH = 4000
@@ -44,6 +44,22 @@ class ChatActor(Actor):
     """Current user context supplied by the authenticated Chat service."""
 
     actual_end_date: date | None = None
+
+
+class CurrentStep(Payload):
+    """Read-only onboarding step snapshot supplied by authenticated Chat."""
+
+    id: Identifier
+    title: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256), AfterValidator(valid_utf8),
+    ]
+    resource_id: Identifier | None = None
+
+    @field_validator("resource_id", mode="before", json_schema_input_type=Identifier | Literal[""] | None)
+    @classmethod
+    def empty_resource_is_absent(cls, value: object) -> object:
+        # Chat's Go string has an empty zero value for steps without a resource.
+        return None if value == "" else value
 
 
 class Message(Payload):

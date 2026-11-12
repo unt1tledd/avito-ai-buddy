@@ -124,6 +124,13 @@ components:
           maxLength: 4000
           minLength: 1
           title: Message
+        current_step:
+          anyOf:
+          - $ref: '#/components/schemas/CurrentStep'
+          - type: 'null'
+          description: Optional current onboarding step snapshot supplied by Chat.
+            Used to understand the question and refine knowledge search; does not
+            grant document access or confirm step completion.
         history:
           items:
             $ref: '#/components/schemas/Message'
@@ -157,6 +164,32 @@ components:
       - answer
       - sources
       title: ChatResponse
+    CurrentStep:
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Id
+        title:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Title
+        resource_id:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Resource Id
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - title
+      title: CurrentStep
+      description: Read-only onboarding step snapshot supplied by authenticated Chat.
     HTTPValidationError:
       properties:
         detail:

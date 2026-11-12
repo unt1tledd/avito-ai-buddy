@@ -961,3 +961,120 @@ def test_validation_details_omit_unsafe_inputs_and_context(settings, body):
     assert response.status_code == 422, response.text
     assert response.json()["detail"]
     assert all(set(issue) == {"type", "loc", "msg"} for issue in response.json()["detail"])
+
+
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("resource", [{}, {"resource_id": None}, {"resource_id": ""}, {"resource_id": "vpn"}])
+def test_current_step_is_accepted_and_used_for_search_and_model(settings, monkeypatch, use_mock_http, path, resource):
+    queries = []
+
+    async def embed(self, texts):
+        queries.extend(texts)
+        return [EMBEDDING]
+
+    def unexpected_http(request):
+        pytest.fail("AI must use the supplied step without calling Onboarding or User")
+
+    monkeypatch.setattr(Embeddings, "embed", embed)
+    use_mock_http(unexpected_http)
+    step = {"id": "setup-vpn", "title": "Настроить VPN", **resource}
+    model = ScriptedModel(answer("Инструкция. [source:demo-dev-environment]"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = client.post(path, headers=AUTH, json={
+            "actor": ACTOR, "message": "Как выполнить этот шаг?", "current_step": step,
+        })
+
+    assert response.status_code == 200, response.text
+    assert len(queries) == 1
+    assert "Как выполнить этот шаг?" in queries[0] and step["title"] in queries[0]
+    if resource.get("resource_id"):
+        assert "vpn" in queries[0]
+    context = first_context(model)
+    assert context["current_step"] == {
+        "id": "setup-vpn", "title": "Настроить VPN", "resource_id": resource.get("resource_id") or None,
+    }
+    assert context["hits"] == response.json()["sources"]
+    assert model.requests[0][1][-1] == {"role": "user", "content": "Как выполнить этот шаг?"}
+
+
+def test_current_step_is_not_reused_between_requests(settings, monkeypatch):
+    queries = []
+
+    async def embed(self, texts):
+        queries.extend(texts)
+        return [EMBEDDING]
+
+    monkeypatch.setattr(Embeddings, "embed", embed)
+    steps = [
+        {"id": "vpn-step", "title": "Подключить VPN", "resource_id": "vpn"},
+        {"id": "tracker-step", "title": "Открыть трекер", "resource_id": "tracker"},
+        None,
+    ]
+    model = ScriptedModel(*(answer("Инструкция. [source:demo-dev-environment]") for _ in steps))
+    with TestClient(create_app(settings, model=model)) as client:
+        for step in steps:
+            response = ask(client, QUESTION, conversation_id="same-chat", current_step=step)
+            assert response.status_code == 200, response.text
+    assert "Подключить VPN" in queries[0]
+    assert "Открыть трекер" in queries[1] and "VPN" not in queries[1]
+    assert queries[2] == QUESTION
+    assert first_context(model, 1)["current_step"] == steps[1]
+    assert "current_step" not in first_context(model, 2)
+
+
+@pytest.mark.parametrize("step", [
+    {},
+    {"id": "vpn"},
+    {"title": "VPN"},
+    {"id": "vpn", "title": "  "},
+    {"id": "vpn", "title": "A" * 257},
+    {"id": "vpn", "title": "\ud800"},
+    {"id": "invalid id", "title": "VPN"},
+    {"id": "vpn", "title": "VPN", "resource_id": 42},
+    {"id": "vpn", "title": "VPN", "status": "completed"},
+    {"id": "vpn", "title": "VPN", "role": "mentor"},
+])
+def test_invalid_current_step_is_rejected_before_dependencies(settings, monkeypatch, step):
+    def unexpected_work(*args, **kwargs):
+        pytest.fail("Invalid step reached embeddings or knowledge search")
+
+    monkeypatch.setattr(Embeddings, "embed", unexpected_work)
+    model = ScriptedModel()
+    with TestClient(create_app(settings, model=model)) as client:
+        response = client.post(
+            "/api/v1/get_answer", headers={**AUTH, "Content-Type": "application/json"},
+            content=json.dumps({"actor": ACTOR, "message": QUESTION, "current_step": step}, ensure_ascii=True),
+        )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"][:2] == ["body", "current_step"]
+    assert model.requests == []
+
+
+@pytest.mark.parametrize("citation", ["setup-vpn", "vpn-resource"])
+def test_step_and_resource_ids_are_not_knowledge_sources(settings, citation):
+    model = ScriptedModel(answer(f"Инструкция. [source:{citation}]"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION, current_step={
+            "id": "setup-vpn", "title": "Подключить VPN", "resource_id": "vpn-resource",
+        })
+    assert response.status_code == 502
+    assert "недоступный источник" in response.json()["detail"]
+
+
+def test_current_step_does_not_force_unrelated_refined_search(settings, monkeypatch):
+    queries = []
+
+    async def search(self, query, actor):
+        assert actor.model_dump() == ACTOR
+        queries.append(query)
+        return search_hits("dms") if query == "ДМС" else SearchResult(hits=[])
+
+    monkeypatch.setattr(Retriever, "search", search)
+    model = ScriptedModel(
+        call("find_instruction", query="ДМС"), answer("Инструкция по ДМС. [source:dms-0]"),
+    )
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, "Как оформить ДМС?", current_step={"id": "vpn-step", "title": "Настроить VPN"})
+    assert response.status_code == 200, response.text
+    assert queries[-1] == "ДМС"
+    assert [source["id"] for source in response.json()["sources"]] == ["dms-0"]

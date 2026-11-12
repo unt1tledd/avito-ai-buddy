@@ -366,3 +366,56 @@ def test_readiness_requires_reimport_of_legacy_long_chunks(pg_schema):
             await repository.check_ready(PROFILE)
 
     asyncio.run(run())
+
+
+def test_current_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from ai_service.main import create_app
+
+    migrate(pg_schema)
+    settings = Settings(
+        service_token="chat-key", knowledge_db_dsn=pg_schema,
+        knowledge_processing_approved=True, embedding_api_key="test-key",
+    )
+    profile = Embeddings(None, settings).profile
+    asyncio.run(KnowledgeRepository(pg_schema).replace(
+        [doc("intern-guide", team="51"), doc("mentor-vpn", role="mentor", team="52")],
+        [VECTOR, VECTOR], settings.embedding_model, profile,
+    ))
+    step = {"id": "vpn-step", "title": "Получить VPN", "resource_id": "mentor-vpn"}
+
+    async def embed(self, texts):
+        assert len(texts) == 1 and step["title"] in texts[0]
+        return [VECTOR]
+
+    monkeypatch.setattr(Embeddings, "embed", embed)
+    contexts = []
+
+    class Model:
+        async def respond(self, *, instructions, messages, tools):
+            context = json.loads(messages[0]["content"].split("\n", 1)[1])
+            assert context["current_step"] == step
+            contexts.append(context)
+            hits = context["hits"]
+            final = {
+                "kind": "grounded_answer" if hits else "no_knowledge",
+                "answer": f"Инструкция. [source:{hits[0]['id']}]" if hits else "Нет данных.",
+            }
+            return ModelResponse(output=[{
+                "type": "message", "content": [{"type": "output_text", "text": json.dumps(final)}],
+            }])
+
+    with TestClient(create_app(settings, model=Model())) as client:
+        for role, team, expected in [
+            ("intern", "51", ["intern-guide"]),
+            ("intern", "52", []),
+            ("mentor", "52", ["mentor-vpn"]),
+        ]:
+            response = client.post("/api/v1/get_answer", headers={"Authorization": "Bearer chat-key"}, json={
+                "actor": {"user_id": "42", "role": role, "team": team},
+                "message": "Как выполнить этот шаг?", "current_step": step,
+            })
+            assert response.status_code == 200, response.text
+            assert [hit["id"] for hit in contexts[-1]["hits"]] == expected
+            assert [hit["id"] for hit in response.json()["sources"]] == expected
