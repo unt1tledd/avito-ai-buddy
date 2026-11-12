@@ -1,9 +1,10 @@
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..agents.agent import Agent
 from ..core.diagnostics import operation
-from ..schemas.contracts import Actor, ChatActor, ChatResponse, CurrentStep
+from ..schemas.contracts import Actor, ChatActor, ChatResponse, CurrentStep, Message
 
 
 class ChatUnavailable(Exception):
@@ -30,6 +31,7 @@ class ChatService:
         message: str,
         deadline: float,
         current_step: CurrentStep | None = None,
+        history: Sequence[Message] = (),
     ) -> ChatResponse:
         if actor.actual_end_date is not None:
             raise InvalidChat(("actor", "actual_end_date"), "Стажировка завершена.", "value_error")
@@ -41,4 +43,6 @@ class ChatService:
                 if self.agent is None:
                     raise ChatUnavailable("Чат с базой знаний недоступен.")
                 profile = Actor(user_id=actor.user_id, team=actor.team, role=actor.role)
-                return await self.agent.answer(message, profile, deadline=deadline, current_step=current_step)
+                return await self.agent.answer(
+                    message, profile, deadline=deadline, current_step=current_step, history=history,
+                )

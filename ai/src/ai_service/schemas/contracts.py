@@ -64,7 +64,14 @@ class CurrentStep(Payload):
 
 class Message(Payload):
     role: Literal["user", "assistant"]
-    content: MessageText
+    content: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1), AfterValidator(valid_utf8),
+    ]
+    source_ids: list[Identifier] = Field(
+        default_factory=list, max_length=MAX_RESPONSE_SOURCES,
+        description="Source IDs stored with a past assistant reply. Replies without provenance are excluded "
+        "from model context; every listed source must still be accessible to the current actor.",
+    )
 
 
 class Source(Payload):

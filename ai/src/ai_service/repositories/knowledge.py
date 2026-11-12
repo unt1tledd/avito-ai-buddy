@@ -15,7 +15,33 @@ MAX_SEARCH_HITS = 3
 IMPORT_DB_CONNECT_TIMEOUT_SECONDS = 5
 IMPORT_DB_TIMEOUT_SECONDS = 30
 
-SEARCH_SQL = """
+DOCUMENT_ACCESS_SQL = """
+    EXISTS (
+        SELECT 1 FROM document_access
+        WHERE document_id = d.id AND principal_type = 'role' AND principal_id = %(role)s
+    )
+    AND (
+        NOT EXISTS (
+            SELECT 1 FROM document_access
+            WHERE document_id = d.id AND principal_type = 'team'
+        )
+        OR EXISTS (
+            SELECT 1 FROM document_access
+            WHERE document_id = d.id AND principal_type = 'team' AND principal_id = %(team)s
+        )
+    )
+"""
+
+ACCESSIBLE_SOURCES_SQL = f"""
+    SELECT c.source_id AS id
+    FROM document_chunks AS c
+    JOIN documents AS d ON d.id = c.document_id
+    WHERE c.embedding_profile = %(profile)s
+      AND c.source_id = ANY(%(source_ids)s::text[])
+      AND {DOCUMENT_ACCESS_SQL}
+"""
+
+SEARCH_SQL = f"""
     SELECT profile.present, nearest.id, nearest.title, nearest.url, nearest.text
     FROM (SELECT EXISTS (
         SELECT 1 FROM document_chunks WHERE embedding_profile = %(profile)s
@@ -26,20 +52,7 @@ SEARCH_SQL = """
         FROM document_chunks AS c
         JOIN documents AS d ON d.id = c.document_id
         WHERE c.embedding_profile = %(profile)s
-          AND EXISTS (
-              SELECT 1 FROM document_access
-              WHERE document_id = d.id AND principal_type = 'role' AND principal_id = %(role)s
-          )
-          AND (
-              NOT EXISTS (
-                  SELECT 1 FROM document_access
-                  WHERE document_id = d.id AND principal_type = 'team'
-              )
-              OR EXISTS (
-                  SELECT 1 FROM document_access
-                  WHERE document_id = d.id AND principal_type = 'team' AND principal_id = %(team)s
-              )
-          )
+          AND {DOCUMENT_ACCESS_SQL}
         ORDER BY distance, c.source_id COLLATE "C"
         LIMIT %(limit)s
     ) AS nearest ON nearest.distance <= %(max_distance)s
@@ -73,6 +86,20 @@ class KnowledgeRepository:
     def __init__(self, dsn: str, pool: AsyncConnectionPool | None = None):
         self.dsn = dsn
         self.pool = pool
+
+    async def accessible_source_ids(self, source_ids: set[str], profile: str, actor: Actor) -> set[str]:
+        if not source_ids:
+            return set()
+        assert self.pool is not None
+        with operation("db.history_access"):
+            try:
+                async with asyncio.timeout(SEARCH_DB_TIMEOUT_SECONDS), self.pool.connection() as db:
+                    cursor = await db.execute(ACCESSIBLE_SOURCES_SQL, {
+                        "source_ids": sorted(source_ids), "profile": profile, "role": actor.role, "team": actor.team,
+                    })
+                    return {row["id"] for row in await cursor.fetchall()}
+            except (psycopg.Error, PoolTimeout, TimeoutError) as error:
+                raise KnowledgeError("Не удалось проверить доступ к источникам истории.", reason=db_failure(error)) from error
 
     async def search(
         self, embedding: list[float], profile: str, actor: Actor, min_similarity: float

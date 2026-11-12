@@ -51,6 +51,12 @@ def answer(text, *, kind="grounded_answer"):
 
 @pytest.fixture
 def settings(monkeypatch):
+    visible_sources = {
+        ("intern", "backend"): ["demo-dev-environment"],
+        ("intern", "51"): ["demo-dev-environment"],
+        ("mentor", "backend"): ["demo-mentor-environment", "demo-dev-environment"],
+    }
+
     async def embed(self, texts):
         assert len(texts) == 1
         return [EMBEDDING]
@@ -59,17 +65,18 @@ def settings(monkeypatch):
         assert len(profile) == 64
         assert vector == EMBEDDING
         assert min_similarity == 0.3
-        rows = {
-            ("intern", "backend"): ["demo-dev-environment"],
-            ("intern", "51"): ["demo-dev-environment"],
-            ("mentor", "backend"): ["demo-mentor-environment", "demo-dev-environment"],
-        }.get((actor.role, actor.team), [])
+        rows = visible_sources.get((actor.role, actor.team), [])
         return SearchResult(hits=[
             SearchHit(id=key, title=key, text="Фрагмент инструкции") for key in rows
         ])
 
+    async def accessible_source_ids(self, source_ids, profile, actor):
+        assert len(profile) == 64
+        return source_ids.intersection(visible_sources.get((actor.role, actor.team), []))
+
     monkeypatch.setattr(Embeddings, "embed", embed)
     monkeypatch.setattr(KnowledgeRepository, "search", search)
+    monkeypatch.setattr(KnowledgeRepository, "accessible_source_ids", accessible_source_ids)
     return Settings(
         service_token="chat-test-token",
         knowledge_db_dsn="postgresql://knowledge.test/knowledge",
@@ -238,7 +245,7 @@ def test_step_confirmation_is_rejected_before_any_work(
     assert model.requests == []
 
 
-def test_chat_uses_request_profile_and_excludes_history_after_role_change(settings):
+def test_chat_uses_request_profile_and_excludes_closed_reply_after_role_change(settings):
     model = ScriptedModel(
         call("find_instruction", query="окружение"),
         answer("Закрытая инструкция. [source:demo-mentor-environment] [source:demo-dev-environment]"),
@@ -247,8 +254,9 @@ def test_chat_uses_request_profile_and_excludes_history_after_role_change(settin
     with TestClient(create_app(settings, model=model)) as client:
         first = ask(client, QUESTION, {**ACTOR, "role": "mentor"}, conversation_id="conversation-1")
         history = [
-            {"role": "assistant", "content": first.json()["answer"]},
-            {"role": "user", "content": "Старая цитата из инструкции для наставников."},
+            {"role": "user", "content": "Какую инструкцию открыть?"},
+            {"role": "assistant", "content": first.json()["answer"],
+             "source_ids": [source["id"] for source in first.json()["sources"]]},
         ]
         second = ask(client, QUESTION, conversation_id="conversation-1", history=history)
 
@@ -263,7 +271,8 @@ def test_chat_uses_request_profile_and_excludes_history_after_role_change(settin
         assert [source["id"] for source in tool_output(model, index + 1)["hits"]] == expected
         assert [source["id"] for source in response.json()["sources"]] == expected
     for _, messages, _ in model.requests[2:]:
-        assert all(entry["content"] not in json.dumps(messages, ensure_ascii=False) for entry in history)
+        assert history[1]["content"] not in json.dumps(messages, ensure_ascii=False)
+        assert history[0]["content"] in json.dumps(messages, ensure_ascii=False)
 
 
 def test_missing_request_profile_cannot_reuse_previous_profile(settings, monkeypatch):
@@ -479,7 +488,9 @@ def test_invalid_json_values_return_serializable_validation_errors(settings, pat
 @pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("chunked", [False, True])
 def test_chat_body_limit(settings, path, chunked):
-    chunks = [b" " * (128 * 1024)] * 3
+    from ai_service.api.middleware import MAX_CHAT_BODY_BYTES
+
+    chunks = [b" " * (MAX_CHAT_BODY_BYTES // 2)] * 3
     with TestClient(create_app(settings)) as client:
         response = client.post(path, headers={**AUTH, "content-type": "application/json"},
                                content=iter(chunks) if chunked else b"".join(chunks))
@@ -651,8 +662,10 @@ def test_chat_deadline_includes_reading_body(settings, path):
 
 
 def test_chat_rejects_oversized_replay_before_follow_up(settings):
+    from ai_service.agents.agent import MAX_CONTEXT_BYTES
+
     model = ScriptedModel(
-        [{"type": "reasoning", "encrypted_content": "x" * (64 * 1024)}]
+        [{"type": "reasoning", "encrypted_content": "x" * MAX_CONTEXT_BYTES}]
         + call("find_instruction", query="окружение")
     )
     with TestClient(create_app(settings, model=model)) as client:
@@ -755,7 +768,7 @@ def test_context_overflow_is_explicit_and_unseen_sources_cannot_be_cited(setting
     for index, query in enumerate(["большой", "короткий", "большой"]):
         calls.extend(call("find_instruction", call_id=f"call-{index}", query=query))
     model = ScriptedModel(
-        [{"type": "reasoning", "encrypted_content": "x" * (52 * 1024)}, *calls],
+        [{"type": "reasoning", "encrypted_content": "x" * (MAX_CONTEXT_BYTES - 12 * 1024)}, *calls],
         answer(f"Ответ. [source:{citation}]"),
     )
     with TestClient(create_app(settings, model=model)) as client:
@@ -790,11 +803,11 @@ def test_uncited_search_results_are_not_attached_to_response(settings):
 
 
 def test_context_limit_after_empty_initial_search_does_not_claim_no_knowledge(settings, monkeypatch):
-    from ai_service.agents.agent import CONTEXT_LIMIT_ANSWER
+    from ai_service.agents.agent import CONTEXT_LIMIT_ANSWER, MAX_CONTEXT_BYTES
 
     mock_search_results(monkeypatch, {QUESTION: SearchResult(hits=[]), "уточнение": search_hits("large", "🧠" * 1200)})
     model = ScriptedModel(
-        [{"type": "reasoning", "encrypted_content": "x" * (52 * 1024)}]
+        [{"type": "reasoning", "encrypted_content": "x" * (MAX_CONTEXT_BYTES - 12 * 1024)}]
         + call("find_instruction", query="уточнение"),
         answer("Неподтверждённый ответ модели."),
     )
@@ -896,9 +909,11 @@ def test_invalid_final_answer_is_rejected_without_leaking_text(settings, text):
 
 @pytest.mark.parametrize("budget", ["time", "context"])
 def test_missing_citation_does_not_start_retry_without_budget(settings, budget):
+    from ai_service.agents.agent import MAX_CONTEXT_BYTES
+
     output = answer("Неподтверждённое утверждение.")
     if budget == "context":
-        output.insert(0, {"type": "reasoning", "encrypted_content": "x" * (64 * 1024)})
+        output.insert(0, {"type": "reasoning", "encrypted_content": "x" * MAX_CONTEXT_BYTES})
     else:
         settings = settings.model_copy(update={"chat_timeout_seconds": 0.5})
     model = ScriptedModel(output)
@@ -1078,3 +1093,142 @@ def test_current_step_does_not_force_unrelated_refined_search(settings, monkeypa
     assert response.status_code == 200, response.text
     assert queries[-1] == "ДМС"
     assert [source["id"] for source in response.json()["sources"]] == ["dms-0"]
+
+
+def previous_messages(model, request_index=0):
+    block = model.requests[request_index][1][0]
+    assert block["content"].startswith("Предыдущие сообщения")
+    return json.loads(block["content"].split("\n", 1)[1])
+
+
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("citation", ["fresh-vpn-duration", "demo-dev-environment"])
+def test_follow_up_uses_history_and_requires_sources_from_current_search(settings, monkeypatch, path, citation):
+    from ai_service.agents.agent import MAX_CONTEXT_BYTES, json_size
+
+    history = [
+        {"role": "user", "content": "Как получить VPN?"},
+        {"role": "assistant", "content": "Создайте заявку. [source:demo-dev-environment]",
+         "source_ids": ["demo-dev-environment"]},
+    ]
+    query = "срок выдачи доступа к VPN"
+    queries = []
+
+    async def search(self, text, actor):
+        assert actor.model_dump() == ACTOR
+        queries.append(text)
+        return SearchResult(hits=[SearchHit(
+            id="fresh-vpn-duration", title="Выдача VPN", text="Доступ выдаётся за два рабочих дня.",
+        )]) if text == query else SearchResult(hits=[])
+
+    monkeypatch.setattr(Retriever, "search", search)
+    model = ScriptedModel(call("find_instruction", query=query), answer(f"Два рабочих дня. [source:{citation}]"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = client.post(path, headers=AUTH, json={
+            "actor": ACTOR, "conversation_id": "vpn-chat", "history": history, "message": "А сколько ждать?",
+        })
+    assert queries == ["А сколько ждать?", query]
+    assert [item["content"] for item in previous_messages(model)] == [item["content"] for item in history]
+    assert model.requests[0][1][-1] == {"role": "user", "content": "А сколько ждать?"}
+    assert tool_output(model)["hits"][0]["id"] == "fresh-vpn-duration"
+    for instructions, messages, tools in model.requests:
+        assert json_size([instructions, messages, tools]) <= MAX_CONTEXT_BYTES
+    if citation == "fresh-vpn-duration":
+        assert response.status_code == 200, response.text
+        assert [source["id"] for source in response.json()["sources"]] == ["fresh-vpn-duration"]
+    else:
+        assert response.status_code == 502
+        assert "недоступный источник" in response.json()["detail"]
+
+
+def test_long_input_history_is_windowed_and_never_cached_between_requests(settings):
+    history = [{"role": "user", "content": f"Предыдущий вопрос {index}"} for index in range(60)]
+    model = ScriptedModel(
+        answer("Что именно нужно уточнить?", kind="clarification"),
+        answer("Инструкция. [source:demo-dev-environment]"),
+    )
+    with TestClient(create_app(settings, model=model)) as client:
+        first = ask(client, "Текущий вопрос", history=history, conversation_id="same-chat")
+        second = ask(client, QUESTION, conversation_id="same-chat")
+    assert first.status_code == second.status_code == 200
+    assert [item["content"] for item in previous_messages(model)] == [item["content"] for item in history[-30:]]
+    assert model.requests[0][1][-1]["content"] == "Текущий вопрос"
+    assert len(model.requests[1][1]) == 2
+    assert "Предыдущий вопрос" not in json.dumps(model.requests[1], ensure_ascii=False)
+
+
+def test_history_yields_to_question_and_sources_within_total_context_budget(settings, monkeypatch):
+    from ai_service.agents.agent import json_size
+
+    history = [{"role": "user", "content": "Ж" * 4000} for _ in range(8)]
+    # A deliberately small overall budget checks that optional history is evicted first.
+    monkeypatch.setattr("ai_service.agents.agent.MAX_CONTEXT_BYTES", 12 * 1024)
+    model = ScriptedModel(answer("Инструкция. [source:demo-dev-environment]"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION, history=history)
+    assert response.status_code == 200, response.text
+    instructions, messages, tools = model.requests[0]
+    assert json_size([instructions, messages, tools]) <= 12 * 1024
+    assert messages[-1]["content"] == QUESTION
+    assert first_context(model)["hits"] == response.json()["sources"]
+
+
+def test_history_access_failure_stops_before_embeddings_and_model(settings, monkeypatch):
+    from ai_service.repositories.knowledge import KnowledgeError
+
+    async def inaccessible(*args, **kwargs):
+        raise KnowledgeError("Проверка истории недоступна.", reason="connection")
+
+    async def unexpected_embed(*args, **kwargs):
+        pytest.fail("Unverified history must not reach embeddings or the model")
+
+    monkeypatch.setattr(Retriever, "accessible_source_ids", inaccessible)
+    monkeypatch.setattr(Embeddings, "embed", unexpected_embed)
+    model = ScriptedModel()
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION, history=[{
+            "role": "assistant", "content": "Закрытое содержимое.", "source_ids": ["source"],
+        }])
+    assert response.status_code == 502
+    assert model.requests == []
+
+
+def test_legacy_assistant_history_without_sources_is_not_forwarded(settings):
+    model = ScriptedModel(answer("Какой доступ нужен?", kind="clarification"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION, history=[{"role": "assistant", "content": "Старая закрытая инструкция."}])
+    assert response.status_code == 200
+    assert len(model.requests[0][1]) == 2
+    assert "Старая закрытая инструкция" not in json.dumps(model.requests, ensure_ascii=False)
+
+
+def test_long_assistant_history_is_accepted_without_question_length_limit(settings):
+    text = "x" * 5000 + " [source:demo-dev-environment]"
+    model = ScriptedModel(answer("Что нужно уточнить?", kind="clarification"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION, history=[{
+            "role": "assistant", "content": text, "source_ids": ["demo-dev-environment"],
+        }])
+    assert response.status_code == 200, response.text
+    assert previous_messages(model)[0]["content"] == text
+
+
+def test_expanded_history_and_request_budgets_accept_large_conversation(settings):
+    from ai_service.agents.agent import MAX_CONTEXT_BYTES, json_size
+    from ai_service.rag.history import MAX_HISTORY_BYTES
+
+    history = [{"role": "user", "content": f"{index:02}" + "Ж" * 6000} for index in range(30)]
+    body = json.dumps({"actor": ACTOR, "message": QUESTION, "history": history}, ensure_ascii=False).encode()
+    assert len(body) > 256 * 1024
+    model = ScriptedModel(answer("Что именно нужно уточнить?", kind="clarification"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = client.post(
+            "/api/v1/get_answer", headers={**AUTH, "Content-Type": "application/json"}, content=body,
+        )
+    assert response.status_code == 200, response.text
+    selected = previous_messages(model)
+    assert len(selected) > 8
+    assert [item["content"] for item in selected] == [item["content"] for item in history[-len(selected):]]
+    instructions, messages, tools = model.requests[0]
+    assert 16 * 1024 < json_size(messages[0]) <= MAX_HISTORY_BYTES
+    assert json_size([instructions, messages, tools]) <= MAX_CONTEXT_BYTES

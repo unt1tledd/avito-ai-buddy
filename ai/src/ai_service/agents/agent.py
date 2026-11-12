@@ -1,6 +1,6 @@
 import asyncio
 import json
-import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Annotated, Literal
 from unicodedata import normalize
@@ -9,19 +9,20 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, V
 
 from ..clients.embeddings import EmbeddingError
 from ..clients.llm import FunctionCall, LanguageModel, ModelError, ModelResponse
+from ..rag.history import history_message, prepare_history
 from ..rag.retriever import Retriever
 from ..rag.tools import FIND_INSTRUCTION_DESCRIPTION, FIND_INSTRUCTION_NAME, FindInstructionArguments
 from ..repositories.knowledge import KnowledgeError
-from ..schemas.contracts import Actor, ChatResponse, CurrentStep, MAX_RESPONSE_SOURCES, SearchHit, SearchResult, valid_utf8
+from ..schemas.citations import SOURCE_REFERENCE
+from ..schemas.contracts import Actor, ChatResponse, CurrentStep, MAX_RESPONSE_SOURCES, Message, SearchHit, SearchResult, valid_utf8
 
 
 MAX_TOOL_CALLS = 3
-MAX_CONTEXT_BYTES = 64 * 1024
+MAX_CONTEXT_BYTES = 256 * 1024
 MAX_SOURCE_BYTES = 18 * 1024
 MIN_CITATION_REPAIR_SECONDS = 1
 NO_KNOWLEDGE = "В доступных материалах недостаточно сведений, чтобы ответить на вопрос."
 CONTEXT_LIMIT_ANSWER = "Найденные материалы слишком объёмные. Уточните вопрос, чтобы сузить поиск."
-SOURCE_REFERENCE = re.compile(r"\[source:([^\]\r\n]*)\]")
 FIND_INSTRUCTION_TOOL = {
     "type": "function",
     "name": FIND_INSTRUCTION_NAME,
@@ -122,8 +123,10 @@ class Agent:
 
     async def answer(
         self, message: str, actor: Actor, *, deadline: float | None = None, current_step: CurrentStep | None = None,
+        history: Sequence[Message] = (),
     ) -> ChatResponse:
         turn = Turn()
+        recent_history = await prepare_history(history, actor, self.knowledge)
         query = message
         if current_step is not None:
             query = f"Вопрос: {message}\nТекущий шаг: {current_step.title}"
@@ -137,6 +140,13 @@ class Agent:
             {"role": "user", "content": "Справочный контекст:\n" + json.dumps(context, ensure_ascii=False)},
             {"role": "user", "content": message},
         ]
+        # History has its own byte limit and yields space to the current question and fresh retrieval.
+        while recent_history and json_size([
+            self.prompt, [history_message(recent_history), *messages], [FIND_INSTRUCTION_TOOL],
+        ]) > MAX_CONTEXT_BYTES:
+            recent_history.pop(0)
+        if recent_history:
+            messages.insert(0, history_message(recent_history))
         turn.add_sources(retrieved)
         seen_call_ids: set[str] = set()
         remaining = MAX_TOOL_CALLS

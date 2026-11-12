@@ -3,9 +3,6 @@ from pydantic import Field
 from ..schemas.contracts import ChatActor, CurrentStep, Identifier, Message, MessageText, Payload
 
 
-MAX_CHAT_HISTORY_MESSAGES = 12
-
-
 class ChatRequest(Payload):
     conversation_id: Identifier | None = Field(
         default=None, description="Optional chat ID for correlation. AI does not store conversations."
@@ -22,6 +19,7 @@ class ChatRequest(Payload):
     )
     history: list[Message] = Field(
         default_factory=list,
-        max_length=MAX_CHAT_HISTORY_MESSAGES,
-        description="Accepted for compatibility. Each answer uses the current message and current search results.",
+        description="Previous messages in chronological order, oldest first, excluding the current question. "
+        "AI considers the last 30 messages, verifies assistant source access and keeps at most 128 KiB of history. "
+        "Older messages are dropped whole. The complete request remains limited to 1 MiB.",
     )

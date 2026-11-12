@@ -72,12 +72,12 @@ def create_router(service_token: str) -> APIRouter:
         dependencies=[Depends(authenticate)],
         operation_id="get_answer",
         description="Get an answer using the current user profile supplied by authenticated Chat. "
-        "AI does not call User. Maximum request body is 256 KiB.",
+        "AI does not call User. Maximum request body is 1 MiB.",
         responses={
             HTTPStatus.BAD_REQUEST: {"description": "Malformed request body"},
             HTTPStatus.UNAUTHORIZED: {"description": "Invalid or missing chat service token"},
             HTTPStatus.REQUEST_TIMEOUT: {"description": "Request body deadline expired"},
-            HTTPStatus.REQUEST_ENTITY_TOO_LARGE: {"description": "Request body exceeds 256 KiB"},
+            HTTPStatus.REQUEST_ENTITY_TOO_LARGE: {"description": "Request body exceeds 1 MiB"},
             HTTPStatus.BAD_GATEWAY: {"description": "Embeddings, knowledge base, model or tool orchestration error"},
             HTTPStatus.SERVICE_UNAVAILABLE: {"description": "AI service configuration is incomplete"},
             HTTPStatus.GATEWAY_TIMEOUT: {"description": "Chat deadline expired"},
@@ -95,6 +95,7 @@ def create_router(service_token: str) -> APIRouter:
             actor=payload.actor,
             message=payload.message,
             current_step=payload.current_step,
+            history=payload.history,
             deadline=request.state.chat_deadline,
         ))
         disconnect = asyncio.create_task(wait_for_disconnect())

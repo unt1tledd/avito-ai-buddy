@@ -38,7 +38,7 @@ paths:
     post:
       summary: Get Answer
       description: Get an answer using the current user profile supplied by authenticated
-        Chat. AI does not call User. Maximum request body is 256 KiB.
+        Chat. AI does not call User. Maximum request body is 1 MiB.
       operationId: get_answer
       requestBody:
         content:
@@ -60,7 +60,7 @@ paths:
         '408':
           description: Request body deadline expired
         '413':
-          description: Request body exceeds 256 KiB
+          description: Request body exceeds 1 MiB
         '502':
           description: Embeddings, knowledge base, model or tool orchestration error
         '503':
@@ -135,10 +135,11 @@ components:
           items:
             $ref: '#/components/schemas/Message'
           type: array
-          maxItems: 12
           title: History
-          description: Accepted for compatibility. Each answer uses the current message
-            and current search results.
+          description: Previous messages in chronological order, oldest first, excluding
+            the current question. AI considers the last 30 messages, verifies assistant
+            source access and keeps at most 128 KiB of history. Older messages are
+            dropped whole. The complete request remains limited to 1 MiB.
       additionalProperties: false
       type: object
       required:
@@ -209,9 +210,18 @@ components:
           title: Role
         content:
           type: string
-          maxLength: 4000
           minLength: 1
           title: Content
+        source_ids:
+          items:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          type: array
+          maxItems: 6
+          title: Source Ids
+          description: Source IDs stored with a past assistant reply. Replies without
+            provenance are excluded from model context; every listed source must still
+            be accessible to the current actor.
       additionalProperties: false
       type: object
       required:

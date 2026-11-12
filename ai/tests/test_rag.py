@@ -419,3 +419,93 @@ def test_current_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch
             assert response.status_code == 200, response.text
             assert [hit["id"] for hit in contexts[-1]["hits"]] == expected
             assert [hit["id"] for hit in response.json()["sources"]] == expected
+
+
+def test_history_source_access_checks_current_role_team_profile_and_deleted_sources(pg_schema):
+    migrate(pg_schema)
+    asyncio.run(KnowledgeRepository(pg_schema).replace(
+        [doc("public"), doc("team-intern", team="51"), doc("mentor", role="mentor", team="51"), doc("old-profile")],
+        [VECTOR] * 4, "test-model", PROFILE,
+    ))
+    other_profile = "b" * 64
+    with psycopg.connect(pg_schema) as db:
+        db.execute("UPDATE document_chunks SET embedding_profile = %s WHERE source_id = 'old-profile'", (other_profile,))
+
+    async def run():
+        async with pool_for(pg_schema) as pool:
+            repository = KnowledgeRepository(pg_schema, pool)
+            source_ids = {"public", "team-intern", "mentor", "old-profile", "missing"}
+            for role, team, expected in [
+                ("intern", "51", {"public", "team-intern"}),
+                ("intern", "52", {"public"}),
+                ("mentor", "51", {"mentor"}),
+                ("mentor", "52", set()),
+            ]:
+                actor = Actor(user_id="42", role=role, team=team)
+                assert await repository.accessible_source_ids(source_ids, PROFILE, actor) == expected
+            assert await repository.accessible_source_ids(source_ids, other_profile, ACTOR) == {"old-profile"}
+            assert await repository.accessible_source_ids(set(), PROFILE, ACTOR) == set()
+            with psycopg.connect(pg_schema) as db:
+                db.execute("DELETE FROM documents WHERE id = (SELECT document_id FROM document_chunks WHERE source_id = 'team-intern')")
+            assert await repository.accessible_source_ids(source_ids, PROFILE, ACTOR) == {"public"}
+
+    asyncio.run(run())
+
+
+def test_history_is_filtered_again_after_role_team_change_or_source_deletion(pg_schema, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from ai_service.main import create_app
+
+    migrate(pg_schema)
+    settings = Settings(
+        service_token="chat-key", knowledge_db_dsn=pg_schema,
+        knowledge_processing_approved=True, embedding_api_key="test-key",
+    )
+    profile = Embeddings(None, settings).profile
+    asyncio.run(KnowledgeRepository(pg_schema).replace(
+        [Document(id="public", title="Общая инструкция", text="Общие сведения.", roles={"intern", "mentor"}),
+         doc("mentor-guide", role="mentor", team="51")],
+        [VECTOR] * 2, settings.embedding_model, profile,
+    ))
+
+    async def embed(self, texts):
+        return [VECTOR]
+
+    monkeypatch.setattr(Embeddings, "embed", embed)
+    user_message = {"role": "user", "content": "Как получить VPN?", "source_ids": []}
+    secret = "Закрытый порядок выдачи VPN наставнику. [source:mentor-guide]"
+    assistant_message = {"role": "assistant", "content": secret, "source_ids": ["mentor-guide"]}
+    history = [user_message, assistant_message]
+    model_inputs = []
+
+    class Model:
+        async def respond(self, *, instructions, messages, tools):
+            model_inputs.append(messages)
+            current = json.loads(messages[-2]["content"].split("\n", 1)[1])
+            assert current["hits"]
+            final = {"kind": "grounded_answer", "answer": f"Инструкция. [source:{current['hits'][0]['id']}]"}
+            return ModelResponse(output=[{
+                "type": "message", "content": [{"type": "output_text", "text": json.dumps(final)}],
+            }])
+
+    with TestClient(create_app(settings, model=Model())) as client:
+        def ask(role, team, expect_secret):
+            response = client.post("/api/v1/get_answer", headers={"Authorization": "Bearer chat-key"}, json={
+                "actor": {"user_id": "42", "role": role, "team": team}, "conversation_id": "same-chat",
+                "message": "А сколько ждать?", "history": history,
+            })
+            assert response.status_code == 200, response.text
+            forwarded = json.loads(model_inputs[-1][0]["content"].split("\n", 1)[1])
+            assert forwarded == (history if expect_secret else [user_message])
+            assert (secret in json.dumps(model_inputs[-1], ensure_ascii=False)) == expect_secret
+            if not expect_secret:
+                assert [source["id"] for source in response.json()["sources"]] == ["public"]
+
+        ask("mentor", "51", True)
+        ask("intern", "51", False)
+        ask("mentor", "52", False)
+        ask("mentor", "51", True)
+        with psycopg.connect(pg_schema) as db:
+            db.execute("DELETE FROM documents WHERE id = (SELECT document_id FROM document_chunks WHERE source_id = 'mentor-guide')")
+        ask("mentor", "51", False)

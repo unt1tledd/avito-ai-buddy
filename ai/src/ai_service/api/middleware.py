@@ -8,7 +8,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from ..core.diagnostics import request_id
 
 
-MAX_CHAT_BODY_BYTES = 256 * 1024
+MAX_CHAT_BODY_BYTES = 1024 * 1024
 CHAT_PATHS = {"/api/v1/get_answer", "/api/v1/chat", "/v1/chat"}
 
 
@@ -50,13 +50,13 @@ class RequestBoundary:
                     total += len(message.get("body", b""))
                     if total > MAX_CHAT_BODY_BYTES:
                         # FastAPI propagates HTTPException from request.body().
-                        raise HTTPException(413, "Тело запроса превышает 256 КиБ.")
+                        raise HTTPException(413, "Тело запроса превышает 1 МиБ.")
                     return message
 
                 for name, length in scope["headers"]:
                     if name == b"content-length" and length.isdigit() and len(length) < 20:
                         if int(length) > MAX_CHAT_BODY_BYTES:
-                            response = JSONResponse({"detail": "Тело запроса превышает 256 КиБ."}, status_code=413)
+                            response = JSONResponse({"detail": "Тело запроса превышает 1 МиБ."}, status_code=413)
                             await response(scope, receive, send_with_id)
                             return
                 await self.app(scope, bounded_receive, send_with_id)
