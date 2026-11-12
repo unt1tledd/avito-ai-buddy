@@ -75,4 +75,6 @@ message Step {
   string period = 4;
   string resource_id = 5;
   string status = 6;
+  // Set when resource_id points to a resource that requires an access request.
+  string action_type = 7;
 }

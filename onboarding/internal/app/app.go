@@ -41,6 +41,11 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 	if err := migrations.Migrate(ctx, db); err != nil {
 		return fmt.Errorf("migrate onboarding database: %w", err)
 	}
+	if cfg.App.SeedDemo {
+		if err := migrations.SeedDemo(ctx, db); err != nil {
+			return fmt.Errorf("seed onboarding demo data: %w", err)
+		}
+	}
 
 	grpcListener, err := net.Listen("tcp", ":"+cfg.GRPC.Port)
 	if err != nil {

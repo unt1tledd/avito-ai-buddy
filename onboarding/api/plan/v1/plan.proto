@@ -18,6 +18,9 @@ service PlanService {
   rpc GetPlan(GetPlanRequest) returns (GetPlanResponse) {
     option (google.api.http) = { get: "/v1/users/{user_id}/plan" };
   }
+  rpc GetPlanContext(GetPlanContextRequest) returns (GetPlanContextResponse) {
+    option (google.api.http) = { get: "/v1/users/{user_id}/plan_context" };
+  }
 }
 
 message AssignPlanRequest {
@@ -34,4 +37,20 @@ message GetPlanResponse {
   int64 user_id = 2;
   string track = 3;
   repeated Step steps = 4;
+}
+
+message GetPlanContextRequest {
+  int64 user_id = 1 [(validate.rules).int64.gt = 0];
+}
+
+// PlanTrackContext describes one track of the user plan. current_step is the
+// first incomplete step by template order; it is unset when the track is done.
+message PlanTrackContext {
+  string track = 1;
+  string display_name = 2;
+  Step current_step = 3;
+}
+
+message GetPlanContextResponse {
+  repeated PlanTrackContext tracks = 1;
 }

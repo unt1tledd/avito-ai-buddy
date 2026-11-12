@@ -42,7 +42,7 @@ func (q *Queries) GetCurrentStep(ctx context.Context, planID int64) (GetCurrentS
 }
 
 const getPlanSteps = `-- name: GetPlanSteps :many
-SELECT template.step_key AS id, template.title, template.description, template.period, template.resource_id, step.completed_at
+SELECT template.step_key AS id, template.track, template.title, template.description, template.period, template.resource_id, step.completed_at
 FROM onboarding.plan_step AS step
 JOIN onboarding.step_template AS template ON template.id = step.step_id
 WHERE step.plan_id = $1
@@ -51,6 +51,7 @@ ORDER BY template.position, template.id
 
 type GetPlanStepsRow struct {
 	ID          string
+	Track       string
 	Title       string
 	Description string
 	Period      string
@@ -69,6 +70,7 @@ func (q *Queries) GetPlanSteps(ctx context.Context, planID int64) ([]GetPlanStep
 		var i GetPlanStepsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.Track,
 			&i.Title,
 			&i.Description,
 			&i.Period,

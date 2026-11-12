@@ -16,11 +16,23 @@ const (
 
 type Step struct {
 	ID          string
+	Track       string
 	Title       string
 	Description string
 	Period      string
 	ResourceID  string
 	Status      StepStatus
+}
+
+// ActionType marks the action Chat can offer for a step with a resource.
+const ActionTypeAccessRequest = "access_request"
+
+// TrackContext is the plan context of a single track: the first incomplete
+// step by template order, or nil when every step is completed.
+type TrackContext struct {
+	Track       string
+	DisplayName string
+	CurrentStep *Step
 }
 
 type StepTemplate struct {
