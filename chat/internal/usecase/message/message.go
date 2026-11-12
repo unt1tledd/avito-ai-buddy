@@ -38,15 +38,15 @@ type actionRepository interface {
 }
 
 type userClient interface {
-	GetUserContext(ctx context.Context, userID string) (port.UserContext, error)
+	GetUserContext(ctx context.Context, userID string) (entity.UserContext, error)
 }
 
 type onboardingClient interface {
-	GetCurrentStep(ctx context.Context, userID string) (*port.OnboardingStep, error)
+	GetOnboardingPlans(ctx context.Context, userID int64, token string) ([]entity.OnboardingPlan, error)
 }
 
 type aiClient interface {
-	GetAnswer(ctx context.Context, request port.AnswerRequest) (port.Answer, error)
+	GetAnswer(ctx context.Context, request entity.AnswerRequest) (entity.Answer, error)
 }
 
 type chatService struct {
@@ -132,7 +132,7 @@ func (s *chatService) SendMessage(ctx context.Context, token, text string, idemp
 		return *reply, nil
 	}
 
-	reply, err := s.answerQuestion(replyCtx, userID, question, claimUntil)
+	reply, err := s.answerQuestion(replyCtx, userID, token, question, claimUntil)
 	if err != nil {
 		// Release on normal errors and cancellations. The lease covers a crash or failed release.
 		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
@@ -142,7 +142,7 @@ func (s *chatService) SendMessage(ctx context.Context, token, text string, idemp
 	return reply, err
 }
 
-func (s *chatService) answerQuestion(ctx context.Context, userID int64, question entity.Message, claimUntil time.Time) (entity.Message, error) {
+func (s *chatService) answerQuestion(ctx context.Context, userID int64, token string, question entity.Message, claimUntil time.Time) (entity.Message, error) {
 	history, _, err := s.messagesRepo.ListByConversation(ctx, question.ConversationID, 0, strconv.FormatInt(question.ID, 10))
 	if err != nil {
 		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrListMessages, err)
@@ -155,16 +155,16 @@ func (s *chatService) answerQuestion(ctx context.Context, userID int64, question
 	}
 	user.UserID = userKey
 
-	step, err := s.onboarding.GetCurrentStep(ctx, userKey)
+	plans, err := s.onboarding.GetOnboardingPlans(ctx, userID, token)
 	if err != nil {
-		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrGetOnboardingStep, err)
+		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrGetOnboardingPlans, err)
 	}
 
-	answer, err := s.ai.GetAnswer(ctx, port.AnswerRequest{
-		User:        user,
-		Question:    question.Text,
-		History:     history,
-		CurrentStep: step,
+	answer, err := s.ai.GetAnswer(ctx, entity.AnswerRequest{
+		User:            user,
+		Message:         question.Text,
+		History:         history,
+		OnboardingPlans: plans,
 	})
 	if err != nil {
 		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrGetAIAnswer, err)
