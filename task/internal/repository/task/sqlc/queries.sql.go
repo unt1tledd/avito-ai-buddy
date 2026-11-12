@@ -59,7 +59,7 @@ RETURNING id, proposal_id, user_id, team_id, resource_id, access_level, status, 
 `
 
 type DecideParams struct {
-	Status            string
+	Status            TaskAccessRequestStatus
 	DecidedByUserID   *int64
 	DecisionComment   string
 	ExternalRequestID string

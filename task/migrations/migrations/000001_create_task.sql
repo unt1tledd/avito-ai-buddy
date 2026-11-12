@@ -1,6 +1,8 @@
 -- +goose Up
 CREATE SCHEMA task;
 
+CREATE TYPE task.access_request_status AS ENUM ('pending', 'approved', 'rejected');
+
 CREATE TABLE task.access_request (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     proposal_id bigint NOT NULL UNIQUE CHECK (proposal_id > 0),
@@ -8,7 +10,7 @@ CREATE TABLE task.access_request (
     team_id bigint NOT NULL CHECK (team_id > 0),
     resource_id text NOT NULL CHECK (btrim(resource_id) <> ''),
     access_level text NOT NULL CHECK (btrim(access_level) <> ''),
-    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    status task.access_request_status NOT NULL DEFAULT 'pending',
     created_at timestamptz NOT NULL DEFAULT now(),
     decided_at timestamptz,
     decided_by_user_id bigint CHECK (decided_by_user_id > 0),
@@ -38,4 +40,5 @@ CREATE INDEX outbox_unsent_idx ON task.outbox (created_at, task_id) WHERE sent_a
 -- +goose Down
 DROP TABLE task.outbox;
 DROP TABLE task.access_request;
+DROP TYPE task.access_request_status;
 DROP SCHEMA task;

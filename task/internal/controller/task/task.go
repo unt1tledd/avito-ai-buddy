@@ -38,6 +38,13 @@ func (c *Controller) ListPending(ctx context.Context, req *taskv1.ListPendingReq
 	if err := c.authorize(ctx); err != nil {
 		return nil, err
 	}
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if err := req.Validate(); err != nil {
+		c.logger.Warn("task request validation failed", "rpc", "ListPending", "error", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	limit := int32(50)
 	if req.Limit != nil {
 		limit = req.GetLimit()
@@ -57,10 +64,17 @@ func (c *Controller) Decide(ctx context.Context, req *taskv1.DecideRequest) (*ta
 	if err := c.authorize(ctx); err != nil {
 		return nil, err
 	}
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if err := req.Validate(); err != nil {
+		c.logger.Warn("task request validation failed", "rpc", "Decide", "error", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	decision := req.GetDecision()
 	request, err := c.tasks.Decide(ctx, entity.Decision{
 		TaskID: req.GetTaskId(), TeamID: decision.GetTeamId(), DecidedByUserID: decision.GetDecidedByUserId(),
-		Status: entity.Status(decision.GetStatus()), Comment: decision.GetComment(),
+		Status: decisionStatus(decision.GetStatus()), Comment: decision.GetComment(),
 		ExternalRequestID: decision.GetExternalRequestId(),
 	})
 	if err != nil {
@@ -100,7 +114,7 @@ func (c *Controller) rpcError(err error) error {
 func toProto(request entity.AccessRequest) *taskv1.AccessRequest {
 	response := &taskv1.AccessRequest{
 		TaskId: request.ID, ProposalId: request.ProposalID, UserId: request.UserID, TeamId: request.TeamID,
-		ResourceId: request.ResourceID, AccessLevel: request.AccessLevel, Status: string(request.Status),
+		ResourceId: request.ResourceID, AccessLevel: request.AccessLevel, Status: statusToProto(request.Status),
 		CreatedAt: timestamppb.New(request.CreatedAt), DecidedByUserId: request.DecidedByUserID,
 		DecisionComment: request.DecisionComment, ExternalRequestId: request.ExternalRequestID,
 	}
@@ -108,4 +122,28 @@ func toProto(request entity.AccessRequest) *taskv1.AccessRequest {
 		response.DecidedAt = timestamppb.New(*request.DecidedAt)
 	}
 	return response
+}
+
+func decisionStatus(status taskv1.AccessRequestStatus) entity.Status {
+	switch status {
+	case taskv1.AccessRequestStatus_ACCESS_REQUEST_STATUS_APPROVED:
+		return entity.Approved
+	case taskv1.AccessRequestStatus_ACCESS_REQUEST_STATUS_REJECTED:
+		return entity.Rejected
+	default:
+		return ""
+	}
+}
+
+func statusToProto(status entity.Status) taskv1.AccessRequestStatus {
+	switch status {
+	case entity.Pending:
+		return taskv1.AccessRequestStatus_ACCESS_REQUEST_STATUS_PENDING
+	case entity.Approved:
+		return taskv1.AccessRequestStatus_ACCESS_REQUEST_STATUS_APPROVED
+	case entity.Rejected:
+		return taskv1.AccessRequestStatus_ACCESS_REQUEST_STATUS_REJECTED
+	default:
+		return taskv1.AccessRequestStatus_ACCESS_REQUEST_STATUS_UNSPECIFIED
+	}
 }

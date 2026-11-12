@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	taskv1 "avito-ai-buddy/pkg/generated/task/v1"
+	"avito-ai-buddy/pkg/transactor"
 
 	chatkafka "avito-ai-buddy/task/internal/adapter/chat/kafka"
 	userhttp "avito-ai-buddy/task/internal/adapter/user/http"
@@ -46,7 +47,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	service := taskusecase.NewService(repository, users)
 	publisher := chatkafka.NewPublisher(cfg.Brokers(), cfg.TaskEventsTopic)
 	defer func() { _ = publisher.Close() }()
-	outboxWorker := outbox.New(logger, outboxrepo.NewPostgresRepository(db), publisher, cfg.Outbox)
+	outboxWorker := outbox.New(logger, outboxrepo.PostgresRepository{}, transactor.NewTransactor(db), publisher, cfg.Outbox)
 
 	controller := taskctrl.NewController(service, logger, cfg.TrackerToken)
 	grpcListener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.GRPCAddr)

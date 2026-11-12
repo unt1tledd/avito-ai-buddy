@@ -4,6 +4,7 @@ package task.v1;
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
+import "validate/validate.proto";
 
 option go_package = "avito-ai-buddy/pkg/generated/task/v1;taskv1";
 
@@ -24,9 +25,9 @@ service TaskService {
 }
 
 message ListPendingRequest {
-  int64 team_id = 1;
-  int64 after_id = 2;
-  optional int32 limit = 3;
+  int64 team_id = 1 [(validate.rules).int64.gt = 0];
+  int64 after_id = 2 [(validate.rules).int64.gte = 0];
+  optional int32 limit = 3 [(validate.rules).int32 = {gte: 1, lte: 100}];
 }
 
 message ListPendingResponse {
@@ -34,14 +35,21 @@ message ListPendingResponse {
 }
 
 message DecideRequest {
-  int64 task_id = 1;
-  Decision decision = 2;
+  int64 task_id = 1 [(validate.rules).int64.gt = 0];
+  Decision decision = 2 [(validate.rules).message.required = true];
+}
+
+enum AccessRequestStatus {
+  ACCESS_REQUEST_STATUS_UNSPECIFIED = 0;
+  ACCESS_REQUEST_STATUS_PENDING = 1;
+  ACCESS_REQUEST_STATUS_APPROVED = 2;
+  ACCESS_REQUEST_STATUS_REJECTED = 3;
 }
 
 message Decision {
-  int64 team_id = 1;
-  int64 decided_by_user_id = 2;
-  string status = 3; // approved or rejected
+  int64 team_id = 1 [(validate.rules).int64.gt = 0];
+  int64 decided_by_user_id = 2 [(validate.rules).int64.gt = 0];
+  AccessRequestStatus status = 3 [(validate.rules).enum = {in: [2, 3]}];
   string comment = 4;
   string external_request_id = 5;
 }
@@ -53,7 +61,7 @@ message AccessRequest {
   int64 team_id = 4;
   string resource_id = 5;
   string access_level = 6;
-  string status = 7;
+  AccessRequestStatus status = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp decided_at = 9;
   optional int64 decided_by_user_id = 10;

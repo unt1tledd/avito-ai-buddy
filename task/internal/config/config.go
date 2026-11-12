@@ -10,12 +10,13 @@ import (
 )
 
 type OutboxConfig struct {
-	Workers        int           `env:"TASK_OUTBOX_WORKERS" envDefault:"1"`
-	BatchSize      int32         `env:"TASK_OUTBOX_BATCH_SIZE" envDefault:"10"`
-	MaxAttempts    int32         `env:"TASK_OUTBOX_MAX_ATTEMPTS" envDefault:"5"`
-	PollInterval   time.Duration `env:"TASK_OUTBOX_POLL_INTERVAL" envDefault:"1s"`
-	RetryDelay     time.Duration `env:"TASK_OUTBOX_RETRY_DELAY" envDefault:"3s"`
-	PublishTimeout time.Duration `env:"TASK_OUTBOX_PUBLISH_TIMEOUT" envDefault:"5s"`
+	Workers          int           `env:"TASK_OUTBOX_WORKERS" envDefault:"1"`
+	BatchSize        int32         `env:"TASK_OUTBOX_BATCH_SIZE" envDefault:"10"`
+	MaxAttempts      int32         `env:"TASK_OUTBOX_MAX_ATTEMPTS" envDefault:"5"`
+	PollInterval     time.Duration `env:"TASK_OUTBOX_POLL_INTERVAL" envDefault:"1s"`
+	RetryDelay       time.Duration `env:"TASK_OUTBOX_RETRY_DELAY" envDefault:"3s"`
+	FailedRetryDelay time.Duration `env:"TASK_OUTBOX_FAILED_RETRY_DELAY" envDefault:"1m"`
+	PublishTimeout   time.Duration `env:"TASK_OUTBOX_PUBLISH_TIMEOUT" envDefault:"5s"`
 }
 
 type KafkaConsumerConfig struct {
@@ -55,8 +56,9 @@ func New() (Config, error) {
 		return Config{}, errors.New("task Kafka consumer needs a distinct DLQ topic, positive attempts and valid backoff")
 	}
 	if cfg.Outbox.Workers <= 0 || cfg.Outbox.BatchSize <= 0 || cfg.Outbox.MaxAttempts <= 0 ||
-		cfg.Outbox.PollInterval <= 0 || cfg.Outbox.RetryDelay <= 0 || cfg.Outbox.PublishTimeout <= 0 {
-		return Config{}, errors.New("task outbox settings must be positive")
+		cfg.Outbox.PollInterval <= 0 || cfg.Outbox.RetryDelay <= 0 ||
+		cfg.Outbox.FailedRetryDelay < cfg.Outbox.RetryDelay || cfg.Outbox.PublishTimeout <= 0 {
+		return Config{}, errors.New("task outbox settings must be positive and failed retry delay must be at least the retry delay")
 	}
 	userURL, err := url.Parse(cfg.UserBaseURL)
 	if err != nil || userURL.Host == "" || (userURL.Scheme != "http" && userURL.Scheme != "https") {

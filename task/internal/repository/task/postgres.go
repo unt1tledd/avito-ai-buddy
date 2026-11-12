@@ -67,7 +67,7 @@ func (r *PostgresRepository) Decide(ctx context.Context, decision entity.Decisio
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		queries := r.queries.WithTx(tx)
 		row, err := queries.Decide(ctx, sqlc.DecideParams{
-			ID: decision.TaskID, TeamID: decision.TeamID, Status: string(decision.Status),
+			ID: decision.TaskID, TeamID: decision.TeamID, Status: sqlc.TaskAccessRequestStatus(decision.Status),
 			DecidedByUserID: &decision.DecidedByUserID, DecisionComment: decision.Comment,
 			ExternalRequestID: decision.ExternalRequestID,
 		})
@@ -79,7 +79,7 @@ func (r *PostgresRepository) Decide(ctx context.Context, decision entity.Decisio
 			if err != nil {
 				return err
 			}
-			if row.Status != string(decision.Status) || row.DecidedByUserID == nil ||
+			if row.Status != sqlc.TaskAccessRequestStatus(decision.Status) || row.DecidedByUserID == nil ||
 				*row.DecidedByUserID != decision.DecidedByUserID || row.DecisionComment != decision.Comment ||
 				row.ExternalRequestID != decision.ExternalRequestID {
 				return taskerrors.ErrAlreadyDecided

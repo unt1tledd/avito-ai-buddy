@@ -12,5 +12,5 @@ type OutboxQueue interface {
 	GetMessages(context.Context, int32) ([]entity.OutboxMessage, error)
 	MarkAsProcessed(context.Context, []int64) error
 	MarkAsRetryable(context.Context, []int64, time.Duration) error
-	MarkAsFailed(context.Context, []int64) error
+	MarkAsFailed(context.Context, []int64, time.Duration) error
 }

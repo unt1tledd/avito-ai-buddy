@@ -11,7 +11,7 @@ import (
 )
 
 type transactor interface {
-	WithTx(context.Context, func(port.OutboxQueue) error) error
+	WithTx(context.Context, func(context.Context) error) error
 }
 
 type publisher interface {
@@ -20,13 +20,14 @@ type publisher interface {
 
 type Worker struct {
 	logger    *slog.Logger
-	repo      transactor
+	repo      port.OutboxQueue
+	tx        transactor
 	publisher publisher
 	cfg       config.OutboxConfig
 }
 
-func New(logger *slog.Logger, repo transactor, publisher publisher, cfg config.OutboxConfig) *Worker {
-	return &Worker{logger: logger, repo: repo, publisher: publisher, cfg: cfg}
+func New(logger *slog.Logger, repo port.OutboxQueue, tx transactor, publisher publisher, cfg config.OutboxConfig) *Worker {
+	return &Worker{logger: logger, repo: repo, tx: tx, publisher: publisher, cfg: cfg}
 }
 
 func (w *Worker) Start(ctx context.Context) {
@@ -57,8 +58,8 @@ func (w *Worker) run(ctx context.Context) {
 }
 
 func (w *Worker) dispatch(ctx context.Context) error {
-	return w.repo.WithTx(ctx, func(queue port.OutboxQueue) error {
-		messages, err := queue.GetMessages(ctx, w.cfg.BatchSize)
+	return w.tx.WithTx(ctx, func(ctx context.Context) error {
+		messages, err := w.repo.GetMessages(ctx, w.cfg.BatchSize)
 		if err != nil {
 			return err
 		}
@@ -81,7 +82,7 @@ func (w *Worker) dispatch(ctx context.Context) error {
 
 			attempt := message.Attempts + 1
 			w.logger.Warn("outbox publish failed", "task_id", message.TaskID, "attempt", attempt, "error", err)
-			if attempt >= w.cfg.MaxAttempts {
+			if message.Failed || attempt >= w.cfg.MaxAttempts {
 				failed = append(failed, message.TaskID)
 			} else {
 				retryable = append(retryable, message.TaskID)
@@ -89,17 +90,17 @@ func (w *Worker) dispatch(ctx context.Context) error {
 		}
 
 		if len(processed) > 0 {
-			if err := queue.MarkAsProcessed(ctx, processed); err != nil {
+			if err := w.repo.MarkAsProcessed(ctx, processed); err != nil {
 				return err
 			}
 		}
 		if len(failed) > 0 {
-			if err := queue.MarkAsFailed(ctx, failed); err != nil {
+			if err := w.repo.MarkAsFailed(ctx, failed, w.cfg.FailedRetryDelay); err != nil {
 				return err
 			}
 		}
 		if len(retryable) > 0 {
-			return queue.MarkAsRetryable(ctx, retryable, w.cfg.RetryDelay)
+			return w.repo.MarkAsRetryable(ctx, retryable, w.cfg.RetryDelay)
 		}
 		return nil
 	})

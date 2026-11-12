@@ -12,8 +12,8 @@ import (
 )
 
 const getMessages = `-- name: GetMessages :many
-SELECT task_id, payload, attempts FROM task.outbox
-WHERE status = 'CREATED' AND next_attempt_at <= now()
+SELECT task_id, payload, attempts, status = 'FAILED' AS failed FROM task.outbox
+WHERE status IN ('CREATED', 'FAILED') AND next_attempt_at <= now()
 ORDER BY next_attempt_at, created_at, task_id
 LIMIT $1 FOR UPDATE SKIP LOCKED
 `
@@ -22,6 +22,7 @@ type GetMessagesRow struct {
 	TaskID   int64
 	Payload  []byte
 	Attempts int32
+	Failed   bool
 }
 
 func (q *Queries) GetMessages(ctx context.Context, batchSize int32) ([]GetMessagesRow, error) {
@@ -33,7 +34,12 @@ func (q *Queries) GetMessages(ctx context.Context, batchSize int32) ([]GetMessag
 	var items []GetMessagesRow
 	for rows.Next() {
 		var i GetMessagesRow
-		if err := rows.Scan(&i.TaskID, &i.Payload, &i.Attempts); err != nil {
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.Payload,
+			&i.Attempts,
+			&i.Failed,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -45,12 +51,19 @@ func (q *Queries) GetMessages(ctx context.Context, batchSize int32) ([]GetMessag
 }
 
 const markAsFailed = `-- name: MarkAsFailed :exec
-UPDATE task.outbox SET status = 'FAILED', attempts = attempts + 1
-WHERE task_id = ANY($1::bigint[])
+UPDATE task.outbox
+SET status = 'FAILED', attempts = attempts + 1,
+    next_attempt_at = now() + $1::interval
+WHERE task_id = ANY($2::bigint[])
 `
 
-func (q *Queries) MarkAsFailed(ctx context.Context, taskIds []int64) error {
-	_, err := q.db.Exec(ctx, markAsFailed, taskIds)
+type MarkAsFailedParams struct {
+	RetryDelay pgtype.Interval
+	TaskIds    []int64
+}
+
+func (q *Queries) MarkAsFailed(ctx context.Context, arg MarkAsFailedParams) error {
+	_, err := q.db.Exec(ctx, markAsFailed, arg.RetryDelay, arg.TaskIds)
 	return err
 }
 
