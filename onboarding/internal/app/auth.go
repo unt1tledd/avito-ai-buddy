@@ -39,6 +39,7 @@ func authorizeRequests(auth tokenValidator, serviceToken string) grpc.UnaryServe
 			}
 		case planpb.PlanService_AssignPlan_FullMethodName,
 			planpb.PlanService_GetPlan_FullMethodName,
+			planpb.PlanService_GetPlanContext_FullMethodName,
 			steppb.StepService_GetCurrentStep_FullMethodName,
 			steppb.StepService_CompleteStep_FullMethodName,
 			steppb.StepService_ReopenStep_FullMethodName:

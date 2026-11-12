@@ -102,8 +102,7 @@ func selectReply(query string, typeOIDs []uint32, values ...string) planDBReply 
 }
 
 // newAssignmentPool uses the real pgx pool and transactor with scripted replies
-// over an in-memory connection. The SQL itself is exercised by the PostgreSQL
-// integration test.
+// over an in-memory connection.
 func newAssignmentPool(t *testing.T, replies []planDBReply) *pgxpool.Pool {
 	t.Helper()
 	config, err := pgxpool.ParseConfig("host=127.0.0.1 user=test dbname=test sslmode=disable")

@@ -81,3 +81,59 @@ func checkPlanResponse(t *testing.T, result *pb.GetPlanResponse, err error, expe
 		t.Errorf("response = %v, want %v", result, expected)
 	}
 }
+
+func TestGetPlanContext(t *testing.T) {
+	const userID int64 = 42
+	tracks := []entity.TrackContext{
+		{
+			Track:       "common",
+			DisplayName: "Общая адаптация",
+			CurrentStep: &entity.Step{
+				ID: "common-06", Title: "Запросить доступ",
+				ResourceID: "cluster-space", Status: entity.StepPending,
+			},
+		},
+		{Track: "backend", DisplayName: "Backend"},
+	}
+	expected := &pb.GetPlanContextResponse{Tracks: []*pb.PlanTrackContext{
+		{
+			Track:       "common",
+			DisplayName: "Общая адаптация",
+			CurrentStep: &steppb.Step{
+				Id: "common-06", Title: "Запросить доступ", Status: "pending",
+				ResourceId: "cluster-space", ActionType: "access_request",
+			},
+		},
+		{Track: "backend", DisplayName: "Backend"},
+	}}
+
+	for _, tc := range []struct {
+		name       string
+		userID     int64
+		tracks     []entity.TrackContext
+		serviceErr error
+		want       *pb.GetPlanContextResponse
+		code       codes.Code
+	}{
+		{name: "active and completed tracks", userID: userID, tracks: tracks, want: expected},
+		{name: "no assigned plan", userID: userID, want: &pb.GetPlanContextResponse{}},
+		{name: "invalid user", userID: -1, code: codes.InvalidArgument},
+		{name: "canceled", userID: userID, serviceErr: context.Canceled, code: codes.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			service := mocks.NewMockplanService(gomock.NewController(t))
+			if tc.code != codes.InvalidArgument {
+				service.EXPECT().GetPlanContext(ctx, tc.userID).Return(tc.tracks, tc.serviceErr)
+			}
+
+			result, err := plan.NewPlanController(service, zap.NewNop()).GetPlanContext(ctx, &pb.GetPlanContextRequest{UserId: tc.userID})
+			if status.Code(err) != tc.code {
+				t.Fatalf("error = %v, want status %s", err, tc.code)
+			}
+			if !proto.Equal(result, tc.want) {
+				t.Errorf("response = %v, want %v", result, tc.want)
+			}
+		})
+	}
+}

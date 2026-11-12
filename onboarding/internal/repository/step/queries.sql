@@ -1,5 +1,5 @@
 -- name: GetPlanSteps :many
-SELECT template.step_key AS id, template.title, template.description, template.period, template.resource_id, step.completed_at
+SELECT template.step_key AS id, template.track, template.title, template.description, template.period, template.resource_id, step.completed_at
 FROM onboarding.plan_step AS step
 JOIN onboarding.step_template AS template ON template.id = step.step_id
 WHERE step.plan_id = $1

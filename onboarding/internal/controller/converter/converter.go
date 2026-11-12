@@ -24,7 +24,32 @@ func StepToProto(step entity.Step) *steppb.Step {
 	return &steppb.Step{
 		Id: step.ID, Title: step.Title, Description: step.Description,
 		Period: step.Period, ResourceId: step.ResourceID, Status: string(step.Status),
+		ActionType: actionType(step),
 	}
+}
+
+// actionType is set while resource_id is only used for access requests.
+func actionType(step entity.Step) string {
+	if step.ResourceID == "" {
+		return ""
+	}
+	return entity.ActionTypeAccessRequest
+}
+
+func TrackContextToProto(context entity.TrackContext) *planpb.PlanTrackContext {
+	result := &planpb.PlanTrackContext{Track: context.Track, DisplayName: context.DisplayName}
+	if context.CurrentStep != nil {
+		result.CurrentStep = StepToProto(*context.CurrentStep)
+	}
+	return result
+}
+
+func TrackContextsToProto(contexts []entity.TrackContext) *planpb.GetPlanContextResponse {
+	result := &planpb.GetPlanContextResponse{}
+	for _, context := range contexts {
+		result.Tracks = append(result.Tracks, TrackContextToProto(context))
+	}
+	return result
 }
 
 func StatusError(err error) error {

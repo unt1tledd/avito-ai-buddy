@@ -26,6 +26,7 @@ type Config struct {
 		URL string `env:"ONBOARDING_POSTGRES_URL,required"`
 	}
 	App struct {
+		SeedDemo              bool          `env:"ONBOARDING_SEED_DEMO"`
 		ServiceToken          string        `env:"ONBOARDING_SERVICE_TOKEN,required"`
 		ShutdownTimeout       time.Duration `env:"ONBOARDING_SHUTDOWN_TIMEOUT" envDefault:"5s"`
 		HTTPReadHeaderTimeout time.Duration `env:"ONBOARDING_HTTP_READ_HEADER_TIMEOUT" envDefault:"5s"`

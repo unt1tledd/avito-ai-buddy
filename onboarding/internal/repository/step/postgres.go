@@ -33,7 +33,7 @@ func (r *StepRepository) GetPlanSteps(ctx context.Context, planID int64) ([]enti
 			status = entity.StepCompleted
 		}
 		steps = append(steps, entity.Step{
-			ID: row.ID, Title: row.Title, Description: row.Description,
+			ID: row.ID, Track: row.Track, Title: row.Title, Description: row.Description,
 			Period: row.Period, ResourceID: row.ResourceID, Status: status,
 		})
 	}

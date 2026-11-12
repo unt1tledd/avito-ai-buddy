@@ -29,6 +29,7 @@ func TestAuthorizeRequests(t *testing.T) {
 	const validOwner = `{"is_valid":true,"user_id":7}`
 
 	getPlan := planpb.PlanService_GetPlan_FullMethodName
+	getPlanContext := planpb.PlanService_GetPlanContext_FullMethodName
 	completeStep := steppb.StepService_CompleteStep_FullMethodName
 	reopenStep := steppb.StepService_ReopenStep_FullMethodName
 	updateTemplate := steppb.StepService_UpdateStepTemplate_FullMethodName
@@ -44,6 +45,9 @@ func TestAuthorizeRequests(t *testing.T) {
 	}{
 		{"assign own plan", planpb.PlanService_AssignPlan_FullMethodName, &planpb.AssignPlanRequest{UserId: 7}, accessToken, http.StatusOK, validOwner, codes.OK},
 		{"read own plan", getPlan, &planpb.GetPlanRequest{UserId: 7}, accessToken, http.StatusOK, validOwner, codes.OK},
+		{"read own plan context", getPlanContext, &planpb.GetPlanContextRequest{UserId: 7}, accessToken, http.StatusOK, validOwner, codes.OK},
+		{"cannot read another user's plan context", getPlanContext, &planpb.GetPlanContextRequest{UserId: 8}, accessToken, http.StatusOK, validOwner, codes.PermissionDenied},
+		{"service token cannot read plan context", getPlanContext, &planpb.GetPlanContextRequest{UserId: 7}, serviceToken, 0, "", codes.Unauthenticated},
 		{"read own current step", steppb.StepService_GetCurrentStep_FullMethodName, &steppb.GetCurrentStepRequest{UserId: 7}, accessToken, http.StatusOK, validOwner, codes.OK},
 		{"complete own step", completeStep, &steppb.CompleteStepRequest{UserId: 7}, accessToken, http.StatusOK, validOwner, codes.OK},
 		{"reopen own step", reopenStep, &steppb.ReopenStepRequest{UserId: 7, Status: "pending"}, accessToken, http.StatusOK, validOwner, codes.OK},

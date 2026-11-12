@@ -17,6 +17,7 @@ import (
 type planService interface {
 	AssignPlan(ctx context.Context, userID int64, track string) (entity.Plan, error)
 	GetPlan(ctx context.Context, userID int64) (entity.Plan, error)
+	GetPlanContext(ctx context.Context, userID int64) ([]entity.TrackContext, error)
 }
 
 type PlanController struct {
@@ -54,4 +55,18 @@ func (s *PlanController) GetPlan(ctx context.Context, req *pb.GetPlanRequest) (*
 		return nil, converter.StatusError(err)
 	}
 	return converter.PlanToProto(plan), nil
+}
+
+func (s *PlanController) GetPlanContext(ctx context.Context, req *pb.GetPlanContextRequest) (*pb.GetPlanContextResponse, error) {
+	if err := req.Validate(); err != nil {
+		s.logger.Warn("onboarding request validation failed", zap.String("rpc", "GetPlanContext"), zap.Error(err))
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	contexts, err := s.planService.GetPlanContext(ctx, req.GetUserId())
+	if err != nil {
+		s.logger.Warn("get onboarding plan context", zap.Error(err))
+		return nil, converter.StatusError(err)
+	}
+	return converter.TrackContextsToProto(contexts), nil
 }
