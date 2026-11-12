@@ -1,22 +1,22 @@
 {
-  "dataset": "avito-synthetic-wiki",
-  "version": "1.0",
+  "dataset": "avito-wiki",
+  "version": "1.2",
   "created_on": "2026-11-11",
-  "synthetic": true,
-  "notice": "Синтетический сценарий «Авито» для демо; сведения вымышлены.",
-  "source_of_structure": "Пять разделов и пятнадцать подразделов из схемы пользователя.",
+  "synthetic": false,
+  "notice": "Смешанный корпус: 85 вымышленных демостатей и 59 фрагментов по приложенному чек-листу. Источник каждой статьи указан отдельно.",
+  "source_of_structure": "Пять исходных разделов из схемы пользователя и два дополнительных раздела для стажёров: адаптация и разработка. Дополнено двумя листами пользовательского Excel-чек-листа с сохранением периодов и строк.",
   "timezone": "Europe/Moscow",
   "currency": "RUB",
   "source_domain": "wiki.avito.example",
-  "links": "Все домены .example и адрес Примерск, Тестовая, 10 вымышлены; страницы не опубликованы.",
-  "document_count": 45,
-  "eval_case_count": 99,
+  "links": "Домен wiki.avito.example относится только к вымышленным демостатьям. У фрагментов из Excel url=null: гиперссылок в исходнике нет.",
+  "document_count": 144,
+  "eval_case_count": 305,
   "roles": {
     "intern": "Стажёр: общие статьи",
-    "mentor": "Наставник: общие и три закрытые статьи"
+    "mentor": "Наставник: общие статьи и восемь закрытых статей для наставника"
   },
   "team_policy": "teams=[]: командных ограничений нет. team=101 в примерах — произвольный тестовый ID, не реальная команда.",
-  "max_text_characters": 788,
+  "max_text_characters": 935,
   "sections": [
     {
       "id": "newcomers",
@@ -182,12 +182,257 @@
           ]
         }
       ]
+    },
+    {
+      "id": "internship",
+      "title": "Стажировка и адаптация",
+      "topics": [
+        {
+          "id": "plan",
+          "title": "План адаптации",
+          "document_ids": [
+            "synth-intern-first-week",
+            "synth-intern-first-month-goals",
+            "synth-intern-step-confirmation",
+            "synth-intern-access-blocker"
+          ]
+        },
+        {
+          "id": "mentoring",
+          "title": "Наставник и обратная связь",
+          "document_ids": [
+            "synth-intern-who-helps",
+            "synth-intern-ask-technical-question",
+            "synth-intern-receive-feedback",
+            "synth-intern-mentor-away"
+          ]
+        },
+        {
+          "id": "tasks",
+          "title": "Задачи и рабочее время",
+          "document_ids": [
+            "synth-intern-first-task",
+            "synth-intern-task-status",
+            "synth-intern-work-time",
+            "synth-intern-unplanned-absence"
+          ]
+        },
+        {
+          "id": "learning",
+          "title": "Обучение и учебные документы",
+          "document_ids": [
+            "synth-intern-learning-route",
+            "synth-intern-security-course",
+            "synth-intern-university-documents",
+            "synth-intern-study-schedule"
+          ]
+        },
+        {
+          "id": "completion",
+          "title": "Итоги стажировки",
+          "document_ids": [
+            "synth-intern-midpoint-review",
+            "synth-intern-final-review-preparation",
+            "synth-intern-final-presentation",
+            "synth-intern-handoff-exit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "engineering",
+      "title": "Разработка для стажёров",
+      "topics": [
+        {
+          "id": "code",
+          "title": "Работа с кодом",
+          "document_ids": [
+            "synth-intern-git-branch",
+            "synth-intern-pull-request",
+            "synth-intern-code-review",
+            "synth-intern-git-conflict"
+          ]
+        },
+        {
+          "id": "quality",
+          "title": "Тестирование и CI",
+          "document_ids": [
+            "synth-intern-test-scope",
+            "synth-intern-ci-failed",
+            "synth-intern-staging-environment",
+            "synth-intern-staging-release"
+          ]
+        },
+        {
+          "id": "services",
+          "title": "Сервисы и наблюдаемость",
+          "document_ids": [
+            "synth-intern-service-catalog",
+            "synth-intern-service-logs",
+            "synth-intern-health-readiness",
+            "synth-intern-incident-report"
+          ]
+        },
+        {
+          "id": "data",
+          "title": "Данные и безопасность",
+          "document_ids": [
+            "synth-intern-test-data",
+            "synth-intern-secrets-storage",
+            "synth-intern-sql-sandbox",
+            "synth-intern-ai-tools"
+          ]
+        },
+        {
+          "id": "handoff",
+          "title": "Документация и передача результата",
+          "document_ids": [
+            "synth-intern-technical-note",
+            "synth-intern-decision-note",
+            "synth-intern-pair-session",
+            "synth-intern-definition-done"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "checklist",
+      "title": "Чек-лист из Excel",
+      "topics": [
+        {
+          "id": "guide",
+          "title": "Как пользоваться чек-листом",
+          "document_ids": [
+            "checklist-reading-guide"
+          ]
+        },
+        {
+          "id": "common",
+          "title": "Общие пункты стажёра",
+          "document_ids": [
+            "checklist-common-r04",
+            "checklist-common-r05",
+            "checklist-common-r06",
+            "checklist-common-r08",
+            "checklist-common-r09",
+            "checklist-common-r10",
+            "checklist-common-r11",
+            "checklist-common-r12",
+            "checklist-common-r15",
+            "checklist-common-r16"
+          ]
+        },
+        {
+          "id": "backend",
+          "title": "Backend: учебные пункты",
+          "document_ids": [
+            "checklist-backend-r02",
+            "checklist-backend-r03",
+            "checklist-backend-r04",
+            "checklist-backend-r05",
+            "checklist-backend-r06",
+            "checklist-backend-r07",
+            "checklist-backend-r08",
+            "checklist-backend-r09",
+            "checklist-backend-r10",
+            "checklist-backend-r11",
+            "checklist-backend-r12",
+            "checklist-backend-r13",
+            "checklist-backend-r14",
+            "checklist-backend-r15",
+            "checklist-backend-r16",
+            "checklist-backend-r17",
+            "checklist-backend-r18",
+            "checklist-backend-r19",
+            "checklist-backend-r20",
+            "checklist-backend-r21",
+            "checklist-backend-r22",
+            "checklist-backend-r23",
+            "checklist-backend-r24",
+            "checklist-backend-r25",
+            "checklist-backend-r26",
+            "checklist-backend-r27",
+            "checklist-backend-r28",
+            "checklist-backend-r29",
+            "checklist-backend-r30",
+            "checklist-backend-r31",
+            "checklist-backend-r32",
+            "checklist-backend-r33"
+          ]
+        },
+        {
+          "id": "common-periods",
+          "title": "Общие задачи по периодам",
+          "document_ids": [
+            "checklist-common-period-1",
+            "checklist-common-period-2",
+            "checklist-common-period-3",
+            "checklist-common-period-4",
+            "checklist-common-period-6"
+          ]
+        },
+        {
+          "id": "backend-periods",
+          "title": "Backend: задачи по периодам",
+          "document_ids": [
+            "checklist-backend-period-1",
+            "checklist-backend-period-2",
+            "checklist-backend-period-3",
+            "checklist-backend-period-4",
+            "checklist-backend-period-5",
+            "checklist-backend-period-6"
+          ]
+        },
+        {
+          "id": "mentor",
+          "title": "Задачи наставника",
+          "document_ids": [
+            "checklist-common-r02",
+            "checklist-common-r03",
+            "checklist-common-r07",
+            "checklist-common-r13",
+            "checklist-common-r14"
+          ]
+        }
+      ]
     }
   ],
   "files": {
     "import_data": "documents.json",
     "human_readable": "knowledge.md",
     "evaluation": "eval_cases.json",
-    "instructions": "README.md"
-  }
+    "instructions": "README.md",
+    "checklist": "intern_checklist.md",
+    "checklist_source": "sources/intern-checklist.json"
+  },
+  "updated_on": "2026-11-11",
+  "content_origin": "mixed",
+  "content_counts": {
+    "synthetic": 85,
+    "checklist_rows": 47,
+    "checklist_summaries": 11,
+    "checklist_guide": 1
+  },
+  "source_documents": [
+    {
+      "id": "intern-checklist-xlsx",
+      "filename": "Чек-лист  стажера.xlsx",
+      "sha256": "eaa2cf72d532a94e375768b6cd820bf0c5fcf8048d510307a546c63b294d43bf",
+      "extraction": "sources/intern-checklist.json",
+      "sheets": [
+        "Материалы для всех",
+        "Чек-лист Backend"
+      ],
+      "task_rows": 48,
+      "unique_tasks": 47,
+      "duplicates": [
+        {
+          "sheet": "Материалы для всех",
+          "row": 17,
+          "duplicate_of": 16
+        }
+      ],
+      "actuality": "Дата утверждения и актуальность правил в файле не указаны; это содержание предоставленного документа, не проверка действующей политики компании."
+    }
+  ]
 }

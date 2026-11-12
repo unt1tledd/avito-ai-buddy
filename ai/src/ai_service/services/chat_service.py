@@ -1,12 +1,11 @@
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..agents.agent import Agent
-from ..clients.onboarding import Onboarding
-from ..clients.user import HttpUser, is_user_id
 from ..core.diagnostics import operation
-from ..schemas.contracts import Actor, ActorRef, ChatResponse
-from .onboarding_service import complete_step, unknown_completion
+from ..rag.onboarding import snapshot_answer
+from ..schemas.contracts import Actor, ChatActor, ChatResponse, Message, OnboardingPlan
 
 
 class ChatUnavailable(Exception):
@@ -23,44 +22,32 @@ class InvalidChat(Exception):
 @dataclass(frozen=True)
 class ChatService:
     agent: Agent | None
-    user: HttpUser | None
-    onboarding: Onboarding | None
-    integration: bool
     unavailable_reason: str | None
 
     async def answer(
         self,
         *,
         conversation_id: str | None,
-        actor: ActorRef,
+        actor: ChatActor,
         message: str,
-        confirmed_step_id: str | None,
         deadline: float,
+        onboarding_plans: Sequence[OnboardingPlan] = (),
+        history: Sequence[Message] = (),
     ) -> ChatResponse:
-        if self.integration:
-            if conversation_id is None:
-                raise InvalidChat(("conversation_id",), "Требуется conversation_id.", "missing")
-            if not is_user_id(actor.user_id):
-                raise InvalidChat(("actor", "user_id"), "Требуется положительный int64 в виде строки.", "value_error")
-        elif not isinstance(actor, Actor):
-            raise ChatUnavailable("В деморежиме требуется полный профиль actor.")
+        if actor.actual_end_date is not None:
+            raise InvalidChat(("actor", "actual_end_date"), "Стажировка завершена.", "value_error")
 
         if asyncio.get_running_loop().time() >= deadline:
             raise TimeoutError
-        try:
-            with operation("chat.confirm" if confirmed_step_id is not None else "chat.answer"):
-                async with asyncio.timeout_at(deadline):
-                    if confirmed_step_id is not None:
-                        if self.onboarding is None:
-                            raise ChatUnavailable("Завершение шагов адаптации недоступно.")
-                        return await complete_step(self.onboarding, actor, confirmed_step_id)
-                    if self.agent is None:
-                        raise ChatUnavailable("Чат с базой знаний недоступен.")
-                    if self.user is not None:
-                        actor = await self.user.get_actor(actor.user_id)
-                    assert isinstance(actor, Actor)
-                    return await self.agent.answer(message, actor)
-        except TimeoutError:
-            if confirmed_step_id is not None:
-                return unknown_completion()
-            raise
+        with operation("chat.answer"):
+            async with asyncio.timeout_at(deadline):
+                snapshot = snapshot_answer(message, onboarding_plans)
+                if snapshot is not None:
+                    return snapshot
+                if self.agent is None:
+                    raise ChatUnavailable("Чат с базой знаний недоступен.")
+                profile = Actor(user_id=actor.user_id, team=actor.team, role=actor.role)
+                return await self.agent.answer(
+                    message, profile, deadline=deadline,
+                    onboarding_plans=onboarding_plans, history=history,
+                )

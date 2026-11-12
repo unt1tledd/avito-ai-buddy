@@ -4,15 +4,11 @@ import json
 import httpx
 import pytest
 
-from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, SILICONFLOW_DIMENSIONS, EmbeddingError, Embeddings
+from ai_service.clients.embeddings import EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ResponsesModel
-from ai_service.clients.onboarding import HttpOnboarding, OnboardingRejected, OnboardingUnknown
-from ai_service.clients.user import HttpUser, UserError
-from ai_service.core.config import Settings
-from ai_service.schemas.contracts import Actor
+from ai_service.core.config import EMBEDDING_DIMENSIONS, SILICONFLOW_DIMENSIONS, Settings, resolve_embedding_profile
 
 
-ACTOR = Actor(user_id="test-user", role="intern", team="backend")
 FIRST_VECTOR = [1, 0] + [0] * (EMBEDDING_DIMENSIONS - 2)
 SECOND_VECTOR = [0, 1] + [0] * (EMBEDDING_DIMENSIONS - 2)
 
@@ -42,7 +38,7 @@ def test_embeddings_request(status, items, expected):
             llm_api_key="llm-secret",
         )
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await Embeddings(http, settings).embed(["Первый", "Второй"])
+            return await Embeddings(http, resolve_embedding_profile(settings)).embed(["Первый", "Второй"])
 
     if expected is None:
         with pytest.raises(EmbeddingError):
@@ -73,10 +69,9 @@ def test_qwen_embeddings_use_separate_credentials_and_database_dimensions(monkey
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await Embeddings(http, Settings.from_env()).embed(["Вопрос"])
+            return await Embeddings(http, resolve_embedding_profile(Settings.from_env())).embed(["Вопрос"])
 
     assert asyncio.run(run()) == [qwen_vector]
-
 
 
 def test_siliconflow_rejects_1536_before_network():
@@ -86,46 +81,7 @@ def test_siliconflow_rejects_1536_before_network():
         embedding_dimensions=1536,
     )
     with pytest.raises(RuntimeError, match="1024"):
-        Embeddings(None, settings)
-
-
-PROFILE = {
-    "internship_id": "7",
-    "intern": {"user_id": "42", "first_name": "Synthetic"},
-    "team": {"team_id": "51", "name": "Backend Platform"},
-    "track": "infra",
-}
-
-
-@pytest.mark.parametrize(("status", "profile", "reason"), [
-    (200, PROFILE, None),
-    (200, {**PROFILE, "intern": {"user_id": "43"}}, "wrong_user"),
-    (200, {**PROFILE, "intern": None, "mentor": {"user_id": "42"}}, "invalid_profile"),
-    (200, {**PROFILE, "team": {"team_id": "0"}}, "invalid_team"),
-    (200, {**PROFILE, "actual_end_date": "2026-03-01"}, "internship_ended"),
-    (404, {}, "profile_missing"),
-    (401, {}, "http_401"),
-    (None, {}, "transport"),
-])
-def test_user_request(status, profile, reason):
-    def handler(request):
-        assert request.method == "GET"
-        assert request.url == "https://user.example/v1/user/42/metadata"
-        assert request.headers["authorization"] == "Bearer user-key"
-        if status is None:
-            raise httpx.ConnectError("Connection refused", request=request)
-        return httpx.Response(status, json=profile)
-
-    async def run():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await HttpUser(http, "https://user.example/", "user-key").get_actor("42")
-
-    if reason:
-        with pytest.raises(UserError) as error:
-            asyncio.run(run())
-        assert error.value.reason == reason
-    else:
-        assert asyncio.run(run()) == Actor(user_id="42", role="intern", team="51")
+        resolve_embedding_profile(settings)
 
 
 @pytest.mark.parametrize(("status", "response_fields"), [(200, {}), (200, {"status": "completed"}), (429, {})])
@@ -202,34 +158,6 @@ def test_llm_requires_usable_tool_call_ids(call_ids, error):
         asyncio.run(run())
 
 
-@pytest.mark.parametrize(("status", "body", "error", "message"), [
-    (200, {"step_id": "dev-environment", "status": "completed"}, None, None),
-    (200, {"step_id": "another-step", "status": "completed"}, OnboardingUnknown, "другого шага"),
-    (200, {}, OnboardingUnknown, "не подтвердил"),
-    (403, {}, OnboardingRejected, "нет права"),
-    (404, {}, OnboardingRejected, "не найден"),
-    (503, {}, OnboardingUnknown, "не подтвердил"),
-])
-def test_onboarding_request(status, body, error, message):
-    def handler(request):
-        assert request.method == "PUT"
-        assert request.url.path == "/v1/users/test-user/onboarding/steps/dev-environment/completion"
-        assert request.headers["authorization"] == "Bearer onboard-key"
-        return httpx.Response(status, json=body)
-
-    async def run():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await HttpOnboarding(http, "https://onboarding.example", "onboard-key").complete_step(
-                ACTOR, "dev-environment"
-            )
-
-    if error:
-        with pytest.raises(error, match=message):
-            asyncio.run(run())
-    else:
-        assert asyncio.run(run()).status == "completed"
-
-
 def test_openrouter_requires_pinned_embedding_provider():
     settings = Settings(
         embedding_model="qwen/qwen3-embedding-8b",
@@ -237,7 +165,7 @@ def test_openrouter_requires_pinned_embedding_provider():
         embedding_dimensions=1536,
     )
     with pytest.raises(RuntimeError, match="EMBEDDING_PROVIDER"):
-        Embeddings(None, settings)
+        resolve_embedding_profile(settings)
 
 
 def test_openrouter_provider_is_sent_and_changes_index_profile():
@@ -257,12 +185,12 @@ def test_openrouter_provider_is_sent_and_changes_index_profile():
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = Embeddings(http, settings)
-            other = Embeddings(http, settings.model_copy(update={
+            client = Embeddings(http, resolve_embedding_profile(settings))
+            other = Embeddings(http, resolve_embedding_profile(settings.model_copy(update={
                 "embedding_provider": "siliconflow", "embedding_dimensions": 1024,
-            }))
+            })))
             with pytest.raises(RuntimeError, match="supported OpenRouter Qwen providers"):
-                Embeddings(http, settings.model_copy(update={"embedding_provider": "nebius"}))
+                resolve_embedding_profile(settings.model_copy(update={"embedding_provider": "nebius"}))
             assert other.profile != client.profile
             assert await client.embed(["synthetic"]) == [FIRST_VECTOR]
 
