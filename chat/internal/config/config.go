@@ -12,13 +12,12 @@ import (
 // from the environment.
 type Config struct {
 	Clients struct {
-		UserGRPCAddr          string        `env:"USER_GRPC_ADDR" envDefault:"user:50051"`
-		OnboardingGRPCAddr    string        `env:"ONBOARDING_GRPC_ADDR" envDefault:"onboarding:50051"`
-		AIBaseURL             string        `env:"AI_BASE_URL" envDefault:"http://ai:8080"`
-		AIAnswerPath          string        `env:"AI_ANSWER_PATH" envDefault:"/api/v1/answer"`
-		AIServiceToken        string        `env:"AI_SERVICE_TOKEN"`
-		AISendOnboardingPlans bool          `env:"AI_SEND_ONBOARDING_PLANS"`
-		AITimeout             time.Duration `env:"AI_TIMEOUT" envDefault:"30s"`
+		UserGRPCAddr       string        `env:"USER_GRPC_ADDR" envDefault:"user:50051"`
+		OnboardingGRPCAddr string        `env:"ONBOARDING_GRPC_ADDR" envDefault:"onboarding:50051"`
+		AIBaseURL          string        `env:"AI_BASE_URL" envDefault:"http://ai:8080"`
+		AIAnswerPath       string        `env:"AI_ANSWER_PATH" envDefault:"/api/v1/answer"`
+		AIServiceToken     string        `env:"AI_SERVICE_TOKEN"`
+		AITimeout          time.Duration `env:"AI_TIMEOUT" envDefault:"30s"`
 	}
 
 	Auth struct {

@@ -225,7 +225,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 			},
 		}, aiadapter.Options{
 			BaseURL: cfg.Clients.AIBaseURL, AnswerPath: cfg.Clients.AIAnswerPath,
-			ServiceToken: cfg.Clients.AIServiceToken, SendOnboardingPlans: cfg.Clients.AISendOnboardingPlans,
+			ServiceToken: cfg.Clients.AIServiceToken,
 		}),
 		authClient,
 		tx,

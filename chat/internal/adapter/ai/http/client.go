@@ -23,7 +23,7 @@ type answerRequest struct {
 	Message         string        `json:"message"`
 	Actor           actor         `json:"actor"`
 	History         []historyTurn `json:"history,omitempty"`
-	OnboardingPlans *[]plan       `json:"onboarding_plans,omitempty"`
+	OnboardingPlans []plan        `json:"onboarding_plans"`
 }
 
 type actor struct {
@@ -70,26 +70,23 @@ type proposal struct {
 }
 
 type Options struct {
-	BaseURL             string
-	AnswerPath          string
-	ServiceToken        string
-	SendOnboardingPlans bool
+	BaseURL      string
+	AnswerPath   string
+	ServiceToken string
 }
 
 // Client asks the AI service for an answer over HTTP.
 type Client struct {
-	client              *http.Client
-	url                 string
-	serviceToken        string
-	sendOnboardingPlans bool
+	client       *http.Client
+	url          string
+	serviceToken string
 }
 
 func NewClient(client *http.Client, options Options) *Client {
 	return &Client{
-		client:              client,
-		url:                 strings.TrimRight(options.BaseURL, "/") + "/" + strings.TrimLeft(options.AnswerPath, "/"),
-		serviceToken:        options.ServiceToken,
-		sendOnboardingPlans: options.SendOnboardingPlans,
+		client:       client,
+		url:          strings.TrimRight(options.BaseURL, "/") + "/" + strings.TrimLeft(options.AnswerPath, "/"),
+		serviceToken: options.ServiceToken,
 	}
 }
 
@@ -100,7 +97,7 @@ func (c *Client) GetAnswer(ctx context.Context, request entity.AnswerRequest) (e
 	if message := strings.TrimSpace(request.Message); message == "" || utf8.RuneCountInString(message) > maxMessageLength {
 		return entity.Answer{}, fmt.Errorf("AI question must contain 1 to %d characters", maxMessageLength)
 	}
-	body, err := json.Marshal(c.requestPayload(request))
+	body, err := json.Marshal(requestPayload(request))
 	if err != nil {
 		return entity.Answer{}, fmt.Errorf("encode AI request: %w", err)
 	}
@@ -131,31 +128,27 @@ func (c *Client) GetAnswer(ctx context.Context, request entity.AnswerRequest) (e
 	return payload.toAnswer(), nil
 }
 
-func (c *Client) requestPayload(request entity.AnswerRequest) answerRequest {
-	payload := answerRequest{
+func requestPayload(request entity.AnswerRequest) answerRequest {
+	plans := make([]plan, 0, len(request.OnboardingPlans))
+	for _, item := range request.OnboardingPlans {
+		track := plan{ID: item.ID, Title: item.Title}
+		if current := item.CurrentStep; current != nil {
+			track.CurrentStep = &step{
+				ID: current.ID, Title: current.Title,
+				ResourceID: current.ResourceID, ActionType: current.ActionType,
+			}
+		}
+		plans = append(plans, track)
+	}
+	return answerRequest{
 		Message: request.Message,
 		Actor: actor{
 			UserID: request.User.UserID, Role: request.User.Role, Team: request.User.TeamID,
 			ActualEndDate: request.User.ActualEndDate,
 		},
-		History: recentHistory(request.History),
+		History:         recentHistory(request.History),
+		OnboardingPlans: plans,
 	}
-	// The current AI API rejects unknown fields. Enable this when AI accepts the plan context.
-	if c.sendOnboardingPlans {
-		plans := make([]plan, 0, len(request.OnboardingPlans))
-		for _, item := range request.OnboardingPlans {
-			track := plan{ID: item.ID, Title: item.Title}
-			if current := item.CurrentStep; current != nil {
-				track.CurrentStep = &step{
-					ID: current.ID, Title: current.Title,
-					ResourceID: current.ResourceID, ActionType: current.ActionType,
-				}
-			}
-			plans = append(plans, track)
-		}
-		payload.OnboardingPlans = &plans
-	}
-	return payload
 }
 
 func recentHistory(messages []entity.Message) []historyTurn {
