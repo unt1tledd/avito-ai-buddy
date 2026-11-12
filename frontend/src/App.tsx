@@ -42,21 +42,9 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Верхняя шапка с обновлённым логотипом AI BUDDY */}
-      <header
-        style={{
-          height: '68px',
-          minHeight: '68px',
-          borderBottom: '2px solid #141414',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          padding: '0 24px',
-          background: '#FFFFFF',
-        }}
-      >
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Верхняя шапка с логотипом AI BUDDY и 4 кружочками без рамки кнопки */}
+      <header className="app-header">
         <div className="aibuddy-logo-pill">
           <span className="aibuddy-logo-dots" aria-hidden="true">
             <span className="aibuddy-logo-dot" style={{ background: '#04E061' }} />

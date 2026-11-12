@@ -40,9 +40,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   // Реф для автоскролла чата вниз при переполнении экрана
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  // Реф для автоматического увеличения высоты поля ввода (как в Gemini)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, isLoading, showRetryComparison]);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [inputValue]);
 
   const toggleDrawer = (drawer: 'history' | 'roadmap') => {
     if (isDrawerOpen && activeDrawer === drawer) {
@@ -67,7 +77,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     setMessages([]);
     setShowRetryComparison(false);
 
-    // Если сверху уже есть пустой «Новый вопрос», просто активируем его
     const existingDraft = historyItems.find(
       (item) => item.messages.length === 0 && item.dayGroup === 'СЕГОДНЯ'
     );
@@ -241,7 +250,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   return (
     <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative', minHeight: 0 }}>
-      {/* Плавная левая оболочка (открывается и закрывается с одинаковой скоростью без рывков чата) */}
+      {/* Плавная левая оболочка */}
       <div className={shellClassName}>
         {activeDrawer === 'history' ? (
           <aside
@@ -440,32 +449,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         )}
       </div>
 
-      {/* ОСНОВНАЯ ПРАВАЯ ОБЛАСТЬ ЧАТА */}
-      <main
-        style={{
-          flex: 1,
-          minWidth: 0,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '22px 32px',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Две круглые иконки в левом верхнем углу: Часы (История) и Дерево в круге (Roadmap) */}
+      {/* Подложка для закрытия панели тапом вне неё на телефоне */}
+      {isDrawerOpen && (
         <div
-          style={{
-            position: 'absolute',
-            top: '22px',
-            left: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px',
-            zIndex: 10,
-          }}
-        >
+          className="mobile-drawer-backdrop"
+          onClick={closeDrawer}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* ОСНОВНАЯ ПРАВАЯ ОБЛАСТЬ ЧАТА */}
+      <main className="chat-main">
+        {/* Две увеличенные круглые иконки: Часы (История) и Дерево в круге (Roadmap) */}
+        <div className="floating-nav-icons">
           <button
             className={`drawer-toggle-btn${
               isDrawerOpen && activeDrawer === 'history' ? ' drawer-toggle-btn--active' : ''
@@ -508,15 +504,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         </div>
 
         {/* Прокручиваемая область сообщений (внутри выровнена ровно по ширине строки запроса) */}
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
-            paddingBottom: '16px',
-            scrollBehavior: 'smooth',
-          }}
-        >
+        <div className="chat-scroll-area">
           <div className="chat-feed-column">
             {/* Начальный пустой экран */}
             {messages.length === 0 && !showRetryComparison && (
@@ -538,14 +526,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
             {/* Демонстрация Схемы 04 (Сравнение ошибки и повтора отправки) */}
             {showRetryComparison && (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '20px',
-                  marginTop: '8px',
-                }}
-              >
+              <div className="retry-comparison-grid">
                 {/* Левая карточка: Сбой */}
                 <div
                   style={{
@@ -755,33 +736,18 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               </div>
             )}
 
-            {/* Список живых сообщений чата (выровненных по левому и правому краям строки ввода) */}
+            {/* Список живых сообщений чата */}
             {!showRetryComparison &&
               messages.map((msg) =>
                 msg.sender === 'user' ? (
                   <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <div
-                      style={{
-                        border: '2px solid #141414',
-                        borderRadius: '999px',
-                        padding: '10px 24px',
-                        background: '#F3F4F6',
-                        fontWeight: 700,
-                        fontSize: '15px',
-                        maxWidth: '78%',
-                      }}
-                    >
-                      {msg.text}
-                    </div>
+                    <div className="user-msg-bubble">{msg.text}</div>
                   </div>
                 ) : (
                   <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-start' }}>
                     <div
+                      className="assistant-msg-card"
                       style={{
-                        width: '100%',
-                        border: '2px solid #141414',
-                        borderRadius: '18px',
-                        padding: '20px',
                         background: msg.error ? '#F7C1C5' : '#FFFFFF',
                       }}
                     >
@@ -1035,7 +1001,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           </div>
         </div>
 
-        {/* Нижняя зона: быстрые подсказки по убыванию длины + центрированная широкая строка ввода */}
+        {/* Нижняя зона: быстрые подсказки + автоматически растущая многострочная строка ввода */}
         <div className="chat-composer">
           <div className="suggestion-list">
             {suggestions.map((sug) => (
@@ -1072,6 +1038,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               style={{
                 width: '36px',
                 height: '36px',
+                flexShrink: 0,
                 borderRadius: '50%',
                 border: '2px solid #141414',
                 background: '#FFFFFF',
@@ -1083,11 +1050,18 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             >
               +
             </button>
-            <input
-              type="text"
+            <textarea
+              ref={textareaRef}
+              rows={1}
               placeholder="Введите вопрос"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
             />
           </form>
         </div>
