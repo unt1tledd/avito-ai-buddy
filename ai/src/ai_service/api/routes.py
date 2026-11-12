@@ -8,8 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from ..core.config import Capability
-from ..core.diagnostics import UpstreamError
+from ..core.diagnostics import UpstreamError, logger, request_id
 from ..schemas.contracts import ChatResponse
 from ..services.chat_service import ChatService, ChatUnavailable, InvalidChat
 from .schemas import ChatRequest
@@ -17,11 +16,11 @@ from .schemas import ChatRequest
 
 class Readiness(BaseModel):
     status: Literal["ready", "unavailable"]
-    capability: Capability
+    capability: Literal["questions"] = "questions"
     reason: str | None = None
 
 
-def create_router(service_token: str, capability: Capability) -> APIRouter:
+def create_router(service_token: str) -> APIRouter:
     router = APIRouter()
     bearer = HTTPBearer(auto_error=False)
 
@@ -52,8 +51,8 @@ def create_router(service_token: str, capability: Capability) -> APIRouter:
                 reason = error.reason
         if reason:
             response.status_code = HTTPStatus.SERVICE_UNAVAILABLE
-            return Readiness(status="unavailable", capability=capability, reason=reason)
-        return Readiness(status="ready", capability=capability)
+            return Readiness(status="unavailable", reason=reason)
+        return Readiness(status="ready")
 
     @router.post(
         "/v1/chat",
@@ -65,18 +64,32 @@ def create_router(service_token: str, capability: Capability) -> APIRouter:
         "/api/v1/chat",
         response_model=ChatResponse,
         dependencies=[Depends(authenticate)],
-        description="Internal chat endpoint. Maximum request body is 256 KiB.",
+        include_in_schema=False,
+    )
+    @router.post(
+        "/api/v1/get_answer",
+        response_model=ChatResponse,
+        dependencies=[Depends(authenticate)],
+        include_in_schema=False,
+    )
+    @router.post(
+        "/api/v1/answer",
+        response_model=ChatResponse,
+        dependencies=[Depends(authenticate)],
+        operation_id="answer",
+        description="Get an answer using the current user profile supplied by authenticated Chat. "
+        "AI does not call User. Maximum request body is 1 MiB.",
         responses={
             HTTPStatus.BAD_REQUEST: {"description": "Malformed request body"},
             HTTPStatus.UNAUTHORIZED: {"description": "Invalid or missing chat service token"},
             HTTPStatus.REQUEST_TIMEOUT: {"description": "Request body deadline expired"},
-            HTTPStatus.REQUEST_ENTITY_TOO_LARGE: {"description": "Request body exceeds 256 KiB"},
-            HTTPStatus.BAD_GATEWAY: {"description": "User, onboarding, embeddings, knowledge base, model or tool orchestration error"},
-            HTTPStatus.SERVICE_UNAVAILABLE: {"description": "AI service configuration is incomplete or the requested capability is disabled"},
+            HTTPStatus.REQUEST_ENTITY_TOO_LARGE: {"description": "Request body exceeds 1 MiB"},
+            HTTPStatus.BAD_GATEWAY: {"description": "Embeddings, knowledge base, model or tool orchestration error"},
+            HTTPStatus.SERVICE_UNAVAILABLE: {"description": "AI service configuration is incomplete"},
             HTTPStatus.GATEWAY_TIMEOUT: {"description": "Chat deadline expired"},
         },
     )
-    async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
+    async def answer(payload: ChatRequest, request: Request) -> ChatResponse:
         service: ChatService = request.app.state.chat_service
 
         async def wait_for_disconnect() -> None:
@@ -87,13 +100,18 @@ def create_router(service_token: str, capability: Capability) -> APIRouter:
             conversation_id=payload.conversation_id,
             actor=payload.actor,
             message=payload.message,
-            confirmed_step_id=payload.confirmed_step_id,
+            onboarding_plans=payload.onboarding_plans,
+            history=payload.history,
             deadline=request.state.chat_deadline,
         ))
         disconnect = asyncio.create_task(wait_for_disconnect())
         try:
             await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
             if not work.done():
+                logger.info(
+                    "event=chat_request_cancelled reason=client_disconnect request_id=%s",
+                    request_id.get(),
+                )
                 raise HTTPException(status_code=499, detail="Клиент закрыл соединение.")
             return work.result()
         except ChatUnavailable as error:

@@ -1,5 +1,6 @@
-from pathlib import Path
-from typing import Literal
+import hashlib
+import json
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 import httpx
@@ -8,7 +9,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 DEFAULT_KNOWLEDGE_MIN_SIMILARITY = 0.3
-Capability = Literal["chat", "questions", "confirmations"]
+EMBEDDING_DIMENSIONS = 1536
+SILICONFLOW_DIMENSIONS = 1024
+SILICONFLOW_QWEN_MODELS = {
+    "Qwen/Qwen3-Embedding-8B", "Qwen/Qwen3-Embedding-4B", "Qwen/Qwen3-Embedding-0.6B",
+}
 
 
 def validate_base_url(name: str, value: str) -> None:
@@ -40,12 +45,8 @@ class Settings(BaseModel):
     llm_api_key: str = ""
     llm_model: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
-    onboarding_url: str = ""
-    onboarding_token: str = ""
     knowledge_db_dsn: str = ""
     knowledge_processing_approved: bool = False
-    confirmations_only: bool = False
-    questions_only: bool = False
     chat_timeout_seconds: float = Field(default=15, gt=0, le=25)
     knowledge_min_similarity: float = DEFAULT_KNOWLEDGE_MIN_SIMILARITY
     embedding_model: str = "text-embedding-3-small"
@@ -54,46 +55,6 @@ class Settings(BaseModel):
     embedding_dimensions: int | None = None
     embedding_provider: str = Field(default="", pattern=r"^[a-z0-9/_-]{0,100}$")
     embedding_index_version: str = Field(default="1", pattern=r"^[A-Za-z0-9._-]{1,64}$")
-    demo_db_path: Path = Path(".data/onboarding.sqlite3")
-    user_url: str = ""
-    user_token: str = ""
-    mode: str = "integration"
-
-    @property
-    def capability(self) -> Capability:
-        if self.questions_only:
-            return "questions"
-        if self.confirmations_only:
-            return "confirmations"
-        return "chat"
-
-    def validate_mode(self) -> None:
-        if self.questions_only and self.confirmations_only:
-            raise RuntimeError("QUESTIONS_ONLY and CONFIRMATIONS_ONLY cannot both be enabled")
-        integration = {
-            "USER_URL": self.user_url,
-            "USER_SERVICE_TOKEN": self.user_token,
-            "ONBOARDING_URL": self.onboarding_url,
-            "ONBOARDING_SERVICE_TOKEN": self.onboarding_token,
-        }
-        if self.mode == "demo":
-            configured = [name for name, value in integration.items() if value]
-            if configured:
-                raise RuntimeError(f"AI_MODE=demo cannot be combined with {', '.join(configured)}")
-            return
-        if self.mode != "integration":
-            raise RuntimeError("AI_MODE must be integration or demo")
-        if self.confirmations_only and not (self.user_url or self.user_token):
-            del integration["USER_URL"], integration["USER_SERVICE_TOKEN"]
-        if self.questions_only:
-            del integration["ONBOARDING_URL"], integration["ONBOARDING_SERVICE_TOKEN"]
-        missing = [name for name, value in integration.items() if not value.strip()]
-        if missing:
-            raise RuntimeError(f"AI_MODE=integration requires {', '.join(missing)}")
-        for name in integration.keys() & {"USER_URL", "ONBOARDING_URL"}:
-            validate_base_url(name, integration[name])
-        for name in integration.keys() & {"USER_SERVICE_TOKEN", "ONBOARDING_SERVICE_TOKEN"}:
-            validate_bearer_token(name, integration[name])
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -102,12 +63,73 @@ class Settings(BaseModel):
 
 def _environment_name(field_name: str) -> str:
     return {
-        "mode": "AI_MODE",
         "service_token": "AI_SERVICE_TOKEN",
-        "user_token": "USER_SERVICE_TOKEN",
-        "onboarding_token": "ONBOARDING_SERVICE_TOKEN",
     }.get(field_name, field_name.upper())
 
 
 class _EnvironmentSettings(Settings, BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=True, alias_generator=_environment_name)
+
+
+@dataclass(frozen=True)
+class EmbeddingProfile:
+    url: str
+    api_key: str = field(repr=False)
+    model: str
+    provider: str
+    openrouter: bool
+    request_dimensions: int | None
+    dimensions: int
+    index_id: str
+
+
+def resolve_embedding_profile(settings: Settings) -> EmbeddingProfile:
+    """Validate provider settings and preserve the existing knowledge index identity."""
+    base_url = settings.embedding_base_url or settings.llm_base_url
+    validate_base_url("EMBEDDING_BASE_URL" if settings.embedding_base_url else "LLM_BASE_URL", base_url)
+    url = str(httpx.URL(f"{base_url.rstrip('/')}/embeddings"))
+    api_key = settings.embedding_api_key or (settings.llm_api_key if not settings.embedding_base_url else "")
+    if api_key:
+        validate_bearer_token("EMBEDDING_API_KEY" if settings.embedding_api_key else "LLM_API_KEY", api_key)
+    model = settings.embedding_model
+    if not model.strip():
+        raise RuntimeError("EMBEDDING_MODEL must be configured")
+    host = urlsplit(url).hostname or ""
+    openrouter = host == "openrouter.ai" or host.endswith(".openrouter.ai")
+    provider = settings.embedding_provider
+    if openrouter and not provider:
+        raise RuntimeError("EMBEDDING_PROVIDER must pin an OpenRouter upstream")
+    siliconflow = (
+        host.removeprefix("api.") in {"siliconflow.com", "siliconflow.cn"}
+        or provider.split("/", 1)[0] == "siliconflow"
+    )
+    request_dimensions = settings.embedding_dimensions
+    qwen_model = (
+        model == "qwen/qwen3-embedding-8b" if openrouter else model in SILICONFLOW_QWEN_MODELS
+    )
+    if siliconflow:
+        if not qwen_model or request_dimensions not in (None, SILICONFLOW_DIMENSIONS):
+            raise RuntimeError("The SiliconFlow Qwen profile requires EMBEDDING_DIMENSIONS=1024")
+        request_dimensions = SILICONFLOW_DIMENSIONS
+    elif request_dimensions not in (None, EMBEDDING_DIMENSIONS):
+        raise RuntimeError(f"EMBEDDING_DIMENSIONS must be {EMBEDDING_DIMENSIONS} for the default profile")
+    if openrouter and qwen_model and not siliconflow and provider != "deepinfra":
+        raise RuntimeError("The supported OpenRouter Qwen providers are deepinfra (1536) and siliconflow (1024)")
+    if openrouter and qwen_model and not siliconflow:
+        request_dimensions = EMBEDDING_DIMENSIONS
+    if host == "api.openai.com":
+        if model not in {"text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"}:
+            raise RuntimeError("EMBEDDING_MODEL is incompatible with the OpenAI embeddings endpoint")
+        if model == "text-embedding-3-large" and request_dimensions is None:
+            raise RuntimeError("EMBEDDING_DIMENSIONS=1536 is required for text-embedding-3-large")
+        if model == "text-embedding-ada-002" and request_dimensions is not None:
+            raise RuntimeError("Leave EMBEDDING_DIMENSIONS unset for text-embedding-ada-002")
+    if (openrouter or siliconflow or host == "api.openai.com") and not api_key:
+        raise RuntimeError("EMBEDDING_API_KEY must be configured for the hosted embeddings endpoint")
+    dimensions = request_dimensions or EMBEDDING_DIMENSIONS
+    identity = (url, provider, model, dimensions, settings.embedding_index_version)
+    return EmbeddingProfile(
+        url=url, api_key=api_key, model=model, provider=provider, openrouter=openrouter,
+        request_dimensions=request_dimensions, dimensions=dimensions,
+        index_id=hashlib.sha256(json.dumps(identity).encode()).hexdigest(),
+    )

@@ -44,7 +44,7 @@ async def benchmark() -> None:
                         actor = Actor(user_id="42", role="intern", team=team)
                         params = {
                             "profile": PROFILE, "role": actor.role, "team": team, "vector": json.dumps(VECTOR),
-                            "limit": 3, "max_distance": 0.7, "snippet": 1200,
+                            "limit": 3, "max_distance": 0.7,
                         }
                         async with pool.connection() as db:
                             cursor = await db.execute("EXPLAIN (ANALYZE, BUFFERS) " + SEARCH_SQL, params)
