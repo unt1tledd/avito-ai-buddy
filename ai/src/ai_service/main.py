@@ -15,7 +15,6 @@ from .api.middleware import RequestBoundary
 from .api.routes import create_router
 from .clients.embeddings import Embeddings
 from .clients.llm import LanguageModel, ResponsesModel
-from .clients.user import HttpUser
 from .core.config import Settings, validate_bearer_token
 from .rag.retriever import Retriever
 from .repositories.knowledge import KnowledgeRepository
@@ -32,15 +31,10 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        settings.validate_mode()
         if settings.service_token:
             validate_bearer_token("AI_SERVICE_TOKEN", settings.service_token)
         async with AsyncExitStack() as stack:
             http = await stack.enter_async_context(httpx.AsyncClient(timeout=HTTP_CLIENT_TIMEOUT_SECONDS))
-            user: HttpUser | None = None
-            if settings.mode == "integration":
-                user = HttpUser(http, settings.user_url, settings.user_token)
-
             agent = None
             reason = None
             if not settings.knowledge_db_dsn:
@@ -70,9 +64,7 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
                 prompt = files("ai_service.agents").joinpath("prompts", "system.txt").read_text(encoding="utf-8")
                 agent = Agent(language_model, retriever, prompt)
 
-            app.state.chat_service = ChatService(
-                agent, user, settings.mode == "integration", reason
-            )
+            app.state.chat_service = ChatService(agent, reason)
             yield
 
     app = FastAPI(title="AI-buddy internal API", version="1.0.0", lifespan=lifespan)

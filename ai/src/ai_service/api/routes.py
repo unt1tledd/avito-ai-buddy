@@ -64,18 +64,26 @@ def create_router(service_token: str) -> APIRouter:
         "/api/v1/chat",
         response_model=ChatResponse,
         dependencies=[Depends(authenticate)],
-        description="Internal chat endpoint. Maximum request body is 256 KiB.",
+        include_in_schema=False,
+    )
+    @router.post(
+        "/api/v1/get_answer",
+        response_model=ChatResponse,
+        dependencies=[Depends(authenticate)],
+        operation_id="get_answer",
+        description="Get an answer using the current user profile supplied by authenticated Chat. "
+        "AI does not call User. Maximum request body is 256 KiB.",
         responses={
             HTTPStatus.BAD_REQUEST: {"description": "Malformed request body"},
             HTTPStatus.UNAUTHORIZED: {"description": "Invalid or missing chat service token"},
             HTTPStatus.REQUEST_TIMEOUT: {"description": "Request body deadline expired"},
             HTTPStatus.REQUEST_ENTITY_TOO_LARGE: {"description": "Request body exceeds 256 KiB"},
-            HTTPStatus.BAD_GATEWAY: {"description": "User, embeddings, knowledge base, model or tool orchestration error"},
+            HTTPStatus.BAD_GATEWAY: {"description": "Embeddings, knowledge base, model or tool orchestration error"},
             HTTPStatus.SERVICE_UNAVAILABLE: {"description": "AI service configuration is incomplete"},
             HTTPStatus.GATEWAY_TIMEOUT: {"description": "Chat deadline expired"},
         },
     )
-    async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
+    async def get_answer(payload: ChatRequest, request: Request) -> ChatResponse:
         service: ChatService = request.app.state.chat_service
 
         async def wait_for_disconnect() -> None:

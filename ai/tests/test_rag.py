@@ -257,7 +257,7 @@ def test_readiness_checks_real_pool_and_active_profile(pg_schema):
     from ai_service.main import create_app
 
     settings = Settings(
-        mode="demo", service_token="chat-key", knowledge_db_dsn=pg_schema,
+        service_token="chat-key", knowledge_db_dsn=pg_schema,
         knowledge_processing_approved=True, llm_api_key="llm-key", llm_model="test-model",
     )
     profile = Embeddings(None, settings).profile

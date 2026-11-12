@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints
@@ -36,6 +37,12 @@ class ActorRef(Payload):
 class Actor(ActorRef):
     team: Identifier
     role: Identifier
+
+
+class ChatActor(Actor):
+    """Current user context supplied by the authenticated Chat service."""
+
+    actual_end_date: date | None = None
 
 
 class Message(Payload):

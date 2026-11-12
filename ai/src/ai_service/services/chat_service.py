@@ -2,9 +2,8 @@ import asyncio
 from dataclasses import dataclass
 
 from ..agents.agent import Agent
-from ..clients.user import HttpUser, is_user_id
 from ..core.diagnostics import operation
-from ..schemas.contracts import Actor, ActorRef, ChatResponse
+from ..schemas.contracts import Actor, ChatActor, ChatResponse
 
 
 class ChatUnavailable(Exception):
@@ -21,25 +20,18 @@ class InvalidChat(Exception):
 @dataclass(frozen=True)
 class ChatService:
     agent: Agent | None
-    user: HttpUser | None
-    integration: bool
     unavailable_reason: str | None
 
     async def answer(
         self,
         *,
         conversation_id: str | None,
-        actor: ActorRef,
+        actor: ChatActor,
         message: str,
         deadline: float,
     ) -> ChatResponse:
-        if self.integration:
-            if conversation_id is None:
-                raise InvalidChat(("conversation_id",), "Требуется conversation_id.", "missing")
-            if not is_user_id(actor.user_id):
-                raise InvalidChat(("actor", "user_id"), "Требуется положительный int64 в виде строки.", "value_error")
-        elif not isinstance(actor, Actor):
-            raise ChatUnavailable("В деморежиме требуется полный профиль actor.")
+        if actor.actual_end_date is not None:
+            raise InvalidChat(("actor", "actual_end_date"), "Стажировка завершена.", "value_error")
 
         if asyncio.get_running_loop().time() >= deadline:
             raise TimeoutError
@@ -47,7 +39,5 @@ class ChatService:
             async with asyncio.timeout_at(deadline):
                 if self.agent is None:
                     raise ChatUnavailable("Чат с базой знаний недоступен.")
-                if self.user is not None:
-                    actor = await self.user.get_actor(actor.user_id)
-                assert isinstance(actor, Actor)
-                return await self.agent.answer(message, actor)
+                profile = Actor(user_id=actor.user_id, team=actor.team, role=actor.role)
+                return await self.agent.answer(message, profile)

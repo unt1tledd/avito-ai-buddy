@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from ..schemas.contracts import Actor, ActorRef, Identifier, Message, MessageText, Payload
+from ..schemas.contracts import ChatActor, Identifier, Message, MessageText, Payload
 
 
 MAX_CHAT_HISTORY_MESSAGES = 12
@@ -8,11 +8,11 @@ MAX_CHAT_HISTORY_MESSAGES = 12
 
 class ChatRequest(Payload):
     conversation_id: Identifier | None = Field(
-        default=None, description="Stable chat ID. Required in integration mode."
+        default=None, description="Optional chat ID for correlation. AI does not store conversations."
     )
-    actor: Actor | ActorRef = Field(
-        description="Integration requires a canonical positive int64 user ID as a decimal string. "
-        "Role and team in the request are used only in demo mode.",
+    actor: ChatActor = Field(
+        description="Current user ID, role and team verified by Chat. AI uses this profile for document ACL "
+        "and does not call User. Forward actual_end_date when the internship has ended.",
     )
     message: MessageText
     history: list[Message] = Field(

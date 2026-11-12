@@ -47,27 +47,6 @@ class Settings(BaseModel):
     embedding_dimensions: int | None = None
     embedding_provider: str = Field(default="", pattern=r"^[a-z0-9/_-]{0,100}$")
     embedding_index_version: str = Field(default="1", pattern=r"^[A-Za-z0-9._-]{1,64}$")
-    user_url: str = ""
-    user_token: str = ""
-    mode: str = "integration"
-
-    def validate_mode(self) -> None:
-        integration = {
-            "USER_URL": self.user_url,
-            "USER_SERVICE_TOKEN": self.user_token,
-        }
-        if self.mode == "demo":
-            configured = [name for name, value in integration.items() if value]
-            if configured:
-                raise RuntimeError(f"AI_MODE=demo cannot be combined with {', '.join(configured)}")
-            return
-        if self.mode != "integration":
-            raise RuntimeError("AI_MODE must be integration or demo")
-        missing = [name for name, value in integration.items() if not value.strip()]
-        if missing:
-            raise RuntimeError(f"AI_MODE=integration requires {', '.join(missing)}")
-        validate_base_url("USER_URL", self.user_url)
-        validate_bearer_token("USER_SERVICE_TOKEN", self.user_token)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -76,9 +55,7 @@ class Settings(BaseModel):
 
 def _environment_name(field_name: str) -> str:
     return {
-        "mode": "AI_MODE",
         "service_token": "AI_SERVICE_TOKEN",
-        "user_token": "USER_SERVICE_TOKEN",
     }.get(field_name, field_name.upper())
 
 

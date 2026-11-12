@@ -9,12 +9,10 @@ from fastapi.testclient import TestClient
 from ai_service.agents.agent import NO_KNOWLEDGE
 from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ModelResponse
-from ai_service.clients.user import HttpUser, UserError
 from ai_service.core.config import Settings
 from ai_service.main import create_app
 from ai_service.repositories.knowledge import KnowledgeRepository
 from ai_service.schemas.contracts import SearchHit, SearchResult
-from ai_service.schemas.contracts import Actor
 
 
 AUTH = {"Authorization": "Bearer chat-test-token"}
@@ -71,21 +69,11 @@ def settings(monkeypatch):
     monkeypatch.setattr(Embeddings, "embed", embed)
     monkeypatch.setattr(KnowledgeRepository, "search", search)
     return Settings(
-        mode="demo",
         service_token="chat-test-token",
         knowledge_db_dsn="postgresql://knowledge.test/knowledge",
         knowledge_processing_approved=True,
         embedding_api_key="test-embedding-token",
     )
-
-
-@pytest.fixture
-def integration_settings(settings):
-    return settings.model_copy(update={
-        "mode": "integration",
-        "user_url": "https://user.example",
-        "user_token": "user-test-token",
-    })
 
 
 @pytest.fixture
@@ -101,46 +89,6 @@ def use_mock_http(monkeypatch):
     return use
 
 
-@pytest.mark.parametrize("variable", ["USER_URL", "USER_SERVICE_TOKEN"])
-@pytest.mark.parametrize("missing", [None, " \t"])
-def test_default_mode_requires_each_integration_setting(monkeypatch, variable, missing):
-    monkeypatch.delenv("KNOWLEDGE_MIN_SIMILARITY", raising=False)
-    for name, value in {
-        "USER_URL": "https://user.example",
-        "USER_SERVICE_TOKEN": "user-test-token",
-    }.items():
-        monkeypatch.setenv(name, value)
-    monkeypatch.delenv("AI_MODE", raising=False)
-    if missing is None:
-        monkeypatch.delenv(variable)
-    else:
-        monkeypatch.setenv(variable, missing)
-    with pytest.raises(RuntimeError, match=rf"^AI_MODE=integration requires {variable}$"):
-        with TestClient(create_app()):
-            pytest.fail("Incomplete integration mode started")
-
-
-@pytest.mark.parametrize(("field", "variable", "value"), [
-    ("user_url", "USER_URL", "user.example"),
-    ("user_url", "USER_URL", "https://💩.example"),
-    ("user_url", "USER_URL", "https://user:embedded-secret@user.example"),
-])
-def test_integration_rejects_invalid_service_url(integration_settings, field, variable, value):
-    with pytest.raises(RuntimeError, match=rf"^{variable} must be an HTTP\(S\) base URL$"):
-        with TestClient(create_app(integration_settings.model_copy(update={field: value}))):
-            pytest.fail("Invalid integration mode started")
-
-
-@pytest.mark.parametrize(("field", "variable"), [
-    ("user_token", "USER_SERVICE_TOKEN"),
-])
-@pytest.mark.parametrize("token", ["тестовый-токен", "test-token\r\n", "test token"])
-def test_integration_rejects_unusable_bearer_token(integration_settings, field, variable, token):
-    with pytest.raises(RuntimeError, match=rf"^{variable} must be an ASCII Bearer token without whitespace$"):
-        with TestClient(create_app(integration_settings.model_copy(update={field: token}))):
-            pytest.fail("Integration mode started with an invalid Bearer token")
-
-
 @pytest.mark.parametrize(("overrides", "variable", "reason"), [
     ({"llm_base_url": "https://[private-host"}, "LLM_BASE_URL", r"an HTTP\(S\) base URL"),
     ({"llm_api_key": "некорректный-ключ"}, "LLM_API_KEY", "an ASCII Bearer token without whitespace"),
@@ -154,24 +102,8 @@ def test_chat_rejects_invalid_provider_settings_on_startup(settings, overrides, 
             pytest.fail("Chat started with invalid provider settings")
 
 
-@pytest.mark.parametrize(("field", "variable", "value"), [
-    ("user_url", "USER_URL", "https://user.example"),
-    ("user_token", "USER_SERVICE_TOKEN", "user-test-token"),
-])
-def test_demo_mode_rejects_any_integration_setting(settings, field, variable, value):
-    with pytest.raises(RuntimeError, match=rf"^AI_MODE=demo cannot be combined with {variable}$"):
-        with TestClient(create_app(settings.model_copy(update={field: value}))):
-            pytest.fail("Mixed mode started")
-
-
-def test_unknown_mode_does_not_start(settings):
-    with pytest.raises(RuntimeError, match="^AI_MODE must be integration or demo$"):
-        with TestClient(create_app(settings.model_copy(update={"mode": "local"}))):
-            pytest.fail("Unknown mode started")
-
-
 def ask(client, message, actor=ACTOR, **extra):
-    return client.post("/api/v1/chat", headers=AUTH, json={"actor": actor, "message": message, **extra})
+    return client.post("/api/v1/get_answer", headers=AUTH, json={"actor": actor, "message": message, **extra})
 
 
 def tool_output(model, request_index=1):
@@ -200,75 +132,89 @@ def test_chat_forwards_accessible_sources_from_search(settings, actor, ids):
     assert [tool["name"] for tool in model.requests[0][2]] == ["find_instruction"]
 
 
-@pytest.mark.parametrize("actor", [
-    {"user_id": ACTOR["user_id"]},
-    {**ACTOR, "role": "mentor", "team": "design"},
-])
-def test_user_profile_and_sources_are_sent_with_first_llm_request(integration_settings, monkeypatch, use_mock_http, actor):
-    def handler(request):
-        assert request.url == "https://user.example/v1/user/42/metadata"
-        assert request.headers["authorization"] == "Bearer user-test-token"
-        return httpx.Response(200, json={
-            "intern": {"user_id": "42", "first_name": "Synthetic"},
-            "team": {"team_id": "51", "name": "Backend Platform"},
-            "track": "design",
-        })
-
-    use_mock_http(handler)
-    model = ScriptedModel(answer("Ответ с первого вызова."))
-    async def embed(self, texts):
-        assert texts == [QUESTION]
-        return [EMBEDDING]
-
-    monkeypatch.setattr(Embeddings, "embed", embed)
-    with TestClient(create_app(integration_settings, model=model)) as client:
-        response = ask(client, QUESTION, actor, conversation_id="conversation-1")
-
-    assert response.status_code == 200, response.text
-    assert len(model.requests) == 1
-    instructions, messages, _ = model.requests[0]
-    assert "Отвечай кратко, по-русски." in instructions
-    assert messages[-1] == {"role": "user", "content": QUESTION}
-    context = first_context(model)
-    assert set(context) == {"hits"}
-    assert [source["id"] for source in context["hits"]] == ["demo-dev-environment"]
-    assert response.json()["sources"] == context["hits"]
-
-
-def test_integration_uses_only_user_service(integration_settings, monkeypatch, use_mock_http):
-    requests = []
-
-    def handler(request):
-        requests.append((request.method, str(request.url), request.headers["authorization"]))
-        return httpx.Response(200, json={"intern": {"user_id": "42"}, "team": {"team_id": "51"}})
+def test_get_answer_uses_chat_profile_without_calling_user(settings, monkeypatch, use_mock_http):
+    def unexpected_http(request):
+        pytest.fail(f"Unexpected outgoing HTTP request: {request.method} {request.url}")
 
     async def check_ready(self, profile):
         assert len(profile) == 64
 
-    use_mock_http(handler)
+    use_mock_http(unexpected_http)
     monkeypatch.setattr(KnowledgeRepository, "check_ready", check_ready)
+    model = ScriptedModel(answer("Ответ с первого вызова."))
     payload = {
-        "conversation_id": "123", "actor": {"user_id": "42"}, "message": QUESTION,
+        "conversation_id": "123",
+        "actor": {"user_id": "42", "team": "51", "role": "intern", "actual_end_date": None},
+        "message": QUESTION,
     }
-    with TestClient(create_app(integration_settings, model=ScriptedModel(answer("Ответ.")))) as client:
-        readiness = client.get("/readyz")
-        reply = client.post("/api/v1/chat", headers=AUTH, json=payload)
-        confirmation = client.post("/v1/chat", headers=AUTH, json={**payload, "confirmed_step_id": "setup"})
+    with TestClient(create_app(settings, model=model)) as client:
+        assert client.get("/readyz").status_code == 200
+        response = client.post("/api/v1/get_answer", headers=AUTH, json=payload)
 
-    assert readiness.status_code == 200
-    assert readiness.json() == {"status": "ready", "capability": "questions", "reason": None}
-    assert reply.status_code == 200
-    assert [source["id"] for source in reply.json()["sources"]] == ["demo-dev-environment"]
-    assert set(reply.json()) == {"answer", "sources"}
-    assert confirmation.status_code == 422
-    assert requests == [("GET", "https://user.example/v1/user/42/metadata", "Bearer user-test-token")]
+    assert response.status_code == 200, response.text
+    assert set(response.json()) == {"answer", "sources"}
+    assert [source["id"] for source in response.json()["sources"]] == ["demo-dev-environment"]
+    assert len(model.requests) == 1
+    _, messages, _ = model.requests[0]
+    assert messages[-1] == {"role": "user", "content": QUESTION}
+    assert set(first_context(model)) == {"hits"}
+    assert response.json()["sources"] == first_context(model)["hits"]
+    assert "actual_end_date" not in json.dumps(messages)
 
 
-@pytest.mark.parametrize("path", ["/api/v1/chat", "/v1/chat"])
-@pytest.mark.parametrize("mode", ["demo", "integration"])
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+def test_answer_endpoint_and_compatibility_routes(settings, path):
+    model = ScriptedModel(answer("Инструкция [source:demo-dev-environment]"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = client.post(path, headers=AUTH, json={"actor": ACTOR, "message": QUESTION})
+    assert response.status_code == 200, response.text
+    assert response.json()["answer"] == "Инструкция [source:demo-dev-environment]"
+    assert response.json()["sources"] == first_context(model)["hits"]
+    assert response.headers["x-request-id"]
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong-token"}, {"Authorization": "Basic wrong-token"}])
+def test_supplied_profile_does_not_bypass_chat_authentication(settings, monkeypatch, headers):
+    def unexpected_work(*args, **kwargs):
+        pytest.fail("Unauthenticated request reached dependencies")
+
+    monkeypatch.setattr(Embeddings, "embed", unexpected_work)
+    model = ScriptedModel()
+    with TestClient(create_app(settings, model=model)) as client:
+        response = client.post("/api/v1/get_answer", headers=headers, json={"actor": ACTOR, "message": QUESTION})
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert model.requests == []
+
+
+@pytest.mark.parametrize("actor", [
+    {"user_id": "42"},
+    {"user_id": "42", "team": "backend"},
+    {"user_id": "42", "role": "intern"},
+    {**ACTOR, "team": ""},
+    {**ACTOR, "role": ""},
+    {**ACTOR, "user_id": ""},
+    {**ACTOR, "actual_end_date": "2026-01-01"},
+    {**ACTOR, "actual_end_date": "invalid-date"},
+])
+def test_invalid_chat_profile_is_rejected_before_dependencies(settings, monkeypatch, actor):
+    def unexpected_work(*args, **kwargs):
+        pytest.fail("Invalid profile reached dependencies")
+
+    monkeypatch.setattr(Embeddings, "embed", unexpected_work)
+    monkeypatch.setattr(KnowledgeRepository, "search", unexpected_work)
+    model = ScriptedModel()
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION, actor)
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"][:2] == ["body", "actor"]
+    assert model.requests == []
+
+
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("step_id", ["dev-environment", None])
 def test_step_confirmation_is_rejected_before_any_work(
-    settings, integration_settings, use_mock_http, monkeypatch, path, mode, step_id
+    settings, use_mock_http, monkeypatch, path, step_id
 ):
     def unexpected_work(*args, **kwargs):
         pytest.fail("Step confirmation must not invoke dependencies")
@@ -277,8 +223,7 @@ def test_step_confirmation_is_rejected_before_any_work(
     monkeypatch.setattr(Embeddings, "embed", unexpected_work)
     monkeypatch.setattr(KnowledgeRepository, "search", unexpected_work)
     model = ScriptedModel()
-    configured = integration_settings if mode == "integration" else settings
-    with TestClient(create_app(configured, model=model)) as client:
+    with TestClient(create_app(settings, model=model)) as client:
         response = client.post(path, headers=AUTH, json={
             "conversation_id": "123", "actor": ACTOR, "message": "Подтверждаю шаг",
             "confirmed_step_id": step_id,
@@ -290,30 +235,21 @@ def test_step_confirmation_is_rejected_before_any_work(
     assert model.requests == []
 
 
-def test_chat_uses_current_profile_and_excludes_history_after_role_change(integration_settings, monkeypatch):
-    lookups = []
-
-    async def get_actor(self, user_id):
-        lookups.append(user_id)
-        role = "mentor" if len(lookups) == 1 else "intern"
-        return Actor(user_id=user_id, team="backend", role=role)
-
-    monkeypatch.setattr(HttpUser, "get_actor", get_actor)
+def test_chat_uses_request_profile_and_excludes_history_after_role_change(settings):
     model = ScriptedModel(call("find_instruction", query="окружение"), answer("Закрытая инструкция."),
                           call("find_instruction", query="окружение"), answer("Ответ."))
-    with TestClient(create_app(integration_settings, model=model)) as client:
-        first = ask(client, QUESTION, conversation_id="conversation-1")
+    with TestClient(create_app(settings, model=model)) as client:
+        first = ask(client, QUESTION, {**ACTOR, "role": "mentor"}, conversation_id="conversation-1")
         history = [
             {"role": "assistant", "content": first.json()["answer"]},
             {"role": "user", "content": "Старая цитата из инструкции для наставников."},
         ]
         second = ask(client, QUESTION, conversation_id="conversation-1", history=history)
 
-    assert lookups == [ACTOR["user_id"], ACTOR["user_id"]]
     assert first.status_code == second.status_code == 200
-    for index, response, role, expected in (
-        (0, first, "mentor", ["demo-mentor-environment", "demo-dev-environment"]),
-        (2, second, "intern", ["demo-dev-environment"]),
+    for index, response, expected in (
+        (0, first, ["demo-mentor-environment", "demo-dev-environment"]),
+        (2, second, ["demo-dev-environment"]),
     ):
         context = first_context(model, index)
         assert set(context) == {"hits"}
@@ -324,39 +260,20 @@ def test_chat_uses_current_profile_and_excludes_history_after_role_change(integr
         assert all(entry["content"] not in json.dumps(messages, ensure_ascii=False) for entry in history)
 
 
-def test_user_lookup_failure_cannot_reuse_previous_profile(integration_settings, monkeypatch):
-    actor = Actor.model_validate({**ACTOR, "role": "mentor"})
-    profiles = iter([actor, UserError("Сервис user недоступен."), actor])
-
-    async def get_actor(self, user_id):
-        profile = next(profiles)
-        if isinstance(profile, UserError):
-            raise profile
-        return profile
-
-    monkeypatch.setattr(HttpUser, "get_actor", get_actor)
-    model = ScriptedModel(answer("Ответ."), answer("Ещё ответ."))
-    with TestClient(create_app(integration_settings, model=model)) as client:
-        missing_id = ask(client, QUESTION)
-        assert missing_id.status_code == 422
-        assert missing_id.json()["detail"] == [{
-            "type": "missing",
-            "loc": ["body", "conversation_id"],
-            "msg": "Требуется conversation_id.",
-            "input": None,
-        }]
-        assert ask(client, QUESTION, conversation_id="conversation-1").status_code == 200
+def test_missing_request_profile_cannot_reuse_previous_profile(settings, monkeypatch):
+    model = ScriptedModel(answer("Ответ наставнику."), answer("Ответ стажёру."))
+    with TestClient(create_app(settings, model=model)) as client:
+        assert ask(client, QUESTION, {**ACTOR, "role": "mentor"}, conversation_id="123").status_code == 200
         with monkeypatch.context() as failure:
             def unexpected_search(*args, **kwargs):
-                pytest.fail("Search attempted while the trusted profile was unavailable")
+                pytest.fail("Search attempted without a complete profile")
 
             failure.setattr(Embeddings, "embed", unexpected_search)
-            failure.setattr(psycopg.AsyncConnection, "connect", unexpected_search)
-            response = ask(client, QUESTION, conversation_id="conversation-1")
-        assert response.status_code == 502
-        assert response.json()["detail"] == "Сервис user недоступен."
+            response = ask(client, QUESTION, {"user_id": "42"}, conversation_id="123")
+        assert response.status_code == 422
         assert len(model.requests) == 1
-        assert ask(client, QUESTION, conversation_id="conversation-1").status_code == 200
+        assert ask(client, QUESTION, conversation_id="123").status_code == 200
+    assert [hit["id"] for hit in first_context(model, 1)["hits"]] == ["demo-dev-environment"]
 
 
 def test_knowledge_failure_prevents_llm_call(settings, monkeypatch):
@@ -391,7 +308,7 @@ def test_wrong_embedding_dimension_returns_gateway_error_before_search(monkeypat
         pytest.fail("Search attempted with an incompatible embedding")
 
     settings = Settings(
-        mode="demo", service_token="chat-test-token", knowledge_processing_approved=True,
+        service_token="chat-test-token", knowledge_processing_approved=True,
         embedding_api_key="test-embedding-token",
         knowledge_db_dsn="postgresql://knowledge.test/knowledge"
     )
@@ -421,7 +338,7 @@ def test_model_cannot_call_write_tools(settings, model_tries_to_write):
         assert "недоступен" in tool_output(model)["error"]
 
 
-@pytest.mark.parametrize("path", ["/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 def test_service_requires_auth_and_config(settings, path):
     payload = {"actor": ACTOR, "message": "Привет"}
     with TestClient(create_app(settings)) as client:
@@ -430,9 +347,9 @@ def test_service_requires_auth_and_config(settings, path):
         assert client.post(path, headers=AUTH, json=payload).status_code == 503
 
 
-def test_user_id_alone_requires_user_service(settings):
+def test_user_id_alone_requires_full_profile_from_chat(settings):
     with TestClient(create_app(settings, model=ScriptedModel())) as client:
-        assert ask(client, "Привет", {"user_id": ACTOR["user_id"]}).status_code == 503
+        assert ask(client, "Привет", {"user_id": ACTOR["user_id"]}).status_code == 422
 
 
 def test_model_failure_returns_gateway_error(settings):
@@ -538,7 +455,7 @@ def test_llm_tool_follow_up_preserves_provider_items_and_call_id(settings, use_m
     assert [hit["id"] for hit in json.loads(output["output"])["hits"]] == ["demo-dev-environment"]
 
 
-@pytest.mark.parametrize("path", ["/api/v1/chat", "/v1/chat"])
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("body", [
     b'{"message":NaN,"actor":{"user_id":"42"}}',
     b'{"message":"hi","actor":{"user_id":"42"},"extra":{"value":Infinity}}',
@@ -551,11 +468,12 @@ def test_invalid_json_values_return_serializable_validation_errors(settings, pat
     assert isinstance(response.json()["detail"][0]["type"], str)
 
 
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 @pytest.mark.parametrize("chunked", [False, True])
-def test_chat_body_limit(settings, chunked):
+def test_chat_body_limit(settings, path, chunked):
     chunks = [b" " * (128 * 1024)] * 3
     with TestClient(create_app(settings)) as client:
-        response = client.post("/v1/chat", headers={**AUTH, "content-type": "application/json"},
+        response = client.post(path, headers={**AUTH, "content-type": "application/json"},
                                content=iter(chunks) if chunked else b"".join(chunks))
     assert response.status_code == 413
 
@@ -660,7 +578,8 @@ def test_chat_deadline_cancels_model(settings):
     assert cancellations == ["cancelled"]
 
 
-def test_disconnected_client_cancels_in_flight_request(settings):
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+def test_disconnected_client_cancels_in_flight_request(settings, path):
     async def run():
         started = asyncio.Event()
         cancelled = asyncio.Event()
@@ -690,7 +609,7 @@ def test_disconnected_client_cancels_in_flight_request(settings):
 
         async with app.router.lifespan_context(app):
             await asyncio.wait_for(app({
-                "type": "http", "http_version": "1.1", "method": "POST", "path": "/v1/chat",
+                "type": "http", "http_version": "1.1", "method": "POST", "path": path,
                 "root_path": "", "query_string": b"", "headers": [
                     (b"authorization", AUTH["Authorization"].encode()), (b"content-type", b"application/json"),
                 ],
@@ -700,7 +619,8 @@ def test_disconnected_client_cancels_in_flight_request(settings):
     asyncio.run(run())
 
 
-def test_chat_deadline_includes_reading_body(settings):
+@pytest.mark.parametrize("path", ["/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
+def test_chat_deadline_includes_reading_body(settings, path):
     async def run():
         app = create_app(settings.model_copy(update={"chat_timeout_seconds": 0.05}))
         statuses = []
@@ -714,7 +634,7 @@ def test_chat_deadline_includes_reading_body(settings):
 
         async with app.router.lifespan_context(app):
             await asyncio.wait_for(app({
-                "type": "http", "http_version": "1.1", "method": "POST", "path": "/v1/chat",
+                "type": "http", "http_version": "1.1", "method": "POST", "path": path,
                 "root_path": "", "query_string": b"", "headers": [(b"content-type", b"application/json")],
             }, receive, send), timeout=1)
         assert statuses == [408]

@@ -6,9 +6,7 @@ import pytest
 
 from ai_service.clients.embeddings import EMBEDDING_DIMENSIONS, SILICONFLOW_DIMENSIONS, EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ResponsesModel
-from ai_service.clients.user import HttpUser, UserError
 from ai_service.core.config import Settings
-from ai_service.schemas.contracts import Actor
 
 
 FIRST_VECTOR = [1, 0] + [0] * (EMBEDDING_DIMENSIONS - 2)
@@ -84,45 +82,6 @@ def test_siliconflow_rejects_1536_before_network():
     )
     with pytest.raises(RuntimeError, match="1024"):
         Embeddings(None, settings)
-
-
-PROFILE = {
-    "internship_id": "7",
-    "intern": {"user_id": "42", "first_name": "Synthetic"},
-    "team": {"team_id": "51", "name": "Backend Platform"},
-    "track": "infra",
-}
-
-
-@pytest.mark.parametrize(("status", "profile", "reason"), [
-    (200, PROFILE, None),
-    (200, {**PROFILE, "intern": {"user_id": "43"}}, "wrong_user"),
-    (200, {**PROFILE, "intern": None, "mentor": {"user_id": "42"}}, "invalid_profile"),
-    (200, {**PROFILE, "team": {"team_id": "0"}}, "invalid_team"),
-    (200, {**PROFILE, "actual_end_date": "2026-03-01"}, "internship_ended"),
-    (404, {}, "profile_missing"),
-    (401, {}, "http_401"),
-    (None, {}, "transport"),
-])
-def test_user_request(status, profile, reason):
-    def handler(request):
-        assert request.method == "GET"
-        assert request.url == "https://user.example/v1/user/42/metadata"
-        assert request.headers["authorization"] == "Bearer user-key"
-        if status is None:
-            raise httpx.ConnectError("Connection refused", request=request)
-        return httpx.Response(status, json=profile)
-
-    async def run():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await HttpUser(http, "https://user.example/", "user-key").get_actor("42")
-
-    if reason:
-        with pytest.raises(UserError) as error:
-            asyncio.run(run())
-        assert error.value.reason == reason
-    else:
-        assert asyncio.run(run()) == Actor(user_id="42", role="intern", team="51")
 
 
 @pytest.mark.parametrize(("status", "response_fields"), [(200, {}), (200, {"status": "completed"}), (429, {})])
