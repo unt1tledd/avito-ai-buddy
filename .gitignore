@@ -16,8 +16,6 @@ build/
 *.test
 
 # Go test and profiling output
-**/mocks/
-**/generated/
 coverage/
 coverage.out
 coverage.txt
