@@ -9,6 +9,7 @@ COPY user/migrations ./user/migrations
 COPY pkg/go.mod pkg/go.sum ./pkg/
 COPY pkg/generated/user/v1 ./pkg/generated/user/v1
 COPY pkg/health ./pkg/health
+COPY pkg/observability ./pkg/observability
 
 WORKDIR /app/user
 RUN CGO_ENABLED=0 go build -mod=mod -o /usr/local/bin/user ./cmd/app
