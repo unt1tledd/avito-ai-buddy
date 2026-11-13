@@ -1,11 +1,14 @@
 import asyncio
+import logging
+import re
+from time import monotonic
 from uuid import uuid4
 
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from ..core.diagnostics import request_id
+from ..core.diagnostics import logger, request_id
 
 
 MAX_CHAT_BODY_BYTES = 1024 * 1024
@@ -22,11 +25,16 @@ class RequestBoundary:
             await self.app(scope, receive, send)
             return
 
-        correlation = uuid4().hex
+        correlation = next((value for name, value in scope["headers"] if name == b"x-request-id"), b"")
+        correlation = correlation.decode("ascii") if re.fullmatch(rb"[0-9a-f]{32}", correlation) else uuid4().hex
+        started = monotonic()
+        status = 500
         token = request_id.set(correlation)
 
         async def send_with_id(message: Message) -> None:
+            nonlocal status
             if message["type"] == "http.response.start":
+                status = message["status"]
                 message.setdefault("headers", []).append((b"x-request-id", correlation.encode()))
             await send(message)
 
@@ -62,5 +70,18 @@ class RequestBoundary:
                 await self.app(scope, bounded_receive, send_with_id)
             else:
                 await self.app(scope, receive, send_with_id)
+        except asyncio.CancelledError:
+            status = 499
+            raise
         finally:
+            if status >= 400 or scope["path"] in CHAT_PATHS:
+                route = getattr(scope.get("route"), "path", None) or "unmatched"
+                logger.log(
+                    logging.ERROR if status >= 500 else logging.INFO,
+                    "HTTP request completed",
+                    extra={
+                        "method": scope["method"], "route": route, "status": status,
+                        "duration_ms": round((monotonic() - started) * 1000, 1),
+                    },
+                )
             request_id.reset(token)

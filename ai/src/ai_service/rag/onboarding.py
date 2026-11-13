@@ -1,11 +1,18 @@
 """Select onboarding tracks and answer snapshot questions without inventing state."""
 
 import re
+import tomllib
 from collections.abc import Sequence
+from importlib.resources import files
 from unicodedata import normalize
 
 from ..schemas.clarifications import CLARIFICATION_QUESTIONS, ONBOARDING_TRACK_CLARIFICATION
 from ..schemas.contracts import ChatResponse, Message, OnboardingPlan
+
+
+TRACK_ALIASES = tomllib.loads(
+    files("ai_service.rag").joinpath("track_aliases.toml").read_text(encoding="utf-8")
+)
 
 
 # This is intentionally a vocabulary for bare follow-ups, not an extractor of names.
@@ -67,8 +74,10 @@ def mentioned_plans(text: str, plans: Sequence[OnboardingPlan]) -> list[Onboardi
                 identifier, title = step.resource_id, None
             else:
                 continue
+            aliases = TRACK_ALIASES.get(plan.id, ()) if level == "track" else ()
+            titles = (title, *aliases)
             if ((identifier and f" {normalized(identifier)} " in exact_text)
-                    or (title and f" {title_tokens(title)} " in inflected_text)):
+                    or any(name and f" {title_tokens(name)} " in inflected_text for name in titles)):
                 matches.append(plan)
         if matches:
             return matches
@@ -175,16 +184,16 @@ def snapshot_answer(
         return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
     selected = mentions or list(plans)
     if not selected:
-        return ChatResponse(answer="Chat не передал сведения о треках адаптации. Проверьте план в интерфейсе адаптации.", sources=[])
+        return ChatResponse(answer="Не удалось определить ваши треки адаптации. Проверьте план в интерфейсе адаптации.", sources=[])
     lines = []
     for plan in selected:
         prefix = f"Трек {display_title(plan.title)}: "
         if plan.current_step is None:
-            lines.append(prefix + "текущий шаг в снимке не указан.")
+            lines.append(prefix + "текущий шаг не указан.")
         else:
             lines.append(prefix + f"текущий шаг — {display_title(plan.current_step.title)}.")
     if kind == "progress":
-        lines.insert(0, "В снимке нет числа завершённых шагов и общего числа шагов, поэтому процент прогресса и остаток посчитать нельзя.")
+        lines.insert(0, "Не удалось определить прогресс и количество оставшихся шагов. Проверьте план в интерфейсе адаптации.")
     elif kind == "next":
-        lines.insert(0, "В снимке есть только текущие шаги; порядок следующих шагов не передан.")
+        lines.insert(0, "Не удалось определить следующий шаг. Проверьте план в интерфейсе адаптации.")
     return ChatResponse(answer="\n".join(lines), sources=[])

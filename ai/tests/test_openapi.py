@@ -11,7 +11,7 @@ def test_checked_in_openapi_matches_app():
     assert yaml.safe_load(spec.read_text(encoding="utf-8")) == create_app(Settings()).openapi()
 
 
-def test_chat_contract_only_exposes_answers_and_sources():
+def test_chat_contract_exposes_optional_access_proposal():
     spec = create_app(Settings()).openapi()
     schemas = spec["components"]["schemas"]
 
@@ -29,5 +29,10 @@ def test_chat_contract_only_exposes_answers_and_sources():
     assert set(schemas["OnboardingPlan"]["required"]) == {"id", "title"}
     assert set(schemas["OnboardingStep"]["properties"]) == {"id", "title", "resource_id", "action_type"}
     assert set(schemas["OnboardingStep"]["required"]) == {"id", "title"}
-    assert set(schemas["ChatResponse"]["properties"]) == {"answer", "sources"}
+    assert set(schemas["ChatResponse"]["properties"]) == {"answer", "sources", "proposal"}
+    assert set(schemas["ChatResponse"]["required"]) == {"answer", "sources"}
+    assert set(schemas["AccessProposal"]["properties"]) == {"resource_id", "resource_label", "access_level"}
+    assert set(schemas["AccessProposal"]["required"]) == {"resource_id", "resource_label", "access_level"}
+    assert set(schemas["CitedSource"]["properties"]) == {"id", "title", "url", "text"}
+    assert "AccessPolicy" not in schemas
     assert "ActionResult" not in schemas

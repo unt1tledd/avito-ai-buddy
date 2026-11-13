@@ -97,6 +97,28 @@ def migrate(dsn):
     with psycopg.connect(dsn) as db:
         db.execute(migration_sql(1))
         db.execute(migration_sql(2))
+        db.execute(migration_sql(3))
+
+
+def test_access_policies_round_trip_under_document_acl(pg_schema):
+    from ai_service.schemas.contracts import AccessPolicy
+
+    migrate(pg_schema)
+    policy = AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"])
+    document = Document(id="git-guide", title="Git", text="Запросите Developer.", roles={"intern"},
+                        teams={"51"}, access_policies=[policy])
+
+    async def run():
+        async with pool_for(pg_schema) as pool:
+            repository = KnowledgeRepository(pg_schema, pool)
+            await repository.replace([document], [VECTOR], "test-model", PROFILE)
+            visible = await repository.search(VECTOR, PROFILE, ACTOR, 0.3)
+            assert visible.hits[0].access_policies == [policy]
+            hidden = await repository.search(VECTOR, PROFILE, Actor(user_id="42", role="mentor", team="51"), 0.3)
+            assert hidden.hits == []
+            await repository.replace([document.model_copy(update={"access_policies": []})], [VECTOR], "test-model", PROFILE)
+            assert (await repository.search(VECTOR, PROFILE, ACTOR, 0.3)).hits[0].access_policies == []
+    asyncio.run(run())
 
 
 def pool_for(dsn):
@@ -318,7 +340,14 @@ def test_long_document_tail_reaches_model_and_preserves_acl_after_reimport(pg_sc
 
     class Model:
         async def respond(self, *, instructions, messages, tools):
-            context = json.loads(messages[0]["content"].split("\n", 1)[1])
+            results = [item for item in messages if item.get("type") == "function_call_output"]
+            if not results:
+                assert all("hits" not in message.get("content", "") for message in messages)
+                return ModelResponse(output=[{
+                    "type": "function_call", "name": "find_instruction", "call_id": "vpn-search",
+                    "arguments": json.dumps({"query": question}),
+                }])
+            context = json.loads(results[-1]["output"])
             contexts.append(context)
             hits = context["hits"]
             if hits:
@@ -386,7 +415,7 @@ def test_plan_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch):
     step = {"id": "vpn-step", "title": "Получить VPN", "resource_id": "mentor-vpn"}
 
     async def embed(self, texts):
-        assert texts == ["Как выполнить этот шаг?"]
+        assert texts == ["Получить VPN mentor-vpn"]
         return [VECTOR]
 
     monkeypatch.setattr(Embeddings, "embed", embed)
@@ -396,6 +425,14 @@ def test_plan_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch):
         async def respond(self, *, instructions, messages, tools):
             context = json.loads(messages[0]["content"].split("\n", 1)[1])
             assert context["onboarding_plans"][0]["current_step"] == {**step, "action_type": "request_access"}
+            results = [item for item in messages if item.get("type") == "function_call_output"]
+            if not results:
+                assert "hits" not in context
+                return ModelResponse(output=[{
+                    "type": "function_call", "name": "find_instruction", "call_id": "vpn-search",
+                    "arguments": json.dumps({"query": "Получить VPN mentor-vpn"}),
+                }])
+            context.update(json.loads(results[-1]["output"]))
             contexts.append(context)
             hits = context["hits"]
             final = {
@@ -486,7 +523,13 @@ def test_history_is_filtered_again_after_role_team_change_or_source_deletion(pg_
     class Model:
         async def respond(self, *, instructions, messages, tools):
             model_inputs.append(messages)
-            current = json.loads(messages[-2]["content"].split("\n", 1)[1])
+            results = [item for item in messages if item.get("type") == "function_call_output"]
+            if not results:
+                return ModelResponse(output=[{
+                    "type": "function_call", "name": "find_instruction", "call_id": "vpn-duration-search",
+                    "arguments": json.dumps({"query": "Срок выдачи доступа к VPN"}),
+                }])
+            current = json.loads(results[-1]["output"])
             assert current["hits"]
             final = {"kind": "grounded_answer", "answer": f"Инструкция. [source:{current['hits'][0]['id']}]"}
             return ModelResponse(output=[{

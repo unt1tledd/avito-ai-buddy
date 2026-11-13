@@ -35,6 +35,18 @@ def test_programmatic_settings_do_not_read_environment(monkeypatch):
     assert Settings().knowledge_min_similarity == 0.3
 
 
+def test_two_model_rounds_share_bounded_configurable_deadline(monkeypatch):
+    monkeypatch.setattr(os, "environ", {})
+    assert Settings.from_env().chat_timeout_seconds == 60
+    monkeypatch.setenv("CHAT_TIMEOUT_SECONDS", "20")
+    assert Settings.from_env().chat_timeout_seconds == 20
+    monkeypatch.setenv("CHAT_TIMEOUT_SECONDS", "60")
+    assert Settings.from_env().chat_timeout_seconds == 60
+    monkeypatch.setenv("CHAT_TIMEOUT_SECONDS", "61")
+    with pytest.raises(ValidationError):
+        Settings.from_env()
+
+
 def test_programmatic_settings_reject_unknown_fields():
     with pytest.raises(ValidationError, match="knowledge_min_similiarity"):
         Settings(knowledge_min_similiarity=0.2)

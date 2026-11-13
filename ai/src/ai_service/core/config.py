@@ -47,7 +47,7 @@ class Settings(BaseModel):
     llm_base_url: str = "https://api.openai.com/v1"
     knowledge_db_dsn: str = ""
     knowledge_processing_approved: bool = False
-    chat_timeout_seconds: float = Field(default=15, gt=0, le=25)
+    chat_timeout_seconds: float = Field(default=60, gt=0, le=60)
     knowledge_min_similarity: float = DEFAULT_KNOWLEDGE_MIN_SIMILARITY
     embedding_model: str = "text-embedding-3-small"
     embedding_base_url: str = ""

@@ -77,6 +77,31 @@ paths:
       - HTTPBearer: []
 components:
   schemas:
+    AccessProposal:
+      properties:
+        resource_id:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Resource Id
+        resource_label:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Resource Label
+        access_level:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Access Level
+      additionalProperties: false
+      type: object
+      required:
+      - resource_id
+      - resource_label
+      - access_level
+      title: AccessProposal
+      description: AI-to-Chat draft; Chat owns its ID, confirmation and dispatch state.
     ChatActor:
       properties:
         user_id:
@@ -132,11 +157,11 @@ components:
           title: Onboarding Plans
           description: Optional onboarding tracks supplied by Chat, each with its
             current step or null. Step action_type is context only, not an instruction
-            to execute an action. Initial search uses the question only. Ambiguous
-            step references across multiple active tracks require clarification before
-            search and generation. Onboarding context is accepted only through this
-            field and is limited to 128 KiB of JSON context, including string escaping
-            for the model request.
+            to execute an action. The model formulates search queries before retrieval,
+            using the resolved step when relevant. Ambiguous step references across
+            multiple active tracks require clarification before search and generation.
+            Onboarding context is accepted only through this field and is limited
+            to 128 KiB of JSON context, including string escaping for the model request.
         history:
           items:
             $ref: '#/components/schemas/Message'
@@ -159,18 +184,53 @@ components:
           title: Answer
         sources:
           items:
-            $ref: '#/components/schemas/SearchHit'
+            $ref: '#/components/schemas/CitedSource'
           type: array
           maxItems: 6
           title: Sources
           description: Only sources cited in the answer, in order of first citation,
             without duplicates.
+        proposal:
+          anyOf:
+          - $ref: '#/components/schemas/AccessProposal'
+          - type: 'null'
       additionalProperties: false
       type: object
       required:
       - answer
       - sources
       title: ChatResponse
+    CitedSource:
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Id
+        title:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Title
+        url:
+          anyOf:
+          - type: string
+            maxLength: 2083
+            minLength: 1
+            format: uri
+          - type: 'null'
+          title: Url
+        text:
+          type: string
+          maxLength: 1200
+          minLength: 1
+          title: Text
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - title
+      - text
+      title: CitedSource
     HTTPValidationError:
       properties:
         detail:
@@ -289,37 +349,6 @@ components:
       required:
       - status
       title: Readiness
-    SearchHit:
-      properties:
-        id:
-          type: string
-          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
-          title: Id
-        title:
-          type: string
-          maxLength: 160
-          minLength: 1
-          title: Title
-        url:
-          anyOf:
-          - type: string
-            maxLength: 2083
-            minLength: 1
-            format: uri
-          - type: 'null'
-          title: Url
-        text:
-          type: string
-          maxLength: 1200
-          minLength: 1
-          title: Text
-      additionalProperties: false
-      type: object
-      required:
-      - id
-      - title
-      - text
-      title: SearchHit
     ValidationError:
       properties:
         loc:

@@ -38,6 +38,21 @@ class ScriptedModel:
         return ModelResponse(output=output)
 
 
+class ContextFillingModel(ScriptedModel):
+    """Leave room for small tool results regardless of the system prompt size."""
+
+    async def respond(self, *, instructions, messages, tools):
+        from ai_service.agents.agent import MAX_CONTEXT_BYTES, json_size
+
+        response = await super().respond(instructions=instructions, messages=messages, tools=tools)
+        if len(self.requests) == 1:
+            items = [item.model_dump(mode="json", exclude_unset=True) for item in response.output]
+            used = json_size([instructions, messages + items, tools])
+            assert used + 2 * 1024 < MAX_CONTEXT_BYTES
+            response.output[0].encrypted_content = "x" * (MAX_CONTEXT_BYTES - used - 2 * 1024)
+        return response
+
+
 def call(name, *, call_id=None, **arguments):
     return [{
         "type": "function_call",
@@ -47,8 +62,11 @@ def call(name, *, call_id=None, **arguments):
     }]
 
 
-def answer(text, *, kind="grounded_answer"):
-    final = json.dumps({"kind": kind, "answer": text}, ensure_ascii=False)
+def answer(text, *, kind="grounded_answer", proposal=None):
+    payload = {"kind": kind, "answer": text}
+    if proposal is not None:
+        payload["proposal"] = proposal
+    final = json.dumps(payload, ensure_ascii=False)
     return [{"type": "message", "content": [{"type": "output_text", "text": final}]}]
 
 
@@ -118,6 +136,11 @@ def ask(client, message, actor=ACTOR, **extra):
     return client.post("/api/v1/answer", headers=AUTH, json={"actor": actor, "message": message, **extra})
 
 
+def searched_model(*outputs, query=QUESTION):
+    """Script an explicit planning call followed by the supplied model outputs."""
+    return ScriptedModel(call("find_instruction", call_id="initial-search", query=query), *outputs)
+
+
 def tool_output(model, request_index=1):
     return json.loads(model.requests[request_index][1][-1]["output"])
 
@@ -139,7 +162,7 @@ def test_chat_forwards_accessible_sources_from_search(settings, actor, ids):
     assert response.status_code == 200, response.text
     assert response.json()["answer"] == (text if ids else NO_KNOWLEDGE)
     assert sorted(source["id"] for source in response.json()["sources"]) == sorted(ids)
-    assert sorted(source["id"] for source in first_context(model)["hits"]) == sorted(ids)
+    assert first_context(model) == {}
     assert sorted(hit["id"] for hit in tool_output(model)["hits"]) == sorted(ids)
     assert set(response.json()) == {"answer", "sources"}
     assert [tool["name"] for tool in model.requests[0][2]] == ["find_instruction"]
@@ -154,7 +177,7 @@ def test_answer_uses_chat_profile_without_calling_user(settings, monkeypatch, us
 
     use_mock_http(unexpected_http)
     monkeypatch.setattr(KnowledgeRepository, "check_ready", check_ready)
-    model = ScriptedModel(answer("Ответ с первого вызова. [source:demo-dev-environment]"))
+    model = searched_model(answer("Ответ с первого вызова. [source:demo-dev-environment]"))
     payload = {
         "conversation_id": "123",
         "actor": {"user_id": "42", "team": "51", "role": "intern", "actual_end_date": None},
@@ -167,22 +190,22 @@ def test_answer_uses_chat_profile_without_calling_user(settings, monkeypatch, us
     assert response.status_code == 200, response.text
     assert set(response.json()) == {"answer", "sources"}
     assert [source["id"] for source in response.json()["sources"]] == ["demo-dev-environment"]
-    assert len(model.requests) == 1
+    assert len(model.requests) == 2
     _, messages, _ = model.requests[0]
     assert messages[-1] == {"role": "user", "content": QUESTION}
-    assert set(first_context(model)) == {"hits"}
-    assert response.json()["sources"] == first_context(model)["hits"]
+    assert first_context(model) == {}
+    assert response.json()["sources"] == tool_output(model)["hits"]
     assert "actual_end_date" not in json.dumps(messages)
 
 
 @pytest.mark.parametrize("path", ["/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"])
 def test_answer_endpoint_and_compatibility_routes(settings, path):
-    model = ScriptedModel(answer("Инструкция [source:demo-dev-environment]"))
+    model = searched_model(answer("Инструкция [source:demo-dev-environment]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = client.post(path, headers=AUTH, json={"actor": ACTOR, "message": QUESTION})
     assert response.status_code == 200, response.text
     assert response.json()["answer"] == "Инструкция [source:demo-dev-environment]"
-    assert response.json()["sources"] == first_context(model)["hits"]
+    assert response.json()["sources"] == tool_output(model)["hits"]
     assert response.headers["x-request-id"]
 
 
@@ -269,8 +292,7 @@ def test_chat_uses_request_profile_and_excludes_closed_reply_after_role_change(s
         (2, second, ["demo-dev-environment"]),
     ):
         context = first_context(model, index)
-        assert set(context) == {"hits"}
-        assert [source["id"] for source in context["hits"]] == expected
+        assert context == {}
         assert [source["id"] for source in tool_output(model, index + 1)["hits"]] == expected
         assert [source["id"] for source in response.json()["sources"]] == expected
     for _, messages, _ in model.requests[2:]:
@@ -279,8 +301,10 @@ def test_chat_uses_request_profile_and_excludes_closed_reply_after_role_change(s
 
 
 def test_missing_request_profile_cannot_reuse_previous_profile(settings, monkeypatch):
-    model = ScriptedModel(answer("Ответ наставнику. [source:demo-dev-environment]"),
-                          answer("Ответ стажёру. [source:demo-dev-environment]"))
+    model = ScriptedModel(
+        call("find_instruction", query="наставник"), answer("Ответ наставнику. [source:demo-dev-environment]"),
+        call("find_instruction", query="стажёр"), answer("Ответ стажёру. [source:demo-dev-environment]"),
+    )
     with TestClient(create_app(settings, model=model)) as client:
         assert ask(client, QUESTION, {**ACTOR, "role": "mentor"}, conversation_id="123").status_code == 200
         with monkeypatch.context() as failure:
@@ -290,36 +314,36 @@ def test_missing_request_profile_cannot_reuse_previous_profile(settings, monkeyp
             failure.setattr(Embeddings, "embed", unexpected_search)
             response = ask(client, QUESTION, {"user_id": "42"}, conversation_id="123")
         assert response.status_code == 422
-        assert len(model.requests) == 1
+        assert len(model.requests) == 2
         assert ask(client, QUESTION, conversation_id="123").status_code == 200
-    assert [hit["id"] for hit in first_context(model, 1)["hits"]] == ["demo-dev-environment"]
+    assert [hit["id"] for hit in tool_output(model, 3)["hits"]] == ["demo-dev-environment"]
 
 
-def test_knowledge_failure_prevents_llm_call(settings, monkeypatch):
+def test_knowledge_failure_after_planning_returns_gateway_error(settings, monkeypatch):
     from ai_service.repositories.knowledge import KnowledgeError
 
     async def search(*args, **kwargs):
         raise KnowledgeError("Search failed", reason="connection")
 
     monkeypatch.setattr(KnowledgeRepository, "search", search)
-    model = ScriptedModel()
+    model = searched_model(answer("Нет данных.", kind="no_knowledge"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 502
-    assert model.requests == []
+    assert len(model.requests) == 2
 
 
-def test_embedding_failure_prevents_llm_call(settings, monkeypatch):
+def test_embedding_failure_after_planning_returns_gateway_error(settings, monkeypatch):
     async def embed(self, texts):
         raise EmbeddingError("Не удалось получить эмбеддинги.")
 
     monkeypatch.setattr(Embeddings, "embed", embed)
-    model = ScriptedModel()
+    model = searched_model(answer("Нет данных.", kind="no_knowledge"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 502
     assert response.json()["detail"] == "Не удалось получить эмбеддинги."
-    assert model.requests == []
+    assert len(model.requests) == 2
 
 
 def test_wrong_embedding_dimension_returns_gateway_error_before_search(monkeypatch, use_mock_http):
@@ -333,13 +357,13 @@ def test_wrong_embedding_dimension_returns_gateway_error_before_search(monkeypat
     )
     use_mock_http(lambda request: httpx.Response(200, json={"data": [{"index": 0, "embedding": [1, 0]}]}))
     monkeypatch.setattr(psycopg.AsyncConnection, "connect", unexpected_connect)
-    model = ScriptedModel()
+    model = searched_model(answer("Нет данных.", kind="no_knowledge"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
 
     assert response.status_code == 502
     assert "размерности 1536" in response.json()["detail"]
-    assert model.requests == []
+    assert len(model.requests) == 2
 
 
 @pytest.mark.parametrize("model_tries_to_write", [False, True])
@@ -405,8 +429,7 @@ def test_invalid_search_tool_arguments_are_rejected_before_search(settings, use_
         }]})
 
     async def embed(self, texts):
-        assert texts == [QUESTION], "Invalid arguments reached the retriever"
-        return [EMBEDDING]
+        pytest.fail("Invalid arguments reached the retriever")
 
     use_mock_http(handler)
     monkeypatch.setattr(Embeddings, "embed", embed)
@@ -433,7 +456,7 @@ def test_final_model_round_receives_search_results_with_tools_disabled(settings,
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
 
-    assert queries == [QUESTION, "поиск 1", "поиск 2", "поиск 3"]
+    assert queries == ["поиск 1", "поиск 2", "поиск 3"]
     assert [len(request[2]) for request in model.requests] == [1, 1, 1, 0]
     assert tool_output(model, request_index=3)["hits"][0]["id"] == "demo-dev-environment"
     if final_tool_call:
@@ -514,15 +537,15 @@ def test_readiness_reports_question_configuration(settings):
             assert response.json()["reason"] == reason
 
 
-def test_chat_discards_unverified_answer_after_empty_search(settings):
-    model = ScriptedModel(answer("Внутренний адрес https://invented.example"))
+def test_chat_discards_unverified_answer_after_empty_tool_search(settings):
+    model = searched_model(answer("Внутренний адрес https://invented.example"))
     with TestClient(create_app(settings, model=model)) as client:
         result = ask(client, QUESTION, {**ACTOR, "team": "design"}).json()
     assert result == {"answer": NO_KNOWLEDGE, "sources": []}
 
 
 @pytest.mark.parametrize("outcome", ["recover", "search-error", "bad-citation", "refusal"])
-def test_rag_after_empty_initial_search(settings, monkeypatch, outcome):
+def test_rag_after_empty_tool_search(settings, monkeypatch, outcome):
     from ai_service.repositories.knowledge import KnowledgeError
 
     async def embed(self, texts):
@@ -541,7 +564,10 @@ def test_rag_after_empty_initial_search(settings, monkeypatch, outcome):
     outputs = answer(text) if outcome != "refusal" else [
         {"type": "message", "content": [{"type": "refusal", "refusal": "Refused"}]}
     ]
-    model = ScriptedModel(call("find_instruction", query="окружение"), outputs)
+    model = ScriptedModel(
+        call("find_instruction", call_id="first", query=QUESTION),
+        call("find_instruction", call_id="refined", query="окружение"), outputs,
+    )
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     if outcome == "recover":
@@ -550,6 +576,116 @@ def test_rag_after_empty_initial_search(settings, monkeypatch, outcome):
     else:
         assert response.status_code == 502
         assert {"search-error": "Поиск", "bad-citation": "источник", "refusal": "отказалась"}[outcome] in response.json()["detail"]
+
+
+@pytest.mark.parametrize(("question", "query"), [
+    ("Как получить доступ к Git?", "Как получить доступ к Git?"),
+    ("Как палучить достпу к Git?", "Как получить доступ к Git?"),
+    ("kak poluchit dostup k Git", "Как получить доступ к Git?"),
+    ("как poluchit доступ к Git", "Как получить доступ к Git?"),
+    ("rfr gjkexbnm ljcneg r Git", "Как получить доступ к Git?"),
+    ("How do I get Git access?", "How do I get Git access?"),
+])
+def test_model_formulates_first_query_before_embeddings(settings, monkeypatch, question, query):
+    events = []
+    queries = []
+
+    async def embed(self, texts):
+        events.append("embeddings")
+        queries.extend(texts)
+        return [EMBEDDING]
+
+    async def search(self, vector, profile, actor, min_similarity):
+        events.append("database")
+        assert actor.model_dump() == ACTOR
+        assert vector == EMBEDDING
+        return SearchResult(hits=[SearchHit(id="git-guide", title="Git", text="Запросите доступ у наставника.")])
+
+    class PlanningModel(ScriptedModel):
+        async def respond(self, **kwargs):
+            events.append("llm")
+            if not self.requests:
+                assert queries == []
+                assert kwargs["messages"][-1] == {"role": "user", "content": question}
+            return await super().respond(**kwargs)
+
+    monkeypatch.setattr(Embeddings, "embed", embed)
+    monkeypatch.setattr(KnowledgeRepository, "search", search)
+    model = PlanningModel(
+        call("find_instruction", query=query),
+        answer("Запросите доступ у наставника. [source:git-guide]"),
+    )
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, question)
+    assert response.status_code == 200, response.text
+    assert queries == [query]
+    assert events == ["llm", "embeddings", "database", "llm"]
+    assert first_context(model) == {}
+    assert tool_output(model)["hits"][0]["id"] == "git-guide"
+    assert [source["id"] for source in response.json()["sources"]] == ["git-guide"]
+
+
+def test_unclear_typo_clarifies_without_embeddings_or_search(settings, monkeypatch):
+    async def unexpected_work(*args, **kwargs):
+        pytest.fail("Clarification must not invoke retrieval")
+
+    monkeypatch.setattr(Embeddings, "embed", unexpected_work)
+    monkeypatch.setattr(KnowledgeRepository, "search", unexpected_work)
+    model = ScriptedModel(answer(DEFAULT_CLARIFICATION, kind="clarification"))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, "ghj cn")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"answer": DEFAULT_CLARIFICATION, "sources": []}
+    assert len(model.requests) == 1
+
+
+@pytest.mark.parametrize("kind", ["grounded_answer", "no_knowledge"])
+def test_non_clarification_requires_actual_search(settings, monkeypatch, kind, caplog):
+    async def unexpected_work(*args, **kwargs):
+        pytest.fail("There was no valid search call")
+
+    monkeypatch.setattr(Embeddings, "embed", unexpected_work)
+    model = ScriptedModel(answer("invented fact [source:invented]", kind=kind))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, "kak poluchit dostup k Git")
+    assert response.status_code == 502
+    assert "без поиска" in response.json()["detail"]
+    assert "invented" not in response.text
+    assert any("result=search_required" in record.getMessage() for record in caplog.records)
+    assert len(model.requests) == 1
+
+
+def test_empty_model_search_returns_no_knowledge(settings, monkeypatch):
+    queries = mock_search_results(monkeypatch, {"Как получить доступ к Git?": SearchResult(hits=[])})
+    model = searched_model(answer("Не найдено.", kind="no_knowledge"), query="Как получить доступ к Git?")
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, "kak poluchit dostup k Git")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"answer": NO_KNOWLEDGE, "sources": []}
+    assert queries == ["Как получить доступ к Git?"]
+    assert len(model.requests) == 2
+
+
+def test_irrelevant_first_search_can_be_refined_before_answer(settings, monkeypatch):
+    queries = mock_search_results(monkeypatch, {
+        "доступ Git": SearchResult(hits=[SearchHit(id="wifi", title="Wi-Fi", text="Подключитесь к офисной сети.")]),
+        "получение доступа к репозиторию Git": SearchResult(hits=[
+            SearchHit(id="git-guide", title="Git", text="Создайте заявку наставнику."),
+        ]),
+    })
+    model = ScriptedModel(
+        call("find_instruction", call_id="first", query="доступ Git"),
+        call("find_instruction", call_id="refined", query="получение доступа к репозиторию Git"),
+        answer("Создайте заявку наставнику. [source:git-guide]"),
+    )
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, "kak poluchit dostup k Git")
+    assert response.status_code == 200, response.text
+    assert queries == ["доступ Git", "получение доступа к репозиторию Git"]
+    assert tool_output(model, 1)["hits"][0]["id"] == "wifi"
+    assert tool_output(model, 2)["hits"][0]["id"] == "git-guide"
+    assert [source["id"] for source in response.json()["sources"]] == ["git-guide"]
+    assert len(model.requests) == 3
 
 
 def test_multiple_tool_calls_are_paired_and_share_normalized_search(settings, monkeypatch):
@@ -566,7 +702,7 @@ def test_multiple_tool_calls_are_paired_and_share_normalized_search(settings, mo
     model = ScriptedModel(calls, answer("Ответ. [source:demo-dev-environment]"))
     with TestClient(create_app(settings, model=model)) as client:
         assert ask(client, QUESTION).status_code == 200
-    assert queries == [QUESTION, "настройка"]
+    assert queries == ["КАК настроить окружение?", "настройка"]
     _, messages, tools = model.requests[1]
     assert tools == []
     outputs = [item for item in messages if item.get("type") == "function_call_output"]
@@ -730,10 +866,9 @@ def search_hits(prefix, text="Фрагмент инструкции"):
 
 @pytest.mark.parametrize("refinements", [2, 3])
 def test_refined_search_reaches_model_after_six_sources(settings, monkeypatch, refinements):
-    results = {QUESTION: search_hits("initial")}
-    results.update({f"поиск {index}": search_hits(f"round-{index}") for index in range(1, refinements + 1)})
+    results = {f"поиск {index}": search_hits(f"round-{index}") for index in range(1, refinements + 1)}
     queries = mock_search_results(monkeypatch, results)
-    cited = [f"round-{refinements}-2", "initial-0", "round-1-0", "initial-1", "round-1-1", "initial-2"]
+    cited = [f"round-{refinements}-2", "round-1-0", "round-1-1", "round-1-2", "round-2-0", "round-2-1"]
     text = "Ответ: " + " ".join(f"[source:{id}]" for id in [*cited, cited[0]])
     model = ScriptedModel(*[
         call("find_instruction", call_id=f"call-{index}", query=f"поиск {index}")
@@ -745,7 +880,7 @@ def test_refined_search_reaches_model_after_six_sources(settings, monkeypatch, r
 
     assert response.status_code == 200, response.text
     assert queries == list(results)
-    assert first_context(model)["hits"] == results[QUESTION].model_dump(mode="json")["hits"]
+    assert first_context(model) == {}
     for index in range(1, refinements + 1):
         assert tool_output(model, index)["hits"] == results[f"поиск {index}"].model_dump(mode="json")["hits"]
     assert response.json()["answer"] == text
@@ -758,6 +893,7 @@ def test_response_limits_unique_citations_without_truncating_answer(settings, mo
     mock_search_results(monkeypatch, results)
     ids = [hit.id for result in results.values() for hit in result.hits][:citation_count]
     model = ScriptedModel(
+        call("find_instruction", call_id="initial", query=QUESTION),
         call("find_instruction", call_id="first", query="первый"),
         call("find_instruction", call_id="second", query="второй"),
         answer("Ответ. " + " ".join(f"[source:{id}]" for id in ids)),
@@ -779,6 +915,7 @@ def test_source_byte_budget_applies_to_cited_sources(settings, monkeypatch, text
     mock_search_results(monkeypatch, results)
     ids = [hit.id for result in results.values() for hit in result.hits]
     model = ScriptedModel(
+        call("find_instruction", call_id="initial", query=QUESTION),
         call("find_instruction", query="уточнение"),
         answer("Ответ. " + " ".join(f"[source:{id}]" for id in ids)),
     )
@@ -789,12 +926,11 @@ def test_source_byte_budget_applies_to_cited_sources(settings, monkeypatch, text
         assert "лимит источников" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("citation", ["initial-0", "small-0", "large-0"])
+@pytest.mark.parametrize("citation", ["unseen-0", "small-0", "large-0"])
 def test_context_overflow_is_explicit_and_unseen_sources_cannot_be_cited(settings, monkeypatch, citation):
     from ai_service.agents.agent import MAX_CONTEXT_BYTES, json_size
 
     results = {
-        QUESTION: search_hits("initial"),
         "большой": search_hits("large", "🧠" * 1200),
         "короткий": search_hits("small"),
     }
@@ -802,14 +938,14 @@ def test_context_overflow_is_explicit_and_unseen_sources_cannot_be_cited(setting
     calls = []
     for index, query in enumerate(["большой", "короткий", "большой"]):
         calls.extend(call("find_instruction", call_id=f"call-{index}", query=query))
-    model = ScriptedModel(
-        [{"type": "reasoning", "encrypted_content": "x" * (MAX_CONTEXT_BYTES - 12 * 1024)}, *calls],
+    model = ContextFillingModel(
+        [{"type": "reasoning", "encrypted_content": ""}, *calls],
         answer(f"Ответ. [source:{citation}]"),
     )
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
 
-    assert queries == [QUESTION, "большой", "короткий"]
+    assert queries == ["большой", "короткий"]
     assert len(model.requests) == 2
     for instructions, messages, tools in model.requests:
         assert json_size([instructions, messages, tools]) <= MAX_CONTEXT_BYTES
@@ -820,7 +956,7 @@ def test_context_overflow_is_explicit_and_unseen_sources_cannot_be_cited(setting
         assert output["error"] == "context_budget_exhausted"
         assert "hits" not in output
     assert json.loads(outputs[1]["output"])["hits"] == results["короткий"].model_dump(mode="json")["hits"]
-    if citation == "large-0":
+    if citation in {"large-0", "unseen-0"}:
         assert response.status_code == 502
         assert "недоступный источник" in response.json()["detail"]
     else:
@@ -830,20 +966,20 @@ def test_context_overflow_is_explicit_and_unseen_sources_cannot_be_cited(setting
 
 def test_uncited_search_results_are_not_attached_to_response(settings):
     text = "Какой именно доступ вам нужен?"
-    model = ScriptedModel(answer(text, kind="clarification"))
+    model = searched_model(answer(text, kind="clarification"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 200, response.text
-    assert first_context(model)["hits"]
+    assert tool_output(model)["hits"]
     assert response.json() == {"answer": text, "sources": []}
 
 
 def test_context_limit_after_empty_initial_search_does_not_claim_no_knowledge(settings, monkeypatch):
-    from ai_service.agents.agent import CONTEXT_LIMIT_ANSWER, MAX_CONTEXT_BYTES
+    from ai_service.agents.agent import CONTEXT_LIMIT_ANSWER
 
     mock_search_results(monkeypatch, {QUESTION: SearchResult(hits=[]), "уточнение": search_hits("large", "🧠" * 1200)})
-    model = ScriptedModel(
-        [{"type": "reasoning", "encrypted_content": "x" * (MAX_CONTEXT_BYTES - 12 * 1024)}]
+    model = ContextFillingModel(
+        [{"type": "reasoning", "encrypted_content": ""}]
         + call("find_instruction", query="уточнение"),
         answer("Неподтверждённый ответ модели."),
     )
@@ -867,14 +1003,14 @@ def test_missing_citation_is_repaired_once_with_tools_disabled(settings, outcome
         "tool": call("find_instruction", query="пароль"),
         "refusal": [{"type": "message", "content": [{"type": "refusal", "refusal": "Refused"}]}],
     }
-    model = ScriptedModel(answer(unverified), corrections[outcome])
+    model = searched_model(answer(unverified), corrections[outcome])
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
 
-    assert len(model.requests) == 2
-    assert model.requests[1][2] == []
-    repair_messages = model.requests[1][1]
-    assert repair_messages[:2] == model.requests[0][1]
+    assert len(model.requests) == 3
+    assert model.requests[2][2] == []
+    repair_messages = model.requests[2][1]
+    assert repair_messages[:len(model.requests[1][1])] == model.requests[1][1]
     assert json.loads(repair_messages[-2]["content"][0]["text"])["answer"] == unverified
     assert "Исправь ответ" in repair_messages[-1]["content"]
     if outcome in {"fixed", "clarification", "no_knowledge"}:
@@ -907,13 +1043,13 @@ def test_citation_repair_after_last_tool_round_does_not_extend_search_budget(set
 @pytest.mark.parametrize("has_sources", [True, False])
 @pytest.mark.parametrize("text", CLARIFICATION_QUESTIONS)
 def test_clarification_is_allowed_without_citations(settings, has_sources, text):
-    model = ScriptedModel(answer(text, kind="clarification"))
+    model = (searched_model if has_sources else ScriptedModel)(answer(text, kind="clarification"))
     actor = ACTOR if has_sources else {**ACTOR, "team": "design"}
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION, actor)
     assert response.status_code == 200, response.text
     assert response.json() == {"answer": text, "sources": []}
-    assert len(model.requests) == 1
+    assert len(model.requests) == (2 if has_sources else 1)
     assert text in model.requests[0][0]
 
 
@@ -927,27 +1063,29 @@ def test_clarification_is_allowed_without_citations(settings, has_sources, text)
 @pytest.mark.parametrize(("has_sources", "repair"), [(False, False), (True, False), (True, True)])
 def test_arbitrary_clarification_is_replaced_by_service_question(settings, text, has_sources, repair):
     outputs = [answer(text, kind="clarification")]
+    if has_sources:
+        outputs.insert(0, call("find_instruction", query=QUESTION))
     if repair:
-        outputs.insert(0, answer("Ответ без цитаты."))
+        outputs.insert(1, answer("Ответ без цитаты."))
     model = ScriptedModel(*outputs)
     actor = ACTOR if has_sources else {**ACTOR, "team": "design"}
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION, actor)
     assert response.status_code == 200, response.text
     assert response.json() == {"answer": DEFAULT_CLARIFICATION, "sources": []}
-    assert len(model.requests) == (2 if repair else 1)
+    assert len(model.requests) == 1 + int(has_sources) + int(repair)
     if repair:
         assert model.requests[-1][2] == []
 
 
 def test_no_knowledge_uses_service_text_even_if_search_returned_sources(settings):
-    model = ScriptedModel(answer("Произвольный текст модели.", kind="no_knowledge"))
+    model = searched_model(answer("Произвольный текст модели.", kind="no_knowledge"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 200, response.text
-    assert first_context(model)["hits"]
+    assert tool_output(model)["hits"]
     assert response.json() == {"answer": NO_KNOWLEDGE, "sources": []}
-    assert len(model.requests) == 1
+    assert len(model.requests) == 2
 
 
 @pytest.mark.parametrize("text", [
@@ -976,12 +1114,12 @@ def test_missing_citation_does_not_start_retry_without_budget(settings, budget):
         output.insert(0, {"type": "reasoning", "encrypted_content": "x" * MAX_CONTEXT_BYTES})
     else:
         settings = settings.model_copy(update={"chat_timeout_seconds": 0.5})
-    model = ScriptedModel(output)
+    model = searched_model(output)
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 502, response.text
     assert "подтверждающих источников" in response.json()["detail"]
-    assert len(model.requests) == 1
+    assert len(model.requests) == 2
 
 
 def test_citation_repair_is_cancelled_by_original_deadline(settings, monkeypatch):
@@ -995,6 +1133,8 @@ def test_citation_repair_is_cancelled_by_original_deadline(settings, monkeypatch
         async def respond(self, **kwargs):
             self.calls += 1
             if self.calls == 1:
+                return ModelResponse(output=call("find_instruction", query=QUESTION))
+            if self.calls == 2:
                 return ModelResponse(output=answer("Неподтверждённое утверждение."))
             assert kwargs["tools"] == []
             try:
@@ -1007,7 +1147,7 @@ def test_citation_repair_is_cancelled_by_original_deadline(settings, monkeypatch
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 504
-    assert model.calls == 2
+    assert model.calls == 3
     assert cancelled == [True]
 
 
@@ -1079,7 +1219,8 @@ def test_plan_step_is_accepted_and_used_for_search_and_model(settings, monkeypat
     monkeypatch.setattr(Embeddings, "embed", embed)
     use_mock_http(unexpected_http)
     step = {"id": "setup-vpn", "title": "Настроить VPN", **resource}
-    model = ScriptedModel(answer("Инструкция. [source:demo-dev-environment]"))
+    query = "Настроить VPN setup-vpn"
+    model = searched_model(answer("Инструкция. [source:demo-dev-environment]"), query=query)
     with TestClient(create_app(settings, model=model)) as client:
         response = client.post(path, headers=AUTH, json={
             "actor": ACTOR, "message": "Как выполнить этот шаг?",
@@ -1087,13 +1228,14 @@ def test_plan_step_is_accepted_and_used_for_search_and_model(settings, monkeypat
         })
 
     assert response.status_code == 200, response.text
-    assert queries == ["Как выполнить этот шаг?"]
+    assert queries == [query]
     context = first_context(model)
     assert context["onboarding_plans"][0]["current_step"] == {
         "id": "setup-vpn", "title": "Настроить VPN", "resource_id": resource.get("resource_id") or None,
         "action_type": None,
     }
-    assert context["hits"] == response.json()["sources"]
+    assert "hits" not in context
+    assert tool_output(model)["hits"] == response.json()["sources"]
     assert model.requests[0][1][-1] == {"role": "user", "content": "Как выполнить этот шаг?"}
 
 
@@ -1110,7 +1252,9 @@ def test_plan_step_changes_between_requests(settings, monkeypatch):
         {"id": "tracker-step", "title": "Открыть трекер", "resource_id": "tracker"},
         None,
     ]
-    model = ScriptedModel(*(answer("Инструкция. [source:demo-dev-environment]") for _ in steps))
+    model = ScriptedModel(*[output for _ in steps for output in (
+        call("find_instruction", query=QUESTION), answer("Инструкция. [source:demo-dev-environment]"),
+    )])
     with TestClient(create_app(settings, model=model)) as client:
         for step in steps:
             response = ask(client, QUESTION, conversation_id="same-chat", onboarding_plans=[{
@@ -1118,8 +1262,8 @@ def test_plan_step_changes_between_requests(settings, monkeypatch):
             }])
             assert response.status_code == 200, response.text
     assert queries == [QUESTION] * 3
-    assert first_context(model, 1)["onboarding_plans"][0]["current_step"] == {**steps[1], "action_type": None}
-    assert first_context(model, 2)["onboarding_plans"][0]["current_step"] is None
+    assert first_context(model, 2)["onboarding_plans"][0]["current_step"] == {**steps[1], "action_type": None}
+    assert first_context(model, 4)["onboarding_plans"][0]["current_step"] is None
 
 
 @pytest.mark.parametrize("step", [
@@ -1154,7 +1298,7 @@ def test_invalid_plan_step_is_rejected_before_dependencies(settings, monkeypatch
 
 @pytest.mark.parametrize("citation", ["setup-vpn", "vpn-resource"])
 def test_step_and_resource_ids_are_not_knowledge_sources(settings, citation):
-    model = ScriptedModel(answer(f"Инструкция. [source:{citation}]"))
+    model = searched_model(answer(f"Инструкция. [source:{citation}]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION, onboarding_plans=[{
             "id": "technical", "title": "Технический трек", "current_step": {
@@ -1220,7 +1364,7 @@ def test_chat_onboarding_plans_reach_model_and_refined_search(settings, monkeypa
             "actor": ACTOR, "message": question, "onboarding_plans": plans,
         })
     assert response.status_code == 200, response.text
-    assert queries == [question, "Получить VPN vpn"]
+    assert queries == ["Получить VPN vpn"]
     context = first_context(model)
     assert context["onboarding_plans"] == [
         plans[0],
@@ -1234,7 +1378,7 @@ def test_chat_onboarding_plans_reach_model_and_refined_search(settings, monkeypa
 
 @pytest.mark.parametrize("optional_fields", [{}, {"resource_id": "", "action_type": ""},
                                          {"resource_id": "vpn", "action_type": "request_access"}])
-def test_single_active_plan_is_context_without_changing_initial_search(settings, monkeypatch, optional_fields):
+def test_single_active_plan_reaches_planner_before_search(settings, monkeypatch, optional_fields):
     queries = []
 
     async def embed(self, texts):
@@ -1247,11 +1391,12 @@ def test_single_active_plan_is_context_without_changing_initial_search(settings,
         {"id": "done", "title": "Компания", "current_step": None},
         {"id": "technical", "title": "Технический трек", "current_step": step},
     ]
-    model = ScriptedModel(answer("Инструкция. [source:demo-dev-environment]"))
+    model = searched_model(answer("Инструкция. [source:demo-dev-environment]"), query="Получить VPN vpn-step")
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, "Как выполнить этот шаг?", onboarding_plans=plans)
     assert response.status_code == 200, response.text
-    assert queries == ["Как выполнить этот шаг?"]
+    assert queries == ["Получить VPN vpn-step"]
+    assert first_context(model)["selected_onboarding_plan_id"] == "technical"
     context = first_context(model)
     assert context["onboarding_plans"][1]["current_step"] == {
         **step, "resource_id": optional_fields.get("resource_id") or None,
@@ -1292,15 +1437,17 @@ def test_onboarding_plans_are_not_reused_and_empty_or_finished_plans_leave_searc
         [],
         None,
     ]
-    model = ScriptedModel(*(answer("Инструкция. [source:demo-dev-environment]") for _ in snapshots))
+    model = ScriptedModel(*[output for _ in snapshots for output in (
+        call("find_instruction", query=QUESTION), answer("Инструкция. [source:demo-dev-environment]"),
+    )])
     with TestClient(create_app(settings, model=model)) as client:
         for plans in snapshots:
             fields = {} if plans is None else {"onboarding_plans": plans}
             response = ask(client, QUESTION, conversation_id="same-chat", **fields)
             assert response.status_code == 200, response.text
     assert queries == [QUESTION] * 4
-    assert first_context(model, 1)["onboarding_plans"] == snapshots[1]
-    assert all("onboarding_plans" not in first_context(model, i) for i in (2, 3))
+    assert first_context(model, 2)["onboarding_plans"] == snapshots[1]
+    assert all("onboarding_plans" not in first_context(model, i) for i in (4, 6))
 
 
 @pytest.mark.parametrize("plans", [
@@ -1334,7 +1481,7 @@ def test_invalid_onboarding_plans_are_rejected_before_dependencies(settings, mon
 
 @pytest.mark.parametrize("citation", ["technical", "vpn-step", "vpn-resource", "request_access"])
 def test_onboarding_plan_metadata_cannot_be_cited_as_sources(settings, citation):
-    model = ScriptedModel(answer(f"Инструкция. [source:{citation}]"))
+    model = searched_model(answer(f"Инструкция. [source:{citation}]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION, onboarding_plans=[{
             "id": "technical", "title": "Технический трек", "current_step": {
@@ -1393,12 +1540,14 @@ def test_ambiguous_step_references_cannot_reach_search_or_generation(settings, m
     ], "company"),
 ])
 def test_explicit_track_choices_and_step_followups_reach_model(settings, monkeypatch, question, history, selected):
-    queries = mock_search_results(monkeypatch, {question: search_hits("guide")})
-    model = ScriptedModel(answer("Инструкция. [source:guide-0]"))
+    step = next(plan["current_step"] for plan in ONBOARDING_TRACKS if plan["id"] == selected)
+    query = f'{question} Текущий шаг: {step["title"]} ({step["id"]})'
+    queries = mock_search_results(monkeypatch, {query: search_hits("guide")})
+    model = searched_model(answer("Инструкция. [source:guide-0]"), query=query)
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, question, history=history, onboarding_plans=ONBOARDING_TRACKS)
     assert response.status_code == 200, response.text
-    assert queries == [question]
+    assert queries == [query]
     assert first_context(model)["selected_onboarding_plan_id"] == selected
 
 
@@ -1511,10 +1660,10 @@ def test_unknown_track_in_snapshot_question_does_not_return_another_track(questi
 
 
 @pytest.mark.parametrize(("question", "explanation"), [
-    ("Сколько шагов осталось?", "процент прогресса и остаток посчитать нельзя"),
-    ("Покажи прогресс адаптации", "нет числа завершённых шагов"),
-    ("Какие шаги завершены?", "нет числа завершённых шагов"),
-    ("Какой следующий шаг?", "порядок следующих шагов не передан"),
+    ("Сколько шагов осталось?", "Не удалось определить прогресс и количество оставшихся шагов."),
+    ("Покажи прогресс адаптации", "Не удалось определить прогресс и количество оставшихся шагов."),
+    ("Какие шаги завершены?", "Не удалось определить прогресс и количество оставшихся шагов."),
+    ("Какой следующий шаг?", "Не удалось определить следующий шаг."),
 ])
 def test_snapshot_answers_do_not_invent_progress_or_future_steps(question, explanation):
     with TestClient(create_app(Settings(service_token="chat-test-token"))) as client:
@@ -1532,9 +1681,12 @@ def test_snapshot_empty_and_finished_tracks_do_not_imply_internship_completion()
             "id": "technical", "title": "Технический трек", "current_step": None,
         }])
     assert empty.status_code == finished.status_code == 200
-    assert "Chat не передал сведения" in empty.json()["answer"]
+    assert empty.json() == {
+        "answer": "Не удалось определить ваши треки адаптации. Проверьте план в интерфейсе адаптации.",
+        "sources": [],
+    }
     assert finished.json() == {
-        "answer": "Трек «Технический трек»: текущий шаг в снимке не указан.", "sources": [],
+        "answer": "Трек «Технический трек»: текущий шаг не указан.", "sources": [],
     }
 
 
@@ -1565,13 +1717,35 @@ def test_snapshot_titles_cannot_inject_citations_or_instructions():
     "Какой у меня текущий шаг и как его выполнить?", "Какие доступы нужны на текущем шаге?",
 ])
 def test_instruction_requests_are_not_replaced_with_snapshot_summary(settings, monkeypatch, question):
-    queries = mock_search_results(monkeypatch, {question: search_hits("guide")})
-    model = ScriptedModel(answer("Инструкция. [source:guide-0]"))
+    query = f"{question} Текущий шаг: Настроить VPN (vpn-step)"
+    queries = mock_search_results(monkeypatch, {query: search_hits("guide")})
+    model = searched_model(answer("Инструкция. [source:guide-0]"), query=query)
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, question, onboarding_plans=ONBOARDING_TRACKS[:1])
     assert response.status_code == 200, response.text
-    assert queries == [question]
+    assert queries == [query]
     assert response.json()["answer"] == "Инструкция. [source:guide-0]"
+
+
+@pytest.mark.parametrize("track_name", ["backend", "бекенд", "бэкенда"])
+def test_backend_step_instruction_searches_for_environment_setup(settings, monkeypatch, track_name):
+    plans = [
+        {"id": "backend", "title": "Backend", "current_step": {
+            "id": "dev-environment", "title": "Настрой рабочее окружение",
+        }},
+        ONBOARDING_TRACKS[1],
+    ]
+    question = f"Как выполнить текущий шаг в треке {track_name}?"
+    query = f"{question} Текущий шаг: Настрой рабочее окружение (dev-environment)"
+    source = SearchHit(id="synth-software-dev-environment", title="Настройка окружения", text="Запусти сервис по README.")
+    queries = mock_search_results(monkeypatch, {query: SearchResult(hits=[source])})
+    model = searched_model(answer("Запусти сервис по README. [source:synth-software-dev-environment]"), query=query)
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, question, onboarding_plans=plans)
+    assert response.status_code == 200, response.text
+    assert queries == [query]
+    assert first_context(model)["selected_onboarding_plan_id"] == "backend"
+    assert [hit["id"] for hit in response.json()["sources"]] == ["synth-software-dev-environment"]
 
 
 def test_shared_resource_does_not_select_first_track(settings):
@@ -1592,7 +1766,7 @@ def test_explicit_track_disambiguates_shared_resource(settings):
         {**plan, "current_step": {**plan["current_step"], "resource_id": "shared"}}
         for plan in ONBOARDING_TRACKS
     ]
-    model = ScriptedModel(answer("Инструкция. [source:demo-dev-environment]"))
+    model = searched_model(answer("Инструкция. [source:demo-dev-environment]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, "Как выполнить этот шаг в company для shared?", onboarding_plans=plans)
     assert response.status_code == 200, response.text
@@ -1603,7 +1777,7 @@ def test_explicit_track_disambiguates_shared_resource(settings):
 @pytest.mark.parametrize("question", ["Как оформить отпуск?", "Как выполнить шаг в GitLab CI?", "Какие есть треки?"])
 def test_unrelated_questions_search_only_the_question(settings, monkeypatch, plans, question):
     queries = mock_search_results(monkeypatch, {question: search_hits("leave")})
-    model = ScriptedModel(answer("Инструкция по отпуску. [source:leave-0]"))
+    model = searched_model(answer("Инструкция по отпуску. [source:leave-0]"), query=question)
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, question, onboarding_plans=plans)
     assert response.status_code == 200, response.text
@@ -1696,7 +1870,7 @@ def test_clarification_survives_next_request_without_sources(settings, monkeypat
     assert previous_messages(model, request_index=1) == [
         {**history[0], "source_ids": []}, history[1],
     ]
-    assert queries == [question, selection, query]
+    assert queries == [query]
     assert [hit["id"] for hit in second.json()["sources"]] == [source]
 
 
@@ -1736,7 +1910,7 @@ def test_follow_up_uses_history_and_requires_sources_from_current_search(setting
         response = client.post(path, headers=AUTH, json={
             "actor": ACTOR, "conversation_id": "vpn-chat", "history": history, "message": "А сколько ждать?",
         })
-    assert queries == ["А сколько ждать?", query]
+    assert queries == [query]
     assert [item["content"] for item in previous_messages(model)] == [item["content"] for item in history]
     assert model.requests[0][1][-1] == {"role": "user", "content": "А сколько ждать?"}
     assert tool_output(model)["hits"][0]["id"] == "fresh-vpn-duration"
@@ -1754,7 +1928,7 @@ def test_long_input_history_is_windowed_and_never_cached_between_requests(settin
     history = [{"role": "user", "content": f"Предыдущий вопрос {index}"} for index in range(60)]
     model = ScriptedModel(
         answer("Что именно нужно уточнить?", kind="clarification"),
-        answer("Инструкция. [source:demo-dev-environment]"),
+        call("find_instruction", query=QUESTION), answer("Инструкция. [source:demo-dev-environment]"),
     )
     with TestClient(create_app(settings, model=model)) as client:
         first = ask(client, "Текущий вопрос", history=history, conversation_id="same-chat")
@@ -1767,19 +1941,22 @@ def test_long_input_history_is_windowed_and_never_cached_between_requests(settin
 
 
 def test_history_yields_to_question_and_sources_within_total_context_budget(settings, monkeypatch):
-    from ai_service.agents.agent import json_size
+    from importlib.resources import files
+    from ai_service.agents.agent import Agent, FIND_INSTRUCTION_TOOL, json_size
 
     history = [{"role": "user", "content": "Ж" * 4000} for _ in range(8)]
     # A deliberately small overall budget checks that optional history is evicted first.
-    monkeypatch.setattr("ai_service.agents.agent.MAX_CONTEXT_BYTES", 12 * 1024)
-    model = ScriptedModel(answer("Инструкция. [source:demo-dev-environment]"))
+    prompt = files("ai_service.agents").joinpath("prompts", "system.txt").read_text(encoding="utf-8")
+    budget = json_size([Agent(None, None, prompt).prompt, [FIND_INSTRUCTION_TOOL]]) + 4 * 1024
+    monkeypatch.setattr("ai_service.agents.agent.MAX_CONTEXT_BYTES", budget)
+    model = searched_model(answer("Инструкция. [source:demo-dev-environment]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION, history=history)
     assert response.status_code == 200, response.text
     instructions, messages, tools = model.requests[0]
-    assert json_size([instructions, messages, tools]) <= 12 * 1024
+    assert json_size([instructions, messages, tools]) <= budget
     assert messages[-1]["content"] == QUESTION
-    assert first_context(model)["hits"] == response.json()["sources"]
+    assert tool_output(model)["hits"] == response.json()["sources"]
 
 
 def test_history_access_failure_stops_before_embeddings_and_model(settings, monkeypatch):
@@ -1841,3 +2018,58 @@ def test_expanded_history_and_request_budgets_accept_large_conversation(settings
     instructions, messages, tools = model.requests[0]
     assert 16 * 1024 < json_size(messages[0]) <= MAX_HISTORY_BYTES
     assert json_size([instructions, messages, tools]) <= MAX_CONTEXT_BYTES
+
+
+@pytest.mark.parametrize("resource", ["https://git.example.test/team/repo", "git-guide", "https://git.example.test/invented/repo"])
+def test_access_proposal_matches_chat_contract_and_cited_policy(settings, monkeypatch, resource):
+    from ai_service.schemas.contracts import AccessPolicy
+    from ai_service.schemas.clarifications import REPOSITORY_CLARIFICATION
+
+    target = "https://git.example.test/team/repo"
+    hit = SearchHit(id="git-guide", title="Git", text="Запросите Developer.", access_policies=[
+        AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"]),
+    ])
+    mock_search_results(monkeypatch, {"доступ Git": SearchResult(hits=[hit])})
+    model = searched_model(answer("Подтвердите заявку в интерфейсе. [source:git-guide]", proposal={
+        "resource_id": resource, "resource_label": "Git", "access_level": "Developer",
+    }), query="доступ Git")
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, f"Как получить доступ к {target}?")
+    assert response.status_code == 200, response.text
+    if resource == target:
+        assert response.json()["proposal"] == {
+            "resource_id": target, "resource_label": "Репозиторий team/repo", "access_level": "Developer",
+        }
+        assert "access_policies" not in response.json()["sources"][0]
+        assert tool_output(model)["hits"][0]["access_policies"][0]["access_levels"] == ["Developer"]
+    else:
+        assert response.json() == {"answer": REPOSITORY_CLARIFICATION, "sources": []}
+
+
+@pytest.mark.parametrize("kind", ["clarification", "no_knowledge"])
+def test_non_grounded_answer_cannot_carry_access_proposal(settings, kind):
+    model = searched_model(answer(DEFAULT_CLARIFICATION, kind=kind, proposal={
+        "resource_id": "repo", "resource_label": "Git", "access_level": "read",
+    }))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, "Как получить доступ к repo?")
+    assert response.status_code == 502
+    assert "proposal" not in response.json()
+
+
+def test_uncited_policy_cannot_authorize_proposal(settings, monkeypatch):
+    from ai_service.schemas.contracts import AccessPolicy
+    target = "https://git.example.test/team/repo"
+    mock_search_results(monkeypatch, {"Git": SearchResult(hits=[
+        SearchHit(id="cited", title="Git", text="Общие сведения."),
+        SearchHit(id="uncited", title="Git policy", text="Developer.", access_policies=[
+            AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"]),
+        ]),
+    ])})
+    model = searched_model(answer("Предложение. [source:cited]", proposal={
+        "resource_id": target, "resource_label": "Git", "access_level": "Developer",
+    }), query="Git")
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, f"Нужен доступ к {target}")
+    assert response.status_code == 200
+    assert "proposal" not in response.json()
