@@ -19,21 +19,27 @@ from ai_service.agents.agent import Agent, NO_KNOWLEDGE
 from ai_service.clients.llm import ResponsesModel
 from ai_service.core.config import Settings
 from ai_service.schemas.clarifications import CLARIFICATION_QUESTIONS
-from ai_service.schemas.contracts import Actor, SearchHit, SearchResult
+from ai_service.schemas.contracts import AccessPolicy, Actor, SearchHit, SearchResult
 
+
+REPOSITORY = "https://git.example.test/team/repo"
+REPOSITORY_POLICY = AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"])
 
 GIT = SearchHit(
     id="synthetic-git", title="Доступ к Git (синтетический тест)",
     text="Для доступа к Git отправьте заявку наставнику через учебный портал. Срок — два рабочих дня.",
+    access_policies=[REPOSITORY_POLICY],
 )
 WIFI = SearchHit(id="synthetic-wifi", title="Wi-Fi", text="Офисная сеть Wi-Fi называется TestGuest.")
 INTERNAL = SearchHit(
     id="synthetic-internal", title="synthetic-service-17",
     text="Доступ к сервису synthetic-service-17 выдаёт наставник через учебный портал.",
+    access_policies=[AccessPolicy(resource_id="synthetic-service-17", resource_label="synthetic-service-17", access_levels=["read"])],
 )
 NO_VPN = SearchHit(
     id="synthetic-no-vpn", title="Git без VPN",
     text="Для доступа к Git без VPN отправьте заявку наставнику через учебный портал.",
+    access_policies=[REPOSITORY_POLICY],
 )
 
 
@@ -45,24 +51,25 @@ class Case:
     refined_hits: tuple[SearchHit, ...] | None = None
     outcome: str = "grounded_answer"
     query_terms: tuple[str, ...] = ("git",)
-    answer_terms: tuple[str, ...] = ("наставник",)
+    answer_terms: tuple[str, ...] = ()
     reformulate: bool = True
 
 
 CASES = (
-    Case("correct", "Как получить доступ к Git?", reformulate=False),
-    Case("typo", "Как палучить достпу к Git?"),
-    Case("english", "How do I get Git access?", reformulate=False),
-    Case("translit", "kak poluchit dostup k Git"),
-    Case("mixed", "как poluchit достпу к Git"),
-    Case("layout", "rfr gjkexbnm ljcneg r Git"),
-    Case("irrelevant-first-result", "kak poluchit dostup k Git", hits=(WIFI,), refined_hits=(GIT,)),
+    Case("correct", f"Как получить доступ к Git? {REPOSITORY}", reformulate=False),
+    Case("typo", f"Как палучить достпу к Git? {REPOSITORY}"),
+    Case("english", f"How do I get Git access? {REPOSITORY}", reformulate=False),
+    Case("translit", f"kak poluchit dostup k Git {REPOSITORY}"),
+    Case("mixed", f"как poluchit достпу к Git {REPOSITORY}"),
+    Case("layout", f"rfr gjkexbnm ljcneg r Git {REPOSITORY}"),
+    Case("irrelevant-first-result", f"kak poluchit dostup k Git {REPOSITORY}", hits=(WIFI,), refined_hits=(GIT,)),
     Case("preserve-name", "kak poluchit dostup k synthetic-service-17", hits=(INTERNAL,),
          query_terms=("synthetic-service-17",)),
-    Case("preserve-negation", "kak poluchit dostup k Git bez VPN", hits=(NO_VPN,),
+    Case("preserve-negation", f"kak poluchit dostup k Git bez VPN {REPOSITORY}", hits=(NO_VPN,),
          query_terms=("git", "vpn", "без")),
+    Case("unknown-repository", "Как получить доступ к репозиторию?", hits=(), outcome="clarification", query_terms=(), answer_terms=()),
     Case("ambiguous", "нжн дстп", hits=(), outcome="clarification", query_terms=(), answer_terms=()),
-    Case("no-knowledge", "kak poluchit dostup k Git", hits=(),
+    Case("no-knowledge", f"kak poluchit dostup k Git {REPOSITORY}", hits=(),
          outcome="no_knowledge", answer_terms=()),
 )
 
@@ -114,6 +121,8 @@ async def evaluate(case, settings, http, prompt):
             expected = case.refined_hits if case.refined_hits is not None else case.hits
             if {source.id for source in response.sources} != {hit.id for hit in expected}:
                 problems.append("unexpected_sources")
+            if response.proposal is None:
+                problems.append("missing_proposal")
             for term in case.answer_terms:
                 if term.casefold() not in response.answer.casefold():
                     problems.append("missing_answer_term:" + term)
@@ -129,7 +138,8 @@ async def evaluate(case, settings, http, prompt):
             for term in case.query_terms:
                 if term.casefold() not in query:
                     problems.append("missing_query_term:" + term)
-        result.update(passed=not problems, problems=problems, answer=response.answer)
+        result.update(passed=not problems, problems=problems, answer=response.answer,
+                      proposal=response.proposal.model_dump() if response.proposal else None)
     except Exception as error:
         # Do not print provider response bodies, connection strings or credentials.
         result.update(error=type(error).__name__, reason=getattr(error, "reason", "failed"))
