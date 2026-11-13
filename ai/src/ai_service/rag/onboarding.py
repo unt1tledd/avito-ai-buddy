@@ -184,16 +184,16 @@ def snapshot_answer(
         return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
     selected = mentions or list(plans)
     if not selected:
-        return ChatResponse(answer="Chat не передал сведения о треках адаптации. Проверьте план в интерфейсе адаптации.", sources=[])
+        return ChatResponse(answer="Не удалось определить ваши треки адаптации. Проверьте план в интерфейсе адаптации.", sources=[])
     lines = []
     for plan in selected:
         prefix = f"Трек {display_title(plan.title)}: "
         if plan.current_step is None:
-            lines.append(prefix + "текущий шаг в снимке не указан.")
+            lines.append(prefix + "текущий шаг не указан.")
         else:
             lines.append(prefix + f"текущий шаг — {display_title(plan.current_step.title)}.")
     if kind == "progress":
-        lines.insert(0, "В снимке нет числа завершённых шагов и общего числа шагов, поэтому процент прогресса и остаток посчитать нельзя.")
+        lines.insert(0, "Не удалось определить прогресс и количество оставшихся шагов. Проверьте план в интерфейсе адаптации.")
     elif kind == "next":
-        lines.insert(0, "В снимке есть только текущие шаги; порядок следующих шагов не передан.")
+        lines.insert(0, "Не удалось определить следующий шаг. Проверьте план в интерфейсе адаптации.")
     return ChatResponse(answer="\n".join(lines), sources=[])

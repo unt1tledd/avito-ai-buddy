@@ -1657,10 +1657,10 @@ def test_unknown_track_in_snapshot_question_does_not_return_another_track(questi
 
 
 @pytest.mark.parametrize(("question", "explanation"), [
-    ("Сколько шагов осталось?", "процент прогресса и остаток посчитать нельзя"),
-    ("Покажи прогресс адаптации", "нет числа завершённых шагов"),
-    ("Какие шаги завершены?", "нет числа завершённых шагов"),
-    ("Какой следующий шаг?", "порядок следующих шагов не передан"),
+    ("Сколько шагов осталось?", "Не удалось определить прогресс и количество оставшихся шагов."),
+    ("Покажи прогресс адаптации", "Не удалось определить прогресс и количество оставшихся шагов."),
+    ("Какие шаги завершены?", "Не удалось определить прогресс и количество оставшихся шагов."),
+    ("Какой следующий шаг?", "Не удалось определить следующий шаг."),
 ])
 def test_snapshot_answers_do_not_invent_progress_or_future_steps(question, explanation):
     with TestClient(create_app(Settings(service_token="chat-test-token"))) as client:
@@ -1678,9 +1678,12 @@ def test_snapshot_empty_and_finished_tracks_do_not_imply_internship_completion()
             "id": "technical", "title": "Технический трек", "current_step": None,
         }])
     assert empty.status_code == finished.status_code == 200
-    assert "Chat не передал сведения" in empty.json()["answer"]
+    assert empty.json() == {
+        "answer": "Не удалось определить ваши треки адаптации. Проверьте план в интерфейсе адаптации.",
+        "sources": [],
+    }
     assert finished.json() == {
-        "answer": "Трек «Технический трек»: текущий шаг в снимке не указан.", "sources": [],
+        "answer": "Трек «Технический трек»: текущий шаг не указан.", "sources": [],
     }
 
 
