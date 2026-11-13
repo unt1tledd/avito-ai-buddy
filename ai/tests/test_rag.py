@@ -318,7 +318,14 @@ def test_long_document_tail_reaches_model_and_preserves_acl_after_reimport(pg_sc
 
     class Model:
         async def respond(self, *, instructions, messages, tools):
-            context = json.loads(messages[0]["content"].split("\n", 1)[1])
+            results = [item for item in messages if item.get("type") == "function_call_output"]
+            if not results:
+                assert all("hits" not in message.get("content", "") for message in messages)
+                return ModelResponse(output=[{
+                    "type": "function_call", "name": "find_instruction", "call_id": "vpn-search",
+                    "arguments": json.dumps({"query": question}),
+                }])
+            context = json.loads(results[-1]["output"])
             contexts.append(context)
             hits = context["hits"]
             if hits:
@@ -386,7 +393,7 @@ def test_plan_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch):
     step = {"id": "vpn-step", "title": "Получить VPN", "resource_id": "mentor-vpn"}
 
     async def embed(self, texts):
-        assert texts == ["Как выполнить этот шаг?"]
+        assert texts == ["Получить VPN mentor-vpn"]
         return [VECTOR]
 
     monkeypatch.setattr(Embeddings, "embed", embed)
@@ -396,6 +403,14 @@ def test_plan_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch):
         async def respond(self, *, instructions, messages, tools):
             context = json.loads(messages[0]["content"].split("\n", 1)[1])
             assert context["onboarding_plans"][0]["current_step"] == {**step, "action_type": "request_access"}
+            results = [item for item in messages if item.get("type") == "function_call_output"]
+            if not results:
+                assert "hits" not in context
+                return ModelResponse(output=[{
+                    "type": "function_call", "name": "find_instruction", "call_id": "vpn-search",
+                    "arguments": json.dumps({"query": "Получить VPN mentor-vpn"}),
+                }])
+            context.update(json.loads(results[-1]["output"]))
             contexts.append(context)
             hits = context["hits"]
             final = {
@@ -486,7 +501,13 @@ def test_history_is_filtered_again_after_role_team_change_or_source_deletion(pg_
     class Model:
         async def respond(self, *, instructions, messages, tools):
             model_inputs.append(messages)
-            current = json.loads(messages[-2]["content"].split("\n", 1)[1])
+            results = [item for item in messages if item.get("type") == "function_call_output"]
+            if not results:
+                return ModelResponse(output=[{
+                    "type": "function_call", "name": "find_instruction", "call_id": "vpn-duration-search",
+                    "arguments": json.dumps({"query": "Срок выдачи доступа к VPN"}),
+                }])
+            current = json.loads(results[-1]["output"])
             assert current["hits"]
             final = {"kind": "grounded_answer", "answer": f"Инструкция. [source:{current['hits'][0]['id']}]"}
             return ModelResponse(output=[{

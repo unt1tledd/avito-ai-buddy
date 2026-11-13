@@ -22,7 +22,7 @@ class ChatRequest(Payload):
         default_factory=list, max_length=MAX_ONBOARDING_PLANS,
         description="Optional onboarding tracks supplied by Chat, each with its current step or null. "
         "Step action_type is context only, not an instruction to execute an action. "
-        "For a resolved current step, initial search also uses its title and ID. Ambiguous step references "
+        "The model formulates search queries before retrieval, using the resolved step when relevant. Ambiguous step references "
         "across multiple active tracks require clarification before search and generation. "
         "Onboarding context is accepted only through "
         "this field and is limited to 128 KiB of JSON context, including string escaping for the model request.",
