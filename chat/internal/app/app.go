@@ -39,10 +39,12 @@ import (
 	"avito-ai-buddy/pkg/health"
 	"avito-ai-buddy/pkg/transactor"
 
+	"avito-ai-buddy/pkg/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -235,7 +237,17 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 	chatController := chatapi.NewServer(messages, logger)
 	actionController := actionapi.NewServer(action.NewService(actions, outboxRepository, authClient, tx), logger)
 
-	server := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	server := grpc.NewServer(grpc.ChainUnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
+		log := logger.Info
+		switch code {
+		case codes.Internal, codes.Unavailable, codes.Unknown:
+			log = logger.Error
+		case codes.DeadlineExceeded:
+			log = logger.Warn
+		}
+		log("RPC completed", zap.String("rpc", method), zap.String("code", code.String()),
+			zap.Int64("duration_ms", elapsed.Milliseconds()), zap.String("request_id", observability.RequestID(ctx)))
+	}), func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		return handler(messagerepo.WithHistoryPageSize(ctx, cfg.App.HistoryPageSize), req)
 	}))
 	chatpb.RegisterChatServiceServer(server, chatController)
@@ -256,7 +268,12 @@ func connectGateway(listener net.Listener, opts grpc.DialOption) (*grpc.ClientCo
 }
 
 func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn *grpc.ClientConn, messages sessionService, pingDB, checkKafka func(context.Context) error) (*http.Server, error) {
-	mux := runtime.NewServeMux()
+	mux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(func(key string) (string, bool) {
+		if key == http.CanonicalHeaderKey(observability.RequestIDHeader) {
+			return key, true
+		}
+		return runtime.DefaultHeaderMatcher(key)
+	}))
 	if err := controller.RegisterHealth(ctx, mux, gatewayConn, pingDB, checkKafka); err != nil {
 		return nil, fmt.Errorf("register health endpoint: %w", err)
 	}
@@ -281,7 +298,7 @@ func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn 
 	httpMux.Handle("/", mux)
 
 	return &http.Server{
-		Handler:           httpMux,
+		Handler:           observability.HTTPRequestID(httpMux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}, nil
 }

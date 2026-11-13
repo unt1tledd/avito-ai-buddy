@@ -12,6 +12,7 @@ import (
 	chaterrors "avito-ai-buddy/chat/internal/errors"
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 
+	"avito-ai-buddy/pkg/observability"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -36,7 +37,7 @@ func NewServer(messages messageService, logger *zap.Logger) *chatServer {
 // Retries with the same idempotency key return the saved reply.
 func (s *chatServer) SendMessage(ctx context.Context, req *chatpb.SendMessageRequest) (*chatpb.SendMessageResponse, error) {
 	if err := req.Validate(); err != nil {
-		s.logger.Warn("chat request validation failed", zap.String("rpc", "SendMessage"), zap.Error(err))
+		s.logger.Warn("chat request validation failed", zap.String("rpc", "SendMessage"), zap.String("request_id", observability.RequestID(ctx)))
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -55,13 +56,14 @@ func (s *chatServer) SendMessage(ctx context.Context, req *chatpb.SendMessageReq
 		case errors.Is(err, chaterrors.ErrInvalidToken):
 			return nil, status.Error(codes.Unauthenticated, chaterrors.ErrInvalidToken.Error())
 		case errors.Is(err, chaterrors.ErrAuthUnavailable):
+			s.logger.Error("auth dependency unavailable", zap.String("rpc", "SendMessage"), zap.String("request_id", observability.RequestID(ctx)), zap.Error(err))
 			return nil, status.Error(codes.Unavailable, chaterrors.ErrAuthUnavailable.Error())
 		case errors.Is(err, chaterrors.ErrIdempotencyKeyReused):
 			return nil, status.Error(codes.AlreadyExists, chaterrors.ErrIdempotencyKeyReused.Error())
 		case errors.Is(err, chaterrors.ErrReplyInProgress):
 			return nil, status.Error(codes.Aborted, chaterrors.ErrReplyInProgress.Error())
 		default:
-			s.logger.Error("send message failed", zap.Error(err))
+			s.logger.Error("send message failed", zap.String("rpc", "SendMessage"), zap.String("request_id", observability.RequestID(ctx)), zap.String("stage", sendFailureStage(err)), zap.Error(err))
 			return nil, status.Error(codes.Internal, "send message failed")
 		}
 	}
@@ -74,7 +76,7 @@ func (s *chatServer) SendMessage(ctx context.Context, req *chatpb.SendMessageReq
 // to oldest, with a cursor for the next page.
 func (s *chatServer) GetHistory(ctx context.Context, req *chatpb.GetHistoryRequest) (*chatpb.GetHistoryResponse, error) {
 	if err := req.Validate(); err != nil {
-		s.logger.Warn("chat request validation failed", zap.String("rpc", "GetHistory"), zap.Error(err))
+		s.logger.Warn("chat request validation failed", zap.String("rpc", "GetHistory"), zap.String("request_id", observability.RequestID(ctx)))
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -93,11 +95,35 @@ func (s *chatServer) GetHistory(ctx context.Context, req *chatpb.GetHistoryReque
 		case errors.Is(err, chaterrors.ErrInvalidToken):
 			return nil, status.Error(codes.Unauthenticated, chaterrors.ErrInvalidToken.Error())
 		case errors.Is(err, chaterrors.ErrAuthUnavailable):
+			s.logger.Error("auth dependency unavailable", zap.String("rpc", "GetHistory"), zap.String("request_id", observability.RequestID(ctx)), zap.Error(err))
 			return nil, status.Error(codes.Unavailable, chaterrors.ErrAuthUnavailable.Error())
 		default:
-			s.logger.Error("get history failed", zap.Error(err))
+			s.logger.Error("get history failed", zap.String("rpc", "GetHistory"), zap.String("request_id", observability.RequestID(ctx)), zap.Error(err))
 			return nil, status.Error(codes.Internal, "get history failed")
 		}
 	}
 	return converter.HistoryToProto(page.Messages, page.NextPageToken), nil
+}
+
+func sendFailureStage(err error) string {
+	switch {
+	case errors.Is(err, chaterrors.ErrGetConversation):
+		return "get_conversation"
+	case errors.Is(err, chaterrors.ErrSaveUserMessage):
+		return "save_question"
+	case errors.Is(err, chaterrors.ErrListMessages):
+		return "load_history"
+	case errors.Is(err, chaterrors.ErrGetUserContext):
+		return "get_user_context"
+	case errors.Is(err, chaterrors.ErrGetOnboardingPlans):
+		return "get_onboarding_plans"
+	case errors.Is(err, chaterrors.ErrGetAIAnswer):
+		return "get_ai_answer"
+	case errors.Is(err, chaterrors.ErrSaveAssistantMessage):
+		return "save_answer"
+	case errors.Is(err, chaterrors.ErrSaveProposal):
+		return "save_proposal"
+	default:
+		return "process_message"
+	}
 }

@@ -81,6 +81,7 @@ class Turn:
     results: dict[str, SearchResult | EmbeddingError | KnowledgeError] = field(default_factory=dict)
     search_error: EmbeddingError | KnowledgeError | None = None
     context_limited: bool = False
+    searched: bool = False
 
     def add_sources(self, result: SearchResult) -> None:
         # Keep every source actually sent to the model, independently of the response limit.
@@ -96,6 +97,8 @@ class Turn:
             final = FinalAnswer.model_validate_json(response.text)
         except ValidationError as error:
             raise ModelError("Модель вернула некорректный формат итогового ответа.", reason="invalid_answer") from error
+        if not self.searched and final.kind != "clarification":
+            raise ModelError("Модель завершила ответ без поиска по базе знаний.", reason="search_required")
         if not self.sources:
             if self.search_error is not None:
                 raise self.search_error
@@ -140,12 +143,8 @@ class Agent:
         if ambiguous:
             return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
         recent_history = await prepare_history(history, actor, self.knowledge)
-        query = message
-        if selected_plan is not None and selected_plan.current_step is not None:
-            step = selected_plan.current_step
-            query = f"{message} Текущий шаг: {step.title} ({step.id})"
-        retrieved = await self._search(query, actor, turn)
-        context = retrieved.model_dump(mode="json")
+        # The model interprets the original question and history before any embedding/search.
+        context = {}
         if onboarding_plans:
             context["onboarding_plans"] = [plan.model_dump(mode="json") for plan in onboarding_plans]
         if selected_plan is not None:
@@ -154,14 +153,13 @@ class Agent:
             {"role": "user", "content": "Справочный контекст:\n" + json.dumps(context, ensure_ascii=False)},
             {"role": "user", "content": message},
         ]
-        # History has its own byte limit and yields space to the current question and fresh retrieval.
+        # History has its own byte limit and yields space to the current question and plans.
         while recent_history and json_size([
             self.prompt, [history_message(recent_history), *messages], [FIND_INSTRUCTION_TOOL],
         ]) > MAX_CONTEXT_BYTES:
             recent_history.pop(0)
         if recent_history:
             messages.insert(0, history_message(recent_history))
-        turn.add_sources(retrieved)
         seen_call_ids: set[str] = set()
         remaining = MAX_TOOL_CALLS
         while True:
@@ -227,6 +225,7 @@ class Agent:
         return turn.response(repaired)
 
     async def _search(self, query: str, actor: Actor, turn: Turn) -> SearchResult:
+        turn.searched = True
         normalized = " ".join(normalize("NFC", query).split())
         key = normalized.casefold()
         if key not in turn.results:

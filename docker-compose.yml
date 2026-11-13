@@ -102,6 +102,7 @@ services:
       EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS:-}"
       EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
       KNOWLEDGE_PROCESSING_APPROVED: "${KNOWLEDGE_PROCESSING_APPROVED:-false}"
+      CHAT_TIMEOUT_SECONDS: "${CHAT_TIMEOUT_SECONDS:-25}"
     depends_on:
       db:
         condition: service_healthy
@@ -247,6 +248,51 @@ services:
     ports:
       - "127.0.0.1:8085:80"
 
+  loki:
+    image: grafana/loki:3.7.0
+    profiles: [observability]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./infra/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.13.0
+    profiles: [observability]
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy", "/etc/alloy/config.alloy"]
+    environment:
+      OBS_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
+    volumes:
+      - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ${OBS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy
+    depends_on: [loki]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.3.1
+    profiles: [observability]
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on: [loki, prometheus]
+
 volumes:
   postgres_data:
   kafka_data:
+  loki_data:
+  alloy_data:
+  prometheus_data:
+  grafana_data:

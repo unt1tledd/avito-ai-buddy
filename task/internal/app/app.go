@@ -10,10 +10,12 @@ import (
 	"net/url"
 	"time"
 
+	"avito-ai-buddy/pkg/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -57,7 +59,16 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 		return fmt.Errorf("listen for tracker gRPC: %w", err)
 	}
 	defer func() { _ = grpcListener.Close() }()
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
+		level := slog.LevelInfo
+		if code == codes.Internal || code == codes.Unavailable || code == codes.Unknown {
+			level = slog.LevelError
+		} else if code == codes.DeadlineExceeded {
+			level = slog.LevelWarn
+		}
+		logger.Log(ctx, level, "RPC completed", "rpc", method, "code", code.String(),
+			"duration_ms", elapsed.Milliseconds(), "request_id", observability.RequestID(ctx))
+	})))
 	taskv1.RegisterTaskServiceServer(grpcServer, taskController)
 	healthServer := health.RegisterGRPC(grpcServer)
 

@@ -112,7 +112,7 @@ func RunConsumer(
 			continue
 		}
 
-		logger.Info("kafka batch committed", zap.Int("batch_size", len(batch)))
+		logger.Debug("kafka batch committed", zap.Int("batch_size", len(batch)))
 	}
 }
 
@@ -154,7 +154,7 @@ func pollBatch(
 
 		switch e := ev.(type) {
 		case *ckafka.Message:
-			logger.Info("message fetched",
+			logger.Debug("message fetched",
 				zap.String("topic", topicName(e)),
 				zap.Int32("partition", e.TopicPartition.Partition),
 				zap.Int64("offset", int64(e.TopicPartition.Offset)),

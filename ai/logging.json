@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "json": {"()": "ai_service.core.diagnostics.JSONFormatter"}
+  },
+  "handlers": {
+    "stdout": {"class": "logging.StreamHandler", "formatter": "json", "stream": "ext://sys.stdout"}
+  },
+  "root": {"handlers": ["stdout"], "level": "WARNING"},
+  "loggers": {
+    "uvicorn": {"handlers": ["stdout"], "level": "INFO", "propagate": false}
+  }
+}
