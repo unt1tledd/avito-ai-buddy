@@ -15,10 +15,10 @@
   --avito-white: #FFFFFF;
 
   /* Светлая тема (по умолчанию) */
-  --bg-main: #FFFFFF;
-  --bg-surface: #FFFFFF;
-  --bg-subtle: #F9FAFB;
-  --bg-muted: #F3F4F6;
+  --bg-main: #ECEDEB;
+  --bg-surface: #F3F4F1;
+  --bg-subtle: #E7E9E5;
+  --bg-muted: #E5E7E3;
   --bg-active-card: #EAF4FF;
   --bg-hover: #E5E7EB;
   --bg-hover-strong: #D1D5DB;
@@ -536,14 +536,14 @@ button {
 }
 
 .roadmap-check-circle:not(.roadmap-check-circle--done) .roadmap-check-icon {
-  opacity: 0;
-  transform: scale(0.5);
+  opacity: 0.6;
+  transform: scale(0.92);
   color: var(--text-secondary);
 }
 
 .roadmap-check-circle:not(.roadmap-check-circle--done):hover .roadmap-check-icon {
-  opacity: 0.55;
-  transform: scale(0.92);
+  opacity: 0.9;
+  transform: scale(1);
 }
 
 @keyframes check-pop {
@@ -1052,3 +1052,37 @@ button:disabled { opacity:.55; cursor:wait; }
 .history-entry--active { background:var(--bg-active-card); }
 .delete-chat { flex:0 0 30px; height:30px; border:1px solid var(--border-color); border-radius:50%; background:var(--bg-surface); color:var(--text-primary); cursor:pointer; }
 .assistant-msg-card > button { margin-top:12px; padding:8px 14px; border:2px solid var(--border-color); border-radius:10px; background:var(--bg-muted); color:var(--text-primary); cursor:pointer; }
+
+/* Calm outlines and a composer that stays in the document flow. */
+:root { --border-color:#c9cdd3; }
+[data-theme='dark'] { --border-color:#494e58; }
+.app-header { flex-shrink:0; border-bottom-width:1px; }
+.chat-main { padding-top:0; }
+.chat-scroll-area { padding-top:22px; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.chat-composer { background:transparent; position:relative; margin-top:8px; }
+.suggestion-list { background:transparent; }
+.suggestion-pill,.user-msg-bubble,.assistant-msg-card,.chat-input-bar,.ai-name-badge { border-width:1px; border-color:var(--border-color); }
+.user-msg-bubble { font-weight:500; }
+.ai-name-badge { border-color:#62b57d; }
+.chat-input-bar { align-items:center; padding:14px 18px; min-height:58px; cursor:text; }
+.chat-input-bar textarea { display:block; width:100%; min-height:28px; max-height:144px; margin:0; padding:2px 0; line-height:24px; }
+.chat-input-bar:focus-within { box-shadow:0 0 0 2px var(--bg-hover); }
+.history-row { position:relative; display:block; margin:8px 0; }
+.history-row .history-entry { display:block; width:100%; margin:0; padding:14px 42px 14px 14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border-width:1px; transition:background .18s,border-color .18s; }
+.history-row:hover .history-entry { background:var(--bg-hover); }
+.history-row .delete-chat { position:absolute; right:9px; top:50%; margin-top:-14px; width:28px; height:28px; padding:0; display:grid; place-items:center; opacity:0; pointer-events:none; border:0; background:transparent; transform:scale(.85); transition:opacity .15s,transform .15s,background .15s; }
+.history-row:hover .delete-chat,.history-row:focus-within .delete-chat { opacity:1; pointer-events:auto; transform:scale(1); }
+.history-row .delete-chat:hover { background:var(--bg-hover-strong); }
+.history-row .delete-chat:active { transform:scale(.82); }
+.history-load-more { padding:10px; border:0; border-radius:10px; background:var(--bg-muted); color:var(--text-primary); cursor:pointer; }
+.drawer-header h2 { font-size:22px; font-weight:800; }
+.drawer-shell--open-profile { width:360px; min-width:360px; }
+.profile-panel { width:360px; min-width:360px; }
+.profile-avatar { margin:24px 0 16px; width:64px; height:64px; display:grid; place-items:center; border-radius:50%; background:var(--bg-active-card); font-size:26px; font-weight:700; }
+.profile-panel dt { margin-top:22px; font-size:12px; color:var(--text-secondary); }
+.profile-panel dd { margin:6px 0 0; overflow-wrap:anywhere; }
+.floating-nav-icons .profile-nav { margin-top:0; }
+@media(hover:none) { .history-row .delete-chat { opacity:1; pointer-events:auto; transform:none; } }
+@media(max-width:900px) { .drawer-shell--open-profile { width:min(85vw,370px); min-width:min(85vw,370px); } }
+@media(max-width:600px) { .chat-scroll-area { padding-top:12px; } .chat-input-bar { padding:12px 14px; } .suggestion-list { flex-wrap:wrap; overflow:visible; } }
+@media(prefers-reduced-motion:reduce) { .history-row .delete-chat { transition:none; } }

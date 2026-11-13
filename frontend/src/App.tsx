@@ -4,11 +4,12 @@ import { SetupPage } from './pages/SetupPage';
 import { currentUser, refreshSession, login, request, ApiError } from './lib/api';
 export default function App() {
   const [user, setUser] = useState('');
+  const [metadata,setMetadata] = useState<any>(null);
   const [profile,setProfile] = useState<'loading'|'missing'|'ready'|'error'>('loading');
   const [profileError,setProfileError] = useState('');
   const checkProfile = async (id:string) => {
     setProfile('loading');
-    try { await request(`/v1/user/${encodeURIComponent(id)}/metadata`);setProfile('ready'); }
+    try { setMetadata(await request(`/v1/user/${encodeURIComponent(id)}/metadata`));setProfile('ready'); }
     catch(e) { if(e instanceof ApiError && e.status===404) setProfile('missing');
       else {setProfile('error');setProfileError(e instanceof Error?e.message:'Не удалось загрузить профиль');} }
   };
@@ -63,9 +64,9 @@ export default function App() {
         </button>
       </header>
 
-    {checking ? <p role="status">Проверяем сессию…</p> : user ? (profile==='ready'?<ChatPage key={user} userId={user}/>:profile==='missing'?<SetupPage userId={user} onDone={()=>void checkProfile(user)}/>:profile==='error'?<div role="alert">{profileError}<button onClick={()=>void checkProfile(user)}>Повторить загрузку профиля</button></div>:<p role="status">Загружаем профиль…</p>) :
+    {checking ? <p role="status">Проверяем сессию…</p> : user ? (profile==='ready'?<ChatPage key={user} userId={user} profile={{name:[metadata?.intern?.first_name,metadata?.intern?.last_name].filter(Boolean).join(' '),email:localStorage.getItem(`buddy-email-${user}`)||'',team:metadata?.team?.name,track:metadata?.track}}/>:profile==='missing'?<SetupPage userId={user} onDone={()=>void checkProfile(user)}/>:profile==='error'?<div role="alert">{profileError}<button onClick={()=>void checkProfile(user)}>Повторить загрузку профиля</button></div>:<p role="status">Загружаем профиль…</p>) :
       <form className="login-card" onSubmit={async e => { e.preventDefault(); setBusy(true); setError('');
-        try { if(register) await request('/v1/auth/register',{method:'POST',body:JSON.stringify({email,password})},false);setUser(await login(email,password)); } catch(e) { setError(e instanceof Error ? e.message : 'Не удалось войти'); }
+        try { if(register) await request('/v1/auth/register',{method:'POST',body:JSON.stringify({email,password})},false);const id=await login(email,password);localStorage.setItem(`buddy-email-${id}`,email);setUser(id); } catch(e) { setError(e instanceof Error ? e.message : 'Не удалось войти'); }
         finally { setBusy(false); } }}>
         <h1>{register?'Регистрация':'Вход в AI-buddy'}</h1><p>Используй учётную запись, подготовленную командой.</p>
         <label>Почта<input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required/></label>

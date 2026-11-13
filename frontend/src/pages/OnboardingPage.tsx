@@ -63,16 +63,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
     >
       <div className="drawer-header">
         <div className="drawer-header-title">
-          <svg className="drawer-title-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.1" />
-            <path
-              d="M12 19.2C12 16.3 11.7 13.4 11.4 9.5M12 16.8C10.4 14.3 7.2 12.8 7.1 6.8M11.6 14.4C14.1 13.5 16.7 11.6 16.7 7.6"
-              stroke="currentColor"
-              strokeWidth="2.1"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
           <h2>Roadmap</h2>
         </div>
 
