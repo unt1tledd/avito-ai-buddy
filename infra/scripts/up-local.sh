@@ -77,4 +77,27 @@ run_docker compose up --quiet-pull -d
 run_docker compose ps -a
 
 printf '\nFrontend: http://127.0.0.1:8085/\n'
-printf 'AI readiness: http://127.0.0.1:8000/readyz\n'
+if ! run_docker compose exec -T ai /app/.venv/bin/python - <<'PY'
+import time
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
+
+url = "http://127.0.0.1:8080/readyz"
+
+for attempt in range(10):
+    try:
+        with urlopen(url, timeout=3) as response:
+            print(f"AI readiness: HTTP {response.status} {response.read().decode()}")
+        break
+    except HTTPError as error:
+        print(f"AI readiness: HTTP {error.code} {error.read().decode()}")
+        break
+    except (URLError, TimeoutError):
+        if attempt == 9:
+            print("AI readiness: no response from /readyz")
+        else:
+            time.sleep(1)
+PY
+then
+  printf 'AI readiness: could not run the check inside the container.\n' >&2
+fi
