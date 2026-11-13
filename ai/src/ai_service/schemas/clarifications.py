@@ -3,9 +3,15 @@
 
 DEFAULT_CLARIFICATION = "Что именно вы хотите уточнить?"
 ONBOARDING_TRACK_CLARIFICATION = "О каком треке адаптации идёт речь?"
+REPOSITORY_CLARIFICATION = "К какому репозиторию вам нужен доступ? Укажите его ссылку или название."
+RESOURCE_CLARIFICATION = "К какому ресурсу вам нужен доступ?"
+ACCESS_LEVEL_CLARIFICATION = "Какой уровень доступа вам нужен?"
 CLARIFICATION_QUESTIONS = (
     DEFAULT_CLARIFICATION,
     "Какой именно доступ вам нужен?",
+    REPOSITORY_CLARIFICATION,
+    RESOURCE_CLARIFICATION,
+    ACCESS_LEVEL_CLARIFICATION,
     "О каком шаге адаптации идёт речь?",
     ONBOARDING_TRACK_CLARIFICATION,
     "Какой шаг вы хотите подтвердить?",

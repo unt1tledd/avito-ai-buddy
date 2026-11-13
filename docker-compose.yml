@@ -1,3 +1,9 @@
+x-app-healthcheck: &app_healthcheck
+  interval: 10s
+  timeout: 4s
+  retries: 5
+  start_period: 20s
+
 services:
   db:
     image: pgvector/pgvector:0.8.7-pg16-bookworm
@@ -37,6 +43,9 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8084:8080"
+    healthcheck:
+      <<: *app_healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://127.0.0.1:8080/health"]
 
   auth:
     build: ./auth
@@ -48,6 +57,21 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8081:8080"
+    healthcheck:
+      <<: *app_healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://127.0.0.1:8080/health"]
+
+  auth-migrate:
+    build:
+      context: .
+      dockerfile: infra/postgres/Dockerfile.migrate
+    profiles: ["tools"]
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: "postgresql://auth_app:${AUTH_DB_PASSWORD}@db:5432/auth_db?sslmode=disable"
+      GOOSE_MIGRATION_DIR: /migrations
+    volumes:
+      - ./auth/migrations:/migrations:ro
 
   ai-migrate:
     image: golang:1.27.3
@@ -78,12 +102,19 @@ services:
       EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS:-}"
       EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
       KNOWLEDGE_PROCESSING_APPROVED: "${KNOWLEDGE_PROCESSING_APPROVED:-false}"
-      CHAT_TIMEOUT_SECONDS: "${CHAT_TIMEOUT_SECONDS:-25}"
+      CHAT_TIMEOUT_SECONDS: "${CHAT_TIMEOUT_SECONDS:-60}"
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "127.0.0.1:8000:8080"
+    healthcheck:
+      <<: *app_healthcheck
+      test:
+        - CMD
+        - /app/.venv/bin/python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/healthz', timeout=3).close()"
 
   kafka:
     image: apache/kafka:4.1.2
@@ -154,6 +185,9 @@ services:
         condition: service_completed_successfully
     ports:
       - "127.0.0.1:8082:8080"
+    healthcheck:
+      <<: *app_healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://127.0.0.1:8080/health"]
 
   onboarding:
     build:
@@ -176,6 +210,9 @@ services:
         condition: service_started
     ports:
       - "127.0.0.1:8083:8080"
+    healthcheck:
+      <<: *app_healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://127.0.0.1:8080/health"]
 
   task:
     build:
@@ -200,6 +237,9 @@ services:
         condition: service_completed_successfully
     ports:
       - "127.0.0.1:8086:8084"
+    healthcheck:
+      <<: *app_healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://127.0.0.1:8084/health"]
 
   frontend:
     build:

@@ -42,12 +42,12 @@ ACCESSIBLE_SOURCES_SQL = f"""
 """
 
 SEARCH_SQL = f"""
-    SELECT profile.present, nearest.id, nearest.title, nearest.url, nearest.text
+    SELECT profile.present, nearest.id, nearest.title, nearest.url, nearest.text, nearest.access_policies
     FROM (SELECT EXISTS (
         SELECT 1 FROM document_chunks WHERE embedding_profile = %(profile)s
     ) AS present) AS profile
     LEFT JOIN LATERAL (
-        SELECT c.source_id AS id, d.title, d.url, c.body AS text,
+        SELECT c.source_id AS id, d.title, d.url, c.body AS text, d.access_policies,
                c.embedding <=> %(vector)s::vector AS distance
         FROM document_chunks AS c
         JOIN documents AS d ON d.id = c.document_id
@@ -117,7 +117,7 @@ class KnowledgeRepository:
                 if not rows[0]["present"]:
                     raise missing_profile()
                 return SearchResult(hits=[
-                    SearchHit.model_validate({key: row[key] for key in ("id", "title", "url", "text")})
+                    SearchHit.model_validate({key: row[key] for key in ("id", "title", "url", "text", "access_policies")})
                     for row in rows if row["id"] is not None
                 ])
             except (psycopg.Error, PoolTimeout, TimeoutError, ValidationError) as error:
@@ -129,7 +129,7 @@ class KnowledgeRepository:
             try:
                 async with asyncio.timeout(SEARCH_DB_TIMEOUT_SECONDS), self.pool.connection() as db:
                     await db.execute("""
-                        SELECT vector_dims(c.embedding), c.source_id, c.body, d.title, d.url, a.principal_id
+                        SELECT vector_dims(c.embedding), c.source_id, c.body, d.title, d.url, d.access_policies, a.principal_id
                         FROM document_chunks AS c
                         JOIN documents AS d ON d.id = c.document_id
                         JOIN document_access AS a ON a.document_id = d.id
@@ -160,6 +160,7 @@ class KnowledgeRepository:
             (
                 document.title,
                 str(document.url) if document.url else None,
+                json.dumps([policy.model_dump(mode="json") for policy in document.access_policies]),
                 document.id,
                 document.text,
                 model,
@@ -187,7 +188,7 @@ class KnowledgeRepository:
             await db.cursor().executemany(
                 """
                 WITH new_document AS (
-                    INSERT INTO documents (title, url) VALUES (%s, %s)
+                    INSERT INTO documents (title, url, access_policies) VALUES (%s, %s, %s::jsonb)
                     RETURNING id
                 ), new_chunk AS (
                     INSERT INTO document_chunks (document_id, source_id, body, embedding_model, embedding_profile, embedding)

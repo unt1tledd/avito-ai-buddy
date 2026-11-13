@@ -62,8 +62,11 @@ def call(name, *, call_id=None, **arguments):
     }]
 
 
-def answer(text, *, kind="grounded_answer"):
-    final = json.dumps({"kind": kind, "answer": text}, ensure_ascii=False)
+def answer(text, *, kind="grounded_answer", proposal=None):
+    payload = {"kind": kind, "answer": text}
+    if proposal is not None:
+        payload["proposal"] = proposal
+    final = json.dumps(payload, ensure_ascii=False)
     return [{"type": "message", "content": [{"type": "output_text", "text": final}]}]
 
 
@@ -1938,17 +1941,20 @@ def test_long_input_history_is_windowed_and_never_cached_between_requests(settin
 
 
 def test_history_yields_to_question_and_sources_within_total_context_budget(settings, monkeypatch):
-    from ai_service.agents.agent import json_size
+    from importlib.resources import files
+    from ai_service.agents.agent import Agent, FIND_INSTRUCTION_TOOL, json_size
 
     history = [{"role": "user", "content": "Ж" * 4000} for _ in range(8)]
     # A deliberately small overall budget checks that optional history is evicted first.
-    monkeypatch.setattr("ai_service.agents.agent.MAX_CONTEXT_BYTES", 16 * 1024)
+    prompt = files("ai_service.agents").joinpath("prompts", "system.txt").read_text(encoding="utf-8")
+    budget = json_size([Agent(None, None, prompt).prompt, [FIND_INSTRUCTION_TOOL]]) + 4 * 1024
+    monkeypatch.setattr("ai_service.agents.agent.MAX_CONTEXT_BYTES", budget)
     model = searched_model(answer("Инструкция. [source:demo-dev-environment]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION, history=history)
     assert response.status_code == 200, response.text
     instructions, messages, tools = model.requests[0]
-    assert json_size([instructions, messages, tools]) <= 16 * 1024
+    assert json_size([instructions, messages, tools]) <= budget
     assert messages[-1]["content"] == QUESTION
     assert tool_output(model)["hits"] == response.json()["sources"]
 
@@ -2012,3 +2018,58 @@ def test_expanded_history_and_request_budgets_accept_large_conversation(settings
     instructions, messages, tools = model.requests[0]
     assert 16 * 1024 < json_size(messages[0]) <= MAX_HISTORY_BYTES
     assert json_size([instructions, messages, tools]) <= MAX_CONTEXT_BYTES
+
+
+@pytest.mark.parametrize("resource", ["https://git.example.test/team/repo", "git-guide", "https://git.example.test/invented/repo"])
+def test_access_proposal_matches_chat_contract_and_cited_policy(settings, monkeypatch, resource):
+    from ai_service.schemas.contracts import AccessPolicy
+    from ai_service.schemas.clarifications import REPOSITORY_CLARIFICATION
+
+    target = "https://git.example.test/team/repo"
+    hit = SearchHit(id="git-guide", title="Git", text="Запросите Developer.", access_policies=[
+        AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"]),
+    ])
+    mock_search_results(monkeypatch, {"доступ Git": SearchResult(hits=[hit])})
+    model = searched_model(answer("Подтвердите заявку в интерфейсе. [source:git-guide]", proposal={
+        "resource_id": resource, "resource_label": "Git", "access_level": "Developer",
+    }), query="доступ Git")
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, f"Как получить доступ к {target}?")
+    assert response.status_code == 200, response.text
+    if resource == target:
+        assert response.json()["proposal"] == {
+            "resource_id": target, "resource_label": "Репозиторий team/repo", "access_level": "Developer",
+        }
+        assert "access_policies" not in response.json()["sources"][0]
+        assert tool_output(model)["hits"][0]["access_policies"][0]["access_levels"] == ["Developer"]
+    else:
+        assert response.json() == {"answer": REPOSITORY_CLARIFICATION, "sources": []}
+
+
+@pytest.mark.parametrize("kind", ["clarification", "no_knowledge"])
+def test_non_grounded_answer_cannot_carry_access_proposal(settings, kind):
+    model = searched_model(answer(DEFAULT_CLARIFICATION, kind=kind, proposal={
+        "resource_id": "repo", "resource_label": "Git", "access_level": "read",
+    }))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, "Как получить доступ к repo?")
+    assert response.status_code == 502
+    assert "proposal" not in response.json()
+
+
+def test_uncited_policy_cannot_authorize_proposal(settings, monkeypatch):
+    from ai_service.schemas.contracts import AccessPolicy
+    target = "https://git.example.test/team/repo"
+    mock_search_results(monkeypatch, {"Git": SearchResult(hits=[
+        SearchHit(id="cited", title="Git", text="Общие сведения."),
+        SearchHit(id="uncited", title="Git policy", text="Developer.", access_policies=[
+            AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"]),
+        ]),
+    ])})
+    model = searched_model(answer("Предложение. [source:cited]", proposal={
+        "resource_id": target, "resource_label": "Git", "access_level": "Developer",
+    }), query="Git")
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, f"Нужен доступ к {target}")
+    assert response.status_code == 200
+    assert "proposal" not in response.json()

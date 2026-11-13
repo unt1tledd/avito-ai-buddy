@@ -11,13 +11,14 @@ from ..clients.embeddings import EmbeddingError
 from ..clients.llm import FunctionCall, LanguageModel, ModelError, ModelResponse
 from ..rag.history import history_message, prepare_history
 from ..rag.onboarding import resolve_step_reference
+from ..rag.proposals import confirmed_proposal
 from ..rag.retriever import Retriever
 from ..rag.tools import FIND_INSTRUCTION_DESCRIPTION, FIND_INSTRUCTION_NAME, FindInstructionArguments
 from ..repositories.knowledge import KnowledgeError
 from ..schemas.citations import SOURCE_REFERENCE
 from ..schemas.clarifications import CLARIFICATION_QUESTIONS, ONBOARDING_TRACK_CLARIFICATION, safe_clarification
 from ..schemas.contracts import (
-    Actor, ChatResponse, MAX_RESPONSE_SOURCES, Message, OnboardingPlan, SearchHit, SearchResult, valid_utf8,
+    AccessProposal, Actor, ChatResponse, MAX_RESPONSE_SOURCES, Message, OnboardingPlan, SearchHit, SearchResult, valid_utf8,
 )
 
 
@@ -47,6 +48,7 @@ CITATION_REPAIR_INSTRUCTION = (
     "переданные материалы и добавь [source:ID] для использованных источников. Верни JSON с kind и answer. "
     "Если сведений недостаточно, выбери no_knowledge; если нужен уточняющий вопрос — clarification. "
     "Для clarification выбери answer дословно из разрешённых вопросов в системной инструкции. "
+    "Сохрани proposal, только если его ресурс и уровень подтверждены переданными access_policies. "
     "Инструменты недоступны."
 )
 
@@ -58,6 +60,7 @@ class FinalAnswer(BaseModel):
     answer: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1), AfterValidator(valid_utf8),
     ]
+    proposal: AccessProposal | None = None
 
 
 def json_size(value: object) -> int:
@@ -82,6 +85,9 @@ class Turn:
     search_error: EmbeddingError | KnowledgeError | None = None
     context_limited: bool = False
     searched: bool = False
+    message: str = ""
+    history: Sequence[Message] = ()
+    selected_resource_id: str | None = None
 
     def add_sources(self, result: SearchResult) -> None:
         # Keep every source actually sent to the model, independently of the response limit.
@@ -97,6 +103,8 @@ class Turn:
             final = FinalAnswer.model_validate_json(response.text)
         except ValidationError as error:
             raise ModelError("Модель вернула некорректный формат итогового ответа.", reason="invalid_answer") from error
+        if final.proposal is not None and final.kind != "grounded_answer":
+            raise ModelError("Предложение заявки допустимо только с подтверждённым ответом.", reason="invalid_proposal")
         if not self.searched and final.kind != "clarification":
             raise ModelError("Модель завершила ответ без поиска по базе знаний.", reason="search_required")
         if not self.sources:
@@ -117,11 +125,22 @@ class Turn:
         if not references:
             raise ModelError("Ответ модели не содержит подтверждающих источников.", reason="missing_citation")
         sources = [self.sources[ref] for ref in dict.fromkeys(references)]
+        proposal = None
+        if final.proposal is not None:
+            verified = confirmed_proposal(
+                final.proposal, sources, message=self.message, history=self.history,
+                selected_resource_id=self.selected_resource_id, source_ids=set(self.sources),
+            )
+            if isinstance(verified, str):
+                return ChatResponse(answer=verified, sources=[])
+            proposal = verified
+        # Policies are internal retrieval metadata; Chat receives its established source fields.
+        sources = [source.model_copy(update={"access_policies": []}) for source in sources]
         if len(sources) > MAX_RESPONSE_SOURCES or json_size([
             source.model_dump(mode="json") for source in sources
         ]) > MAX_SOURCE_BYTES:
             raise ModelError("Модель превысила лимит источников ответа.", reason="source_limit")
-        return ChatResponse(answer=answer, sources=sources)
+        return ChatResponse(answer=answer, sources=sources, proposal=proposal)
 
 
 class Agent:
@@ -138,11 +157,14 @@ class Agent:
         onboarding_plans: Sequence[OnboardingPlan] = (),
         history: Sequence[Message] = (),
     ) -> ChatResponse:
-        turn = Turn()
+        turn = Turn(message=message)
         ambiguous, selected_plan = resolve_step_reference(message, onboarding_plans, history)
         if ambiguous:
             return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
         recent_history = await prepare_history(history, actor, self.knowledge)
+        turn.history = recent_history
+        if selected_plan is not None and selected_plan.current_step is not None:
+            turn.selected_resource_id = selected_plan.current_step.resource_id
         # The model interprets the original question and history before any embedding/search.
         context = {}
         if onboarding_plans:

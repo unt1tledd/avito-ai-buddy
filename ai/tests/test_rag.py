@@ -97,6 +97,28 @@ def migrate(dsn):
     with psycopg.connect(dsn) as db:
         db.execute(migration_sql(1))
         db.execute(migration_sql(2))
+        db.execute(migration_sql(3))
+
+
+def test_access_policies_round_trip_under_document_acl(pg_schema):
+    from ai_service.schemas.contracts import AccessPolicy
+
+    migrate(pg_schema)
+    policy = AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"])
+    document = Document(id="git-guide", title="Git", text="Запросите Developer.", roles={"intern"},
+                        teams={"51"}, access_policies=[policy])
+
+    async def run():
+        async with pool_for(pg_schema) as pool:
+            repository = KnowledgeRepository(pg_schema, pool)
+            await repository.replace([document], [VECTOR], "test-model", PROFILE)
+            visible = await repository.search(VECTOR, PROFILE, ACTOR, 0.3)
+            assert visible.hits[0].access_policies == [policy]
+            hidden = await repository.search(VECTOR, PROFILE, Actor(user_id="42", role="mentor", team="51"), 0.3)
+            assert hidden.hits == []
+            await repository.replace([document.model_copy(update={"access_policies": []})], [VECTOR], "test-model", PROFILE)
+            assert (await repository.search(VECTOR, PROFILE, ACTOR, 0.3)).hits[0].access_policies == []
+    asyncio.run(run())
 
 
 def pool_for(dsn):

@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, field_validator, model_serializer, model_validator
 
 
 MAX_CHAT_MESSAGE_LENGTH = 4000
@@ -29,6 +29,44 @@ MessageText = Annotated[
 
 class Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+def valid_proposal_text(value: str) -> str:
+    valid_utf8(value)
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError("Control characters are not allowed.")
+    return value
+
+
+ProposalText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1024), AfterValidator(valid_proposal_text),
+]
+AccessLevel = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64), AfterValidator(valid_proposal_text),
+]
+
+
+class AccessProposal(Payload):
+    """AI-to-Chat draft; Chat owns its ID, confirmation and dispatch state."""
+
+    resource_id: ProposalText
+    resource_label: ProposalText
+    access_level: AccessLevel
+
+
+class AccessPolicy(Payload):
+    """Publisher-supplied request policy, not a permission inferred by the model."""
+
+    resource_id: ProposalText | None = None
+    resource_label: ProposalText
+    repository_host: Annotated[str, StringConstraints(pattern=r"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")] | None = None
+    access_levels: list[AccessLevel] = Field(min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def one_target_kind(self):
+        if (self.resource_id is None) == (self.repository_host is None):
+            raise ValueError("Specify a fixed resource_id or a repository_host, not both.")
+        return self
 
 
 class ActorRef(Payload):
@@ -97,11 +135,26 @@ class Source(Payload):
     url: HttpUrl | None = None
 
 
-class SearchHit(Source):
+class AccessMetadata(Payload):
+    access_policies: list[AccessPolicy] = Field(default_factory=list, max_length=8)
+
+    @model_serializer(mode="wrap")
+    def omit_empty_access_policies(self, handler):
+        data = handler(self)
+        if not self.access_policies:
+            data.pop("access_policies", None)
+        return data
+
+
+class CitedSource(Source):
     text: str = Field(min_length=1, max_length=MAX_SOURCE_TEXT)
 
 
-class Document(Source):
+class SearchHit(CitedSource, AccessMetadata):
+    """Search result with publisher metadata that is not part of Chat's source contract."""
+
+
+class Document(Source, AccessMetadata):
     text: str = Field(min_length=1, max_length=MAX_DOCUMENT_TEXT)
     roles: set[Identifier] = Field(min_length=1, max_length=16)
     teams: set[Identifier] = Field(default_factory=set, max_length=32)
@@ -125,7 +178,15 @@ class SearchResult(Payload):
 
 class ChatResponse(Payload):
     answer: str
-    sources: list[SearchHit] = Field(
+    sources: list[CitedSource] = Field(
         max_length=MAX_RESPONSE_SOURCES,
         description="Only sources cited in the answer, in order of first citation, without duplicates.",
     )
+    proposal: AccessProposal | None = None
+
+    @model_serializer(mode="wrap")
+    def omit_absent_proposal(self, handler):
+        data = handler(self)
+        if self.proposal is None:
+            data.pop("proposal", None)
+        return data
