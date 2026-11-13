@@ -29,6 +29,7 @@ from ai_service.clients.embeddings import Embeddings
 from ai_service.clients.llm import ResponsesModel
 from ai_service.core.config import Settings, resolve_embedding_profile
 from ai_service.core.diagnostics import UpstreamError
+from ai_service.core.text_preparation import TEXT_PREPARATION_VERSION
 from ai_service.rag.chunking import chunk_documents
 from ai_service.rag.import_documents import import_documents
 from ai_service.rag.retriever import Retriever
@@ -66,7 +67,7 @@ async def evaluate(args):
     questions = ROOT / 'knowledge/eval_cases.json'
     documents = TypeAdapter(list[Document]).validate_json(source.read_bytes())
     cases = json.loads(questions.read_text())['cases']
-    report = {'corpus_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+    report = {'text_preparation_version': TEXT_PREPARATION_VERSION, 'corpus_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
               'questions_sha256': hashlib.sha256(questions.read_bytes()).hexdigest(),
               'documents': len(documents), 'questions': len(cases),
               'llm_model': settings.llm_model, 'embedding_model': settings.embedding_model,
@@ -81,9 +82,9 @@ async def evaluate(args):
         previous = json.loads(args.output.read_text())
         if previous['corpus_sha256'] != report['corpus_sha256'] or previous['questions_sha256'] != report['questions_sha256']:
             raise ValueError('Existing report uses a different corpus/questions; choose a new output path.')
-        for field in ('llm_model', 'embedding_model', 'llm_endpoint', 'embedding_endpoint', 'embedding_provider'):
+        for field in ('text_preparation_version', 'llm_model', 'embedding_model', 'llm_endpoint', 'embedding_endpoint', 'embedding_provider'):
             if previous.get(field) != report[field]:
-                raise ValueError('Existing report uses different providers/models; choose a new output path.')
+                raise ValueError('Existing report uses different providers/models/text preparation; choose a new output path.')
         report['modes'] = previous['modes']
     args.output.parent.mkdir(parents=True, exist_ok=True)
 

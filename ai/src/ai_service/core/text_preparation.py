@@ -1,6 +1,6 @@
 """Bump these versions when chunking, indexing fields or tokenization changes."""
 
-TEXT_PREPARATION_VERSION = "hybrid-text-v1"
+TEXT_PREPARATION_VERSION = "hybrid-text-v2"
 CONTEXT_PROMPT_VERSION = "chunk-context-v1"
 MAX_GENERATED_CONTEXT = 600
 CONTEXT_PROMPT = """Ты подготавливаешь поисковый индекс документов.

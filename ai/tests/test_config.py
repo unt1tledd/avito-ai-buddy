@@ -113,3 +113,13 @@ def test_embedding_profiles_version_text_preparation(overrides, expected_index_i
     changed_prompt = resolve_embedding_profile(settings.model_copy(update={"context_prompt_version": "next"}))
     assert len({plain.index_id, changed_prompt.index_id, profile.index_id}) == 3
     assert "test-key" not in repr(profile)
+
+
+def test_sentence_overlap_fix_invalidates_previous_text_profile(monkeypatch):
+    from ai_service.core import config
+
+    settings = Settings(embedding_api_key='test-key', contextualization_enabled=False)
+    corrected = resolve_embedding_profile(settings).index_id
+    monkeypatch.setattr(config, 'TEXT_PREPARATION_VERSION', 'hybrid-text-v1')
+    previous = resolve_embedding_profile(settings).index_id
+    assert corrected != previous

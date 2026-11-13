@@ -238,3 +238,23 @@ def test_rrf_limits_each_branch_before_fusion(pg_schema):
         assert 'lex-10' not in votes and 'vec-10' not in votes
         assert votes['lex-00'] == pytest.approx(1 / 61)
         assert votes['vec-09'] == pytest.approx(1 / 70)
+
+
+def test_old_overlap_preparation_cannot_mix_with_corrected_index(pg_schema):
+    migrate(pg_schema)
+
+    async def run():
+        async with pool_for(pg_schema) as pool:
+            repo = KnowledgeRepository(pg_schema, pool)
+            await repo.replace([document('old-overlap', 'VPN инструкция.'),
+                                document('corrected-overlap', 'VPN проверка.')],
+                               [VECTOR, VECTOR], 'test', PROFILE)
+            with psycopg.connect(pg_schema) as db:
+                db.execute("UPDATE document_chunks SET text_preparation_version = 'hybrid-text-v1' "
+                           "WHERE source_id = 'old-overlap'")
+            for operation in (repo.check_ready(PROFILE), repo.search(VECTOR, PROFILE, ACTOR, .3, query='VPN')):
+                with pytest.raises(KnowledgeError) as error:
+                    await operation
+                assert error.value.reason == 'reindex_required'
+            assert await repo.accessible_source_ids({'old-overlap'}, PROFILE, ACTOR) == set()
+    asyncio.run(run())

@@ -12,6 +12,7 @@ from psycopg.conninfo import make_conninfo
 
 from ai_service.repositories.knowledge import SEARCH_SQL, KnowledgeRepository
 from ai_service.schemas.contracts import Actor
+from ai_service.core.text_preparation import TEXT_PREPARATION_VERSION
 
 from test_rag import PROFILE, VECTOR, doc, migration_sql, pool_for
 
@@ -45,7 +46,7 @@ async def benchmark() -> None:
                         params = {
                             "profile": PROFILE, "role": actor.role, "team": team, "vector": json.dumps(VECTOR),
                             "limit": 3, "max_distance": 0.7,
-                            "preparation": "hybrid-text-v1", "query": "doc", "candidates": 10,
+                            "preparation": TEXT_PREPARATION_VERSION, "query": "doc", "candidates": 10,
                             "rrf_k": 60., "bm25_k1": 1.2, "bm25_b": .75,
                             "bm25_weight": 1., "vector_weight": 1.,
                         }
