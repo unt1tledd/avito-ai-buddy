@@ -50,6 +50,15 @@
       "репозиторий",
       "Permission denied",
       "доступ Developer"
+    ],
+    "access_policies": [
+      {
+        "repository_host": "git.avito.example",
+        "resource_label": "Репозиторий Git",
+        "access_levels": [
+          "Developer"
+        ]
+      }
     ]
   },
   {
