@@ -11,15 +11,6 @@ interface OnboardingPageProps {
   onSelectStepQuestion: (question: string) => void;
 }
 
-type PeriodType = '1 неделя' | '2 неделя' | '1 месяц' | '3+ месяца';
-
-const PERIODS: readonly PeriodType[] = [
-  '1 неделя',
-  '2 неделя',
-  '1 месяц',
-  '3+ месяца',
-];
-
 export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   steps,
   tasks,
@@ -29,8 +20,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   onToggleStep,
   onSelectStepQuestion,
 }) => {
-  const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('1 неделя');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('1 неделя');
   const [viewMode, setViewMode] = useState<'graph' | 'cards'>('graph');
+
+  const periods = [...new Set(steps.map(step => step.period))];
+  const activePeriod = periods.includes(selectedPeriod) ? selectedPeriod : periods[0];
 
   const getStepTask = useCallback(
     (resourceId?: string) =>
@@ -55,8 +49,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   }, [steps, isStepCompleted]);
 
   const filteredSteps = useMemo(
-    () => steps.filter((s) => s.period === selectedPeriod),
-    [steps, selectedPeriod]
+    () => steps.filter((s) => s.period === activePeriod),
+    [steps, activePeriod]
   );
 
   return (
@@ -111,7 +105,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           }}
         >
           <span>
-            1 неделя • Выполнено {completedCount} из {steps.length} шагов
+            Выполнено {completedCount} из {steps.length} шагов
           </span>
           <span>{percent}%</span>
         </div>
@@ -165,8 +159,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
 
       {viewMode === 'cards' && (
         <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
-          {PERIODS.map((period) => {
-            const isSelected = selectedPeriod === period;
+          {periods.map((period) => {
+            const isSelected = activePeriod === period;
             return (
               <button
                 key={period}
