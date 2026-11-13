@@ -12,6 +12,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -22,6 +23,9 @@ type tokenValidator interface {
 
 func authorizeRequests(auth tokenValidator, serviceToken string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if info.FullMethod == healthpb.Health_Check_FullMethodName {
+			return handler(ctx, req)
+		}
 		headers := metadata.ValueFromIncomingContext(ctx, "authorization")
 		if len(headers) != 1 {
 			return nil, status.Error(codes.Unauthenticated, "Bearer token required")

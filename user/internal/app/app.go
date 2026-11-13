@@ -12,17 +12,20 @@ import (
 	"time"
 
 	userv1 "avito-ai-buddy/pkg/generated/user/v1"
+	"avito-ai-buddy/pkg/health"
 	"avito-ai-buddy/user/internal/config"
 	"avito-ai-buddy/user/internal/controller"
 	userrepo "avito-ai-buddy/user/internal/repository/user"
 	userusecase "avito-ai-buddy/user/internal/usecase/user"
 	"avito-ai-buddy/user/migrations"
 
+	"avito-ai-buddy/pkg/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -63,7 +66,7 @@ func Run(logger *zap.Logger, cfg *config.Config) error {
 	group, ctx := errgroup.WithContext(ctx)
 	grpcReady := make(chan string, 1)
 	group.Go(func() error {
-		return runRest(ctx, logger, cfg, grpcReady)
+		return runRest(ctx, logger, cfg, grpcReady, db.Ping)
 	})
 	group.Go(func() error {
 		return runGrpc(ctx, logger, cfg, ctrl, grpcReady)
@@ -71,7 +74,7 @@ func Run(logger *zap.Logger, cfg *config.Config) error {
 	return group.Wait()
 }
 
-func runRest(ctx context.Context, logger *zap.Logger, cfg *config.Config, grpcReady <-chan string) error {
+func runRest(ctx context.Context, logger *zap.Logger, cfg *config.Config, grpcReady <-chan string, pingDB func(context.Context) error) error {
 	var endpoint string
 	select {
 	case endpoint = <-grpcReady:
@@ -79,9 +82,13 @@ func runRest(ctx context.Context, logger *zap.Logger, cfg *config.Config, grpcRe
 		return nil
 	}
 
-	gatewayCtx, closeGateway := context.WithCancel(context.WithoutCancel(ctx))
-	defer closeGateway()
-	mux, err := newGateway(gatewayCtx, endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("create user gateway client: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	mux, err := newGateway(ctx, conn, pingDB)
 	if err != nil {
 		return fmt.Errorf("register user gateway: %w", err)
 	}
@@ -121,9 +128,21 @@ func runGrpc(ctx context.Context, logger *zap.Logger, cfg *config.Config, ctrl *
 	}
 	defer func() { _ = listener.Close() }()
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.UnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
+		log := logger.Info
+		switch code {
+		case codes.Internal, codes.Unavailable, codes.Unknown:
+			log = logger.Error
+		case codes.DeadlineExceeded:
+			log = logger.Warn
+		}
+		log("RPC completed", zap.String("rpc", method), zap.String("code", code.String()),
+			zap.Int64("duration_ms", elapsed.Milliseconds()), zap.String("request_id", observability.RequestID(ctx)))
+	})))
 	ctrl.Register(server)
+	healthServer := health.RegisterGRPC(server)
 	stopShutdown := context.AfterFunc(ctx, func() {
+		healthServer.Shutdown()
 		timer := time.AfterFunc(config.ShutdownTimeout, server.Stop)
 		defer timer.Stop()
 		server.GracefulStop()
@@ -138,7 +157,7 @@ func runGrpc(ctx context.Context, logger *zap.Logger, cfg *config.Config, ctrl *
 	return nil
 }
 
-func newGateway(ctx context.Context, endpoint string, opts ...grpc.DialOption) (*runtime.ServeMux, error) {
+func newGateway(ctx context.Context, conn *grpc.ClientConn, pingDB func(context.Context) error) (*runtime.ServeMux, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{UseProtoNames: true, EmitDefaultValues: true},
@@ -150,7 +169,10 @@ func newGateway(ctx context.Context, endpoint string, opts ...grpc.DialOption) (
 			return nil
 		}),
 	)
-	if err := userv1.RegisterUserServiceHandlerFromEndpoint(ctx, mux, endpoint, opts); err != nil {
+	if err := controller.RegisterHealth(ctx, mux, conn, pingDB); err != nil {
+		return nil, fmt.Errorf("register health endpoint: %w", err)
+	}
+	if err := userv1.RegisterUserServiceHandler(ctx, mux, conn); err != nil {
 		return nil, err
 	}
 	return mux, nil

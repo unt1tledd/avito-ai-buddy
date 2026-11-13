@@ -12,7 +12,8 @@ WORKDIR /app
 COPY --from=build /app/.venv ./.venv
 COPY migrations ./migrations
 COPY knowledge ./knowledge
+COPY logging.json ./logging.json
 USER 65532:65532
 ENV UVICORN_PORT=8080
 EXPOSE 8080
-CMD ["/app/.venv/bin/uvicorn", "ai_service.main:create_app", "--factory", "--host", "0.0.0.0", "--no-access-log"]
+CMD ["/app/.venv/bin/uvicorn", "ai_service.main:create_app", "--factory", "--host", "0.0.0.0", "--no-access-log", "--log-config", "/app/logging.json"]

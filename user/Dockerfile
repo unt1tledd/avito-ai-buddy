@@ -8,6 +8,7 @@ COPY user/internal ./user/internal
 COPY user/migrations ./user/migrations
 COPY pkg/go.mod pkg/go.sum ./pkg/
 COPY pkg/generated/user/v1 ./pkg/generated/user/v1
+COPY pkg/health ./pkg/health
 
 WORKDIR /app/user
 RUN go build -mod=mod -o /usr/local/bin/user ./cmd/app

@@ -9,6 +9,7 @@ import (
 
 	"avito-ai-buddy/chat/internal/entity"
 	planv1 "avito-ai-buddy/pkg/generated/plan/v1"
+	"avito-ai-buddy/pkg/observability"
 )
 
 type planClient interface {
@@ -34,6 +35,9 @@ func (c *Client) GetOnboardingPlans(ctx context.Context, userID int64, token str
 		md = metadata.MD{}
 	}
 	md.Set("authorization", "Bearer "+token)
+	if id := observability.RequestID(ctx); id != "" {
+		md.Set("x-request-id", id)
+	}
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
 	planContext, err := c.plans.GetPlanContext(ctx, &planv1.GetPlanContextRequest{UserId: userID})

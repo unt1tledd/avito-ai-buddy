@@ -12,6 +12,7 @@ import (
 	chaterrors "avito-ai-buddy/chat/internal/errors"
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 
+	"avito-ai-buddy/pkg/observability"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,7 +36,7 @@ func NewServer(actions actionService, logger *zap.Logger) *actionServer {
 // intern: the request is queued into the outbox for the task service.
 func (s *actionServer) ConfirmProposal(ctx context.Context, req *chatpb.ConfirmProposalRequest) (*chatpb.ConfirmProposalResponse, error) {
 	if err := req.Validate(); err != nil {
-		s.logger.Warn("chat request validation failed", zap.String("rpc", "ConfirmProposal"), zap.Error(err))
+		s.logger.Warn("chat request validation failed", zap.String("rpc", "ConfirmProposal"), zap.String("request_id", observability.RequestID(ctx)))
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -58,9 +59,10 @@ func (s *actionServer) ConfirmProposal(ctx context.Context, req *chatpb.ConfirmP
 		case errors.Is(err, chaterrors.ErrInvalidToken):
 			return nil, status.Error(codes.Unauthenticated, chaterrors.ErrInvalidToken.Error())
 		case errors.Is(err, chaterrors.ErrAuthUnavailable):
+			s.logger.Error("auth dependency unavailable", zap.String("rpc", "ConfirmProposal"), zap.String("request_id", observability.RequestID(ctx)), zap.Error(err))
 			return nil, status.Error(codes.Unavailable, chaterrors.ErrAuthUnavailable.Error())
 		default:
-			s.logger.Error("confirm proposal failed", zap.Error(err))
+			s.logger.Error("confirm proposal failed", zap.String("rpc", "ConfirmProposal"), zap.String("request_id", observability.RequestID(ctx)), zap.Error(err))
 			return nil, status.Error(codes.Internal, "confirm proposal failed")
 		}
 	}

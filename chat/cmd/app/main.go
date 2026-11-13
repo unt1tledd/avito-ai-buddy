@@ -10,6 +10,7 @@ import (
 	"avito-ai-buddy/chat/internal/config"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // main boots the chat service and exits with a non-zero code on failure.
@@ -22,7 +23,13 @@ func main() {
 // run keeps the logger alive until the deferred Sync executes, so error logs
 // are not lost when the service exits with an error.
 func run() error {
-	logger, err := zap.NewProduction()
+	logConfig := zap.NewProductionConfig()
+	logConfig.EncoderConfig.TimeKey = "time"
+	logConfig.EncoderConfig.MessageKey = "msg"
+	logConfig.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+	logConfig.DisableStacktrace = true
+	logConfig.InitialFields = map[string]any{"service": "chat"}
+	logger, err := logConfig.Build()
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -26,6 +27,33 @@ func NewPublisher(brokers []string, topic string) *Publisher {
 
 func (p *Publisher) Close() error {
 	return p.writer.Close()
+}
+
+func (p *Publisher) CheckTopics(topics ...string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		// Each probe needs fresh metadata, even if the publisher cached a healthy cluster.
+		transport := &kafkago.Transport{}
+		defer transport.CloseIdleConnections()
+		client := &kafkago.Client{Addr: p.writer.Addr, Transport: transport}
+		metadata, err := client.Metadata(ctx, &kafkago.MetadataRequest{})
+		if err != nil {
+			return err
+		}
+		available := make(map[string]bool, len(metadata.Topics))
+		for _, topic := range metadata.Topics {
+			ready := topic.Error == nil && len(topic.Partitions) > 0
+			for _, partition := range topic.Partitions {
+				ready = ready && partition.Error == nil && partition.Leader.Host != ""
+			}
+			available[topic.Name] = ready
+		}
+		for _, topic := range topics {
+			if !available[topic] {
+				return fmt.Errorf("Kafka topic %q is unavailable", topic)
+			}
+		}
+		return nil
+	}
 }
 
 func (p *Publisher) PublishTaskStatus(ctx context.Context, taskID int64, payload []byte) error {

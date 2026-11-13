@@ -26,6 +26,7 @@ def create_router(service_token: str) -> APIRouter:
 
     def authenticate(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> None:
         if not service_token:
+            logger.error("AI service token is missing", extra={"reason": "service_token_missing"})
             raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail="Не настроен доступ к AI-сервису.")
         if credentials is None or not secrets.compare_digest(
             credentials.credentials.encode(), service_token.encode()
@@ -115,6 +116,7 @@ def create_router(service_token: str) -> APIRouter:
                 raise HTTPException(status_code=499, detail="Клиент закрыл соединение.")
             return work.result()
         except ChatUnavailable as error:
+            logger.error("AI chat unavailable", extra={"reason": service.unavailable_reason})
             raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(error)) from error
         except InvalidChat as error:
             raise RequestValidationError([
