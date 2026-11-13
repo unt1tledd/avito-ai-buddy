@@ -53,11 +53,21 @@ func (s *Service) SaveTaskStatus(ctx context.Context, event port.TaskEvent) (*en
 		return nil, fmt.Errorf("invalid user id %q", event.UserID)
 	}
 
-	conversation, err := s.conversations.GetOrCreate(ctx, userID)
+	var conversation *entity.Conversation
+	if resolver, ok := s.conversations.(interface {
+		GetForTask(context.Context, int64, string) (*entity.Conversation, error)
+	}); ok {
+		conversation, err = resolver.GetForTask(ctx, userID, event.TaskID)
+	} else {
+		conversation, err = s.conversations.GetOrCreate(ctx, userID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get conversation: %w", err)
 	}
 
+	if conversation == nil {
+		return nil, nil
+	}
 	message := entity.Message{
 		ConversationID: conversation.ID,
 		Role:           entity.MessageRoleAssistant,

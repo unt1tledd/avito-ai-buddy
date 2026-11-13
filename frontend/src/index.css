@@ -1035,19 +1035,20 @@ button {
   }
 }
 
-.login-card { width:min(420px,90vw); margin:60px auto; padding:28px; background:var(--bg-surface); border:2px solid var(--border-color); border-radius:20px; display:grid; gap:18px; }
+.login-card { width:min(420px,90vw); margin:36px auto; padding:28px; background:var(--bg-surface); border:2px solid var(--border-color); border-radius:20px; display:grid; gap:16px; overflow:auto; }
 .login-card label { display:grid; gap:8px; }
-.login-card input { padding:12px; border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary); background:var(--bg-surface); }
-.connected-chat { flex:1; min-height:0; display:flex; flex-direction:column; padding:16px; gap:12px; }
-.connected-toolbar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-.connected-content { display:flex; flex:1; min-height:0; gap:16px; }
-.connected-main { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
-.connected-messages { flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:16px; }
-.connected-messages article { max-width:760px; width:fit-content; padding:18px; flex-shrink:0; }
-.connected-messages .user-msg-bubble { align-self:flex-end; }
-.connected-messages p { margin:10px 0; }
-.proposal-card { border:1px solid var(--border-color); border-radius:12px; padding:14px; margin-top:14px; }
-.connected-chat button:not(.suggestion-pill):not(.roadmap-check-circle):not(.ui-icon-circle) { padding:9px 14px; border-radius:8px; cursor:pointer; }
+.login-card input,.login-card select { padding:12px; border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary); background:var(--bg-surface); }
+.login-card button,.proposal-card button { padding:10px; border:2px solid var(--border-color); border-radius:10px; background:var(--bg-muted); color:var(--text-primary); cursor:pointer; }
+.chat-feed-column article { flex-shrink:0; }
+.chat-feed-column .user-msg-bubble { align-self:flex-end; }
+.chat-feed-column .assistant-msg-card { align-self:flex-start; }
+.chat-feed-column article p { margin:12px 0 0; }
+.proposal-card { border:2px solid var(--border-color); padding:16px; margin-top:16px; border-radius:12px; }
+.history-entry { text-align:left; border:2px solid var(--border-color); background:var(--bg-surface); color:var(--text-primary); padding:12px; margin:8px 0; border-radius:12px; cursor:pointer; }
 button:disabled { opacity:.55; cursor:wait; }
-[role=alert] { color:var(--text-primary); background:#ff405322; padding:12px; border-radius:8px; }
-@media(max-width:700px) { .connected-content { flex-direction:column; } .connected-content .drawer-panel { width:100% !important; min-width:0 !important; max-height:50vh; } }
+[role=alert] { background:#ff405322; padding:12px; border-radius:8px; }
+.history-row { display:flex; align-items:center; gap:8px; }
+.history-row .history-entry { flex:1; min-width:0; overflow-wrap:anywhere; }
+.history-entry--active { background:var(--bg-active-card); }
+.delete-chat { flex:0 0 30px; height:30px; border:1px solid var(--border-color); border-radius:50%; background:var(--bg-surface); color:var(--text-primary); cursor:pointer; }
+.assistant-msg-card > button { margin-top:12px; padding:8px 14px; border:2px solid var(--border-color); border-radius:10px; background:var(--bg-muted); color:var(--text-primary); cursor:pointer; }

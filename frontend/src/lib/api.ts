@@ -110,13 +110,13 @@ export function messageFromApi(raw: any): ChatMessage {
       access_level:proposal.accessLevel, status:access?.status || 'draft',
       tracker_issue_key:access?.externalRequestId || access?.taskId} : undefined};
 }
-export async function fetchHistory(pageToken = ''): Promise<{messages:ChatMessage[]; next:string}> {
+export async function fetchHistory(pageToken = '', conversationId?:string): Promise<{messages:ChatMessage[]; next:string}> {
   const query = new URLSearchParams({pageSize:'50', pageToken});
-  const data = await request(`/v1/chat/messages?${query}`);
+  const data = await request(`/v1/chat/messages?${query}`, {headers:conversationId ? {'X-Conversation-Id':conversationId} : {}});
   return {messages:(data.messages || []).map(messageFromApi), next:data.nextPageToken || ''};
 }
-export async function sendChatMessage(text:string, key:string): Promise<ChatMessage> {
-  const data = await request('/v1/chat/messages', {method:'POST', body:JSON.stringify({text,idempotencyKey:key})});
+export async function sendChatMessage(text:string, key:string, conversationId?:string): Promise<ChatMessage> {
+  const data = await request('/v1/chat/messages', {method:'POST', headers:conversationId ? {'X-Conversation-Id':conversationId} : {}, body:JSON.stringify({text,idempotencyKey:key})});
   if (!data.assistantMessage) throw new Error('Сервер не вернул ответ помощника');
   return messageFromApi(data.assistantMessage);
 }
@@ -147,3 +147,8 @@ export async function toggleStep(userId:string, step:OnboardingStep): Promise<vo
 export const statusLabel = (status:string) => ({draft:'Готова к отправке',pending_dispatch:'Отправляется',
   pending:'Ожидает решения',pending_approval:'Ожидает решения',approved:'Доступ одобрен',
   rejected:'Заявка отклонена',failed:'Не удалось отправить'}[status] || status);
+
+export interface Conversation {id:string;title:string;createdAt:string}
+export async function listConversations():Promise<Conversation[]> { return (await request('/v1/chat/conversations')).conversations || []; }
+export async function createConversation():Promise<Conversation> { return request('/v1/chat/conversations',{method:'POST'}); }
+export async function deleteConversation(id?:string):Promise<void> { await request('/v1/chat/conversations'+(id?`/${encodeURIComponent(id)}`:''),{method:'DELETE'}); }

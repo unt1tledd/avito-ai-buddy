@@ -9,7 +9,7 @@ SELECT a.id, a.message_id, a.resource_id, a.resource_label, a.access_level,
 FROM chat.action a
 JOIN chat.message m ON m.id = a.message_id
 JOIN chat.conversation c ON c.id = m.conversation_id
-WHERE a.id = $1 AND c.user_id = $2
+WHERE a.id = $1 AND c.user_id = $2 AND c.deleted_at IS NULL
 FOR UPDATE OF a;
 
 -- name: SaveAccessRequest :execrows

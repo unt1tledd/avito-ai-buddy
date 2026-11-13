@@ -8,6 +8,7 @@ interface OnboardingPageProps {
   onAnimationEnd?: React.AnimationEventHandler<HTMLElement>;
   onClose: () => void;
   onToggleStep: (stepId: string) => void;
+  savingSteps?: string[];
   onSelectStepQuestion: (question: string) => void;
 }
 
@@ -18,6 +19,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   onAnimationEnd,
   onClose,
   onToggleStep,
+  savingSteps = [],
   onSelectStepQuestion,
 }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<string>('1 неделя');
@@ -35,7 +37,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   const isStepCompleted = useCallback(
     (step: OnboardingStep) => {
       const linkedTask = getStepTask(step.resource_id);
-      return step.completed || linkedTask?.status === 'approved';
+      return step.completed;
     },
     [getStepTask]
   );
@@ -236,7 +238,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                   <button
                     type="button"
                     className={`roadmap-check-circle${isDone ? ' roadmap-check-circle--done' : ''}`}
-                    onClick={() => onToggleStep(step.step_id)}
+                    disabled={savingSteps.includes(step.step_id)}
+                      aria-pressed={isDone}
+                      onClick={() => onToggleStep(step.step_id)}
                     title={toggleLabel}
                     aria-label={toggleLabel}
                   >
@@ -369,6 +373,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                     <button
                       type="button"
                       className={`roadmap-check-circle${isDone ? ' roadmap-check-circle--done' : ''}`}
+                      disabled={savingSteps.includes(step.step_id)}
+                      aria-pressed={isDone}
                       onClick={() => onToggleStep(step.step_id)}
                       style={{ width: '28px', height: '28px', fontSize: '14px' }}
                       title={
