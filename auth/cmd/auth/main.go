@@ -56,6 +56,7 @@ func run() error {
 	service := auth.NewAuthService(repo, logger, []byte(jwtSecret))
 	mux := http.NewServeMux()
 	controller.New(service, logger).Register(mux)
+	controller.RegisterHealth(mux, repo.CheckReady)
 
 	server := &http.Server{
 		Addr:              ":8080",

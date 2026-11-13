@@ -12,6 +12,7 @@ import (
 	"time"
 
 	userv1 "avito-ai-buddy/pkg/generated/user/v1"
+	"avito-ai-buddy/pkg/health"
 	"avito-ai-buddy/user/internal/config"
 	"avito-ai-buddy/user/internal/controller"
 	userrepo "avito-ai-buddy/user/internal/repository/user"
@@ -63,7 +64,7 @@ func Run(logger *zap.Logger, cfg *config.Config) error {
 	group, ctx := errgroup.WithContext(ctx)
 	grpcReady := make(chan string, 1)
 	group.Go(func() error {
-		return runRest(ctx, logger, cfg, grpcReady)
+		return runRest(ctx, logger, cfg, grpcReady, db.Ping)
 	})
 	group.Go(func() error {
 		return runGrpc(ctx, logger, cfg, ctrl, grpcReady)
@@ -71,7 +72,7 @@ func Run(logger *zap.Logger, cfg *config.Config) error {
 	return group.Wait()
 }
 
-func runRest(ctx context.Context, logger *zap.Logger, cfg *config.Config, grpcReady <-chan string) error {
+func runRest(ctx context.Context, logger *zap.Logger, cfg *config.Config, grpcReady <-chan string, pingDB func(context.Context) error) error {
 	var endpoint string
 	select {
 	case endpoint = <-grpcReady:
@@ -79,9 +80,13 @@ func runRest(ctx context.Context, logger *zap.Logger, cfg *config.Config, grpcRe
 		return nil
 	}
 
-	gatewayCtx, closeGateway := context.WithCancel(context.WithoutCancel(ctx))
-	defer closeGateway()
-	mux, err := newGateway(gatewayCtx, endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("create user gateway client: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	mux, err := newGateway(ctx, conn, pingDB)
 	if err != nil {
 		return fmt.Errorf("register user gateway: %w", err)
 	}
@@ -123,7 +128,9 @@ func runGrpc(ctx context.Context, logger *zap.Logger, cfg *config.Config, ctrl *
 
 	server := grpc.NewServer()
 	ctrl.Register(server)
+	healthServer := health.RegisterGRPC(server)
 	stopShutdown := context.AfterFunc(ctx, func() {
+		healthServer.Shutdown()
 		timer := time.AfterFunc(config.ShutdownTimeout, server.Stop)
 		defer timer.Stop()
 		server.GracefulStop()
@@ -138,7 +145,7 @@ func runGrpc(ctx context.Context, logger *zap.Logger, cfg *config.Config, ctrl *
 	return nil
 }
 
-func newGateway(ctx context.Context, endpoint string, opts ...grpc.DialOption) (*runtime.ServeMux, error) {
+func newGateway(ctx context.Context, conn *grpc.ClientConn, pingDB func(context.Context) error) (*runtime.ServeMux, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{UseProtoNames: true, EmitDefaultValues: true},
@@ -150,7 +157,10 @@ func newGateway(ctx context.Context, endpoint string, opts ...grpc.DialOption) (
 			return nil
 		}),
 	)
-	if err := userv1.RegisterUserServiceHandlerFromEndpoint(ctx, mux, endpoint, opts); err != nil {
+	if err := controller.RegisterHealth(ctx, mux, conn, pingDB); err != nil {
+		return nil, fmt.Errorf("register health endpoint: %w", err)
+	}
+	if err := userv1.RegisterUserServiceHandler(ctx, mux, conn); err != nil {
 		return nil, err
 	}
 	return mux, nil

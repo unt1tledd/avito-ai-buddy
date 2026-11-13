@@ -17,6 +17,7 @@ import (
 	authadapter "avito-ai-buddy/onboarding/internal/adapter/auth/http"
 	useradapter "avito-ai-buddy/onboarding/internal/adapter/user/grpc"
 	"avito-ai-buddy/onboarding/internal/config"
+	"avito-ai-buddy/onboarding/internal/controller"
 	planapi "avito-ai-buddy/onboarding/internal/controller/plan"
 	stepapi "avito-ai-buddy/onboarding/internal/controller/step"
 	planrepo "avito-ai-buddy/onboarding/internal/repository/plan"
@@ -29,6 +30,7 @@ import (
 	planpb "avito-ai-buddy/pkg/generated/plan/v1"
 	steppb "avito-ai-buddy/pkg/generated/step/v1"
 	userpb "avito-ai-buddy/pkg/generated/user/v1"
+	"avito-ai-buddy/pkg/health"
 	"avito-ai-buddy/pkg/transactor"
 )
 
@@ -83,6 +85,7 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 	defer server.Stop()
 	planpb.RegisterPlanServiceServer(server, planController)
 	steppb.RegisterStepServiceServer(server, stepController)
+	healthServer := health.RegisterGRPC(server)
 
 	endpoint := net.JoinHostPort("localhost", fmt.Sprint(grpcListener.Addr().(*net.TCPAddr).Port))
 	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -90,7 +93,7 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 		return fmt.Errorf("configure onboarding gateway: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
-	gateway, err := newGateway(ctx, conn)
+	gateway, err := newGateway(ctx, conn, db.Ping)
 	if err != nil {
 		return err
 	}
@@ -104,6 +107,7 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 
 	select {
 	case <-ctx.Done():
+		healthServer.Shutdown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.App.ShutdownTimeout)
 		defer cancel()
 		return httpServer.Shutdown(shutdownCtx)
@@ -115,8 +119,11 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 	}
 }
 
-func newGateway(ctx context.Context, conn *grpc.ClientConn) (*runtime.ServeMux, error) {
+func newGateway(ctx context.Context, conn *grpc.ClientConn, pingDB func(context.Context) error) (*runtime.ServeMux, error) {
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{MarshalOptions: protojson.MarshalOptions{UseProtoNames: true}}))
+	if err := controller.RegisterHealth(ctx, mux, conn, pingDB); err != nil {
+		return nil, fmt.Errorf("register health endpoint: %w", err)
+	}
 	if err := planpb.RegisterPlanServiceHandler(ctx, mux, conn); err != nil {
 		return nil, fmt.Errorf("register plan gateway: %w", err)
 	}

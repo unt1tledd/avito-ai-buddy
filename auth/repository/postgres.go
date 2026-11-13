@@ -20,13 +20,20 @@ type (
 )
 
 type postgresRepository struct {
+	db      DB
 	queries sqlcAuth.Querier
 }
 
 func NewPostgresRepository(db DB) *postgresRepository {
 	return &postgresRepository{
+		db:      db,
 		queries: sqlcAuth.New(db),
 	}
+}
+
+func (r *postgresRepository) CheckReady(ctx context.Context) error {
+	_, err := r.db.Exec(ctx, "SELECT id, email, password_hash, created_at FROM auth.users LIMIT 0")
+	return err
 }
 
 func (r *postgresRepository) GetUserByEmail(ctx context.Context, email string) (entity.User, error) {
