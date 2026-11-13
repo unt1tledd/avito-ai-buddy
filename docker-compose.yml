@@ -49,6 +49,18 @@ services:
     ports:
       - "127.0.0.1:8081:8080"
 
+  auth-migrate:
+    build:
+      context: .
+      dockerfile: infra/postgres/Dockerfile.migrate
+    profiles: ["tools"]
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: "postgresql://auth_app:${AUTH_DB_PASSWORD}@db:5432/auth_db?sslmode=disable"
+      GOOSE_MIGRATION_DIR: /migrations
+    volumes:
+      - ./auth/migrations:/migrations:ro
+
   ai-migrate:
     image: golang:1.27.3
     profiles: ["tools"]

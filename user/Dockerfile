@@ -1,4 +1,4 @@
-FROM golang:1.27.0
+FROM golang:1.27.3-bookworm AS build
 WORKDIR /app
 ENV GOWORK=off
 
@@ -11,7 +11,10 @@ COPY pkg/generated/user/v1 ./pkg/generated/user/v1
 COPY pkg/health ./pkg/health
 
 WORKDIR /app/user
-RUN go build -mod=mod -o /usr/local/bin/user ./cmd/app
+RUN CGO_ENABLED=0 go build -mod=mod -o /usr/local/bin/user ./cmd/app
+
+FROM debian:bookworm-slim
+COPY --from=build /usr/local/bin/user /usr/local/bin/user
 
 ENV GRPC_HOST=0.0.0.0
 EXPOSE 8080 9090
