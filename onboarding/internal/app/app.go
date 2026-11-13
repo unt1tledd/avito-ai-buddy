@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
+	"avito-ai-buddy/pkg/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -81,7 +84,17 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 			return http.ErrUseLastResponse
 		},
 	}, cfg.Auth.BaseURL, cfg.Auth.ValidatePath)
-	server := grpc.NewServer(grpc.UnaryInterceptor(authorizeRequests(authClient, cfg.App.ServiceToken)))
+	server := grpc.NewServer(grpc.ChainUnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
+		log := logger.Info
+		switch code {
+		case codes.Internal, codes.Unavailable, codes.Unknown:
+			log = logger.Error
+		case codes.DeadlineExceeded:
+			log = logger.Warn
+		}
+		log("RPC completed", zap.String("rpc", method), zap.String("code", code.String()),
+			zap.Int64("duration_ms", elapsed.Milliseconds()), zap.String("request_id", observability.RequestID(ctx)))
+	}), authorizeRequests(authClient, cfg.App.ServiceToken)))
 	defer server.Stop()
 	planpb.RegisterPlanServiceServer(server, planController)
 	steppb.RegisterStepServiceServer(server, stepController)

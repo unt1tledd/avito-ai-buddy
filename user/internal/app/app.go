@@ -19,11 +19,13 @@ import (
 	userusecase "avito-ai-buddy/user/internal/usecase/user"
 	"avito-ai-buddy/user/migrations"
 
+	"avito-ai-buddy/pkg/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -126,7 +128,17 @@ func runGrpc(ctx context.Context, logger *zap.Logger, cfg *config.Config, ctrl *
 	}
 	defer func() { _ = listener.Close() }()
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.UnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
+		log := logger.Info
+		switch code {
+		case codes.Internal, codes.Unavailable, codes.Unknown:
+			log = logger.Error
+		case codes.DeadlineExceeded:
+			log = logger.Warn
+		}
+		log("RPC completed", zap.String("rpc", method), zap.String("code", code.String()),
+			zap.Int64("duration_ms", elapsed.Milliseconds()), zap.String("request_id", observability.RequestID(ctx)))
+	})))
 	ctrl.Register(server)
 	healthServer := health.RegisterGRPC(server)
 	stopShutdown := context.AfterFunc(ctx, func() {

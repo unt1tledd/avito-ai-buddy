@@ -1,0 +1,10 @@
+groups:
+  - name: observability
+    rules:
+      - alert: ObservabilityTargetDown
+        expr: up{job=~"loki|alloy|grafana"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cannot scrape {{ $labels.job }} at {{ $labels.instance }}'
