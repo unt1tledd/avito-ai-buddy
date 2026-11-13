@@ -52,7 +52,7 @@ def chunk_documents(documents: list[Document]) -> list[DocumentChunk]:
                 raise ValueError("ID полученных фрагментов конфликтуют; измените ID исходных документов.")
             ids.add(identifier)
             chunks.append(DocumentChunk.model_validate({
-                **document.model_dump(), "id": identifier, "text": text,
+                **document.model_dump(), "id": identifier, "text": text, "original_document": document.text, "original_document_id": document.id,
             }))
             if len(chunks) > MAX_IMPORT_CHUNKS:
                 raise ValueError(f"После разбиения база знаний превышает {MAX_IMPORT_CHUNKS} фрагментов.")

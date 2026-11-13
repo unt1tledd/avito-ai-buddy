@@ -108,7 +108,7 @@ def test_import_embeds_every_full_chunk_and_keeps_original_metadata(tmp_path, mo
     assert original.text.index(fact) > MAX_CHUNK_TEXT
     source = tmp_path / "corpus.json"
     source.write_text(json.dumps([original.model_dump(mode="json")]), encoding="utf-8")
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         knowledge_db_dsn="postgresql://unused.invalid/test", knowledge_processing_approved=True,
         embedding_api_key="test-key",
     )
@@ -149,7 +149,7 @@ def test_chunk_count_limit_is_checked_before_external_calls(tmp_path, monkeypatc
 def test_failed_embedding_batch_does_not_replace_existing_corpus(tmp_path, monkeypatch):
     source = tmp_path / "corpus.json"
     source.write_text(json.dumps([document("A" * 4000).model_dump(mode="json")]))
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         knowledge_db_dsn="postgresql://unused.invalid/test", knowledge_processing_approved=True,
         embedding_api_key="test-key",
     )

@@ -170,6 +170,13 @@ class DocumentChunk(Document):
     """The complete text indexed by one embedding and returned by search."""
 
     text: str = Field(min_length=1, max_length=MAX_CHUNK_TEXT)
+    # Internal import metadata; never part of search results or public sources.
+    generated_context: str = Field(default="", max_length=600, exclude=True)
+    original_document: str = Field(default="", exclude=True)
+    original_document_id: str = Field(default="", exclude=True)
+
+    def embedding_text(self) -> str:
+        return "\n".join([self.title, *self.keywords, self.generated_context, self.text])
 
 
 class SearchResult(Payload):

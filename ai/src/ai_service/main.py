@@ -62,7 +62,7 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
                     reconnect_failed=db_reconnect_failed,
                 ))
                 retriever = Retriever(
-                    KnowledgeRepository(settings.knowledge_db_dsn, pool),
+                    KnowledgeRepository(settings.knowledge_db_dsn, pool, settings),
                     embeddings,
                     settings.knowledge_min_similarity,
                 )

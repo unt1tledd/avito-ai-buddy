@@ -22,7 +22,7 @@ docker compose -p ai-rag-check run --rm -p 127.0.0.1:18000:8080 ai
 - db — один локальный PostgreSQL с отдельными базами сервисов; AI использует ai_buddy под пользователем ai_app.
 - build ai — собирает образ с кодом и ai/knowledge/documents.json.
 - ai-migrate — применяет только недостающие миграции AI.
-- import_documents — отправляет 144 статьи в OpenRouter/DeepInfra, создаёт эмбеддинги и атомарно заменяет корпус в БД.
+- import_documents — отправляет 144 статьи в OpenRouter/DeepInfra, контекстуализирует чанки, создаёт embeddings и BM25 postings и атомарно заменяет корпус в БД.
 - Последний run — запускает сервер. На Mac открывается порт 18000, внутри контейнера сервер слушает 8080. Не запускать второй AI на том же порту.
 
 Флаг -p ai-rag-check задаёт имя проекта и его Docker volume. --rm удаляет завершившийся контейнер, сохраняя данные БД.
@@ -53,3 +53,5 @@ docker compose -p ai-rag-check exec db psql -h db -U ai_app -d ai_buddy
 Пароль — AI_DB_PASSWORD из .env. PostgreSQL доступен внутри Docker на db:5432; порт на Mac не опубликован.
 Корпус: 144 documents, 144 document_chunks, 280 document_access; вектора размерности 1536.
 Данные хранятся в volume ai-rag-check_postgres_data. .env содержит секреты и исключён из Git.
+
+Гибридный поиск и обязательная переиндексация после миграции 000004: [инструкция](ai/specs/hybrid-search.md). Настройки контекстуализации у сервера и импортера должны совпадать; кеш сохраняется в Docker volume `ai_context_cache`.
