@@ -770,7 +770,9 @@ def test_chat_deadline_cancels_model(settings, caplog):
                 cancellations.append("cancelled")
                 raise
 
-    with TestClient(create_app(settings.model_copy(update={"chat_timeout_seconds": 0.05}), model=SlowModel())) as client:
+    with TestClient(create_app(settings.model_copy(update={
+        "chat_timeout_seconds": 0.05, "llm_fallback_reserve_seconds": 0,
+    }), model=SlowModel())) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 504
     assert cancellations == ["cancelled"]
@@ -1182,7 +1184,7 @@ def test_citation_repair_is_cancelled_by_original_deadline(settings, monkeypatch
                 cancelled.append(True)
 
     model = SlowRepair()
-    settings = settings.model_copy(update={"chat_timeout_seconds": 0.05})
+    settings = settings.model_copy(update={"chat_timeout_seconds": 0.05, "llm_fallback_reserve_seconds": 0})
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 504

@@ -9,6 +9,8 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from ..clients.embeddings import EmbeddingError
 from ..clients.llm import FunctionCall, LanguageModel, ModelError, ModelResponse
+from ..clients.resilient_llm import ResilientModel
+from ..core.config import Settings
 from ..rag.history import history_message, prepare_history
 from ..rag.onboarding import resolve_step_reference
 from ..rag.proposals import confirmed_proposal
@@ -163,8 +165,10 @@ class Turn:
 
 
 class Agent:
-    def __init__(self, model: LanguageModel, knowledge: Retriever, prompt: str):
-        self.model = model
+    def __init__(self, model: LanguageModel, knowledge: Retriever, prompt: str, *, settings: Settings | None = None):
+        settings = settings or Settings()
+        self.model = ResilientModel(model, settings)
+        self.fallback_reserve = min(settings.llm_fallback_reserve_seconds, settings.chat_timeout_seconds / 2)
         self.knowledge = knowledge
         self.prompt = (
             prompt + "\n\nРазрешённые вопросы для kind=clarification (выбери answer дословно):\n"
@@ -214,7 +218,10 @@ class Agent:
             if json_size([self.prompt, messages, tools]) > MAX_CONTEXT_BYTES:
                 raise ModelError("Превышен бюджет контекста модели.", reason="context_limit")
             try:
-                response = await self.model.respond(instructions=self.prompt, messages=messages, tools=tools)
+                response = await self.model.respond(
+                    instructions=self.prompt, messages=messages, tools=tools,
+                    deadline=deadline - self.fallback_reserve if deadline is not None else None,
+                )
             except ModelError:
                 if safety_context and not turn.tools_called:
                     return ChatResponse(answer=TEMPLATES["immediate_safety"], sources=[])
@@ -281,7 +288,10 @@ class Agent:
         if json_size([self.prompt, repair_messages, []]) > MAX_CONTEXT_BYTES:
             raise error
         # This single retry shares the caller's deadline and cannot initiate more searches.
-        repaired = await self.model.respond(instructions=self.prompt, messages=repair_messages, tools=[])
+        repaired = await self.model.respond(
+            instructions=self.prompt, messages=repair_messages, tools=[],
+            deadline=deadline - self.fallback_reserve if deadline is not None else None,
+        )
         if repaired.calls:
             raise ModelError("Модель вызвала инструмент при исправлении ответа.", reason="unexpected_call")
         return turn.response(repaired)

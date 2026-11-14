@@ -321,7 +321,7 @@ def test_template_classification_is_cancelled_by_original_deadline(settings, mes
             finally:
                 cancelled.append(True)
 
-    configured = settings.model_copy(update={"chat_timeout_seconds": 0.03})
+    configured = settings.model_copy(update={"chat_timeout_seconds": 0.03, "llm_fallback_reserve_seconds": 0})
     with TestClient(create_app(configured, model=SlowModel())) as client:
         response = ask(client, message)
     assert response.status_code == 504

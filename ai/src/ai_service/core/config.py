@@ -48,6 +48,10 @@ class Settings(BaseModel):
     llm_api_key: str = ""
     llm_model: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
+    llm_timeout_seconds: float = Field(default=60, gt=0, le=60)
+    llm_fallback_reserve_seconds: float = Field(default=5, ge=0, le=10)
+    llm_circuit_failure_threshold: int = Field(default=3, ge=1, le=100)
+    llm_circuit_reset_seconds: float = Field(default=30, gt=0, le=300)
     knowledge_db_dsn: str = ""
     knowledge_processing_approved: bool = False
     chat_timeout_seconds: float = Field(default=60, gt=0, le=60)
