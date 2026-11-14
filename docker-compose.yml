@@ -102,8 +102,6 @@ services:
       EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS:-}"
       EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
       KNOWLEDGE_PROCESSING_APPROVED: "${KNOWLEDGE_PROCESSING_APPROVED:-false}"
-      EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS}"
-      EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
       RETRIEVAL_MODE: "${RETRIEVAL_MODE:-hybrid}"
       SEARCH_CANDIDATES: "${SEARCH_CANDIDATES:-10}"
       SEARCH_TOP_K: "${SEARCH_TOP_K:-3}"
@@ -315,3 +313,7 @@ volumes:
   postgres_data:
   ai_context_cache:
   kafka_data:
+  loki_data:
+  alloy_data:
+  prometheus_data:
+  grafana_data:
