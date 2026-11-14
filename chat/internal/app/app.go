@@ -19,6 +19,7 @@ import (
 	"avito-ai-buddy/chat/internal/controller"
 	actionapi "avito-ai-buddy/chat/internal/controller/action"
 	chatapi "avito-ai-buddy/chat/internal/controller/chat"
+	conversationapi "avito-ai-buddy/chat/internal/controller/conversation"
 	"avito-ai-buddy/chat/internal/controller/events"
 	"avito-ai-buddy/chat/internal/entity"
 	inboxsvc "avito-ai-buddy/chat/internal/inbox"
@@ -46,6 +47,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
 )
 
 // Run boots the chat service: it wires the dependencies, serves gRPC and
@@ -97,7 +99,7 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 	consumerCtx, stopConsumer := context.WithCancel(ctx)
 	defer stopConsumer()
 	checkKafka := publisher.CheckTopics(cfg.Kafka.TaskCommandsTopic, cfg.Kafka.TaskEventsTopic, cfg.Kafka.DLQTopic)
-	httpServer, err := newHTTPServer(consumerCtx, socketCtx, hub, gatewayConn, messages, db, db.Ping, checkKafka)
+	httpServer, err := newHTTPServer(consumerCtx, socketCtx, hub, gatewayConn, messages, db.Ping, checkKafka)
 	if err != nil {
 		return err
 	}
@@ -213,7 +215,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 	actions := actionrepo.NewPostgresRepository(db)
 	conversations := conversation.NewService(conversationrepo.NewPostgresRepository(db))
 	msgRepository := messagerepo.NewPostgresRepository(db)
-	taskstatusService := taskstatus.New(logger, conversations, msgRepository, hub)
+	taskstatusService := taskstatus.New(logger, actions, msgRepository, hub)
 	taskNotifier := inboxsvc.New(inboxRepository, taskstatusService, tx)
 
 	messages := message.NewService(
@@ -250,6 +252,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 	}), func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		return handler(messagerepo.WithHistoryPageSize(ctx, cfg.App.HistoryPageSize), req)
 	}))
+	chatpb.RegisterConversationServiceServer(server, conversationapi.NewServer(conversations, messages, logger))
 	chatpb.RegisterChatServiceServer(server, chatController)
 	chatpb.RegisterActionServiceServer(server, actionController)
 	return server, messages, taskNotifier, closeServerDependencies, nil
@@ -267,8 +270,16 @@ func connectGateway(listener net.Listener, opts grpc.DialOption) (*grpc.ClientCo
 	return conn, nil
 }
 
-func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn *grpc.ClientConn, messages sessionService, db *pgxpool.Pool, pingDB, checkKafka func(context.Context) error) (*http.Server, error) {
-	mux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(func(key string) (string, bool) {
+func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn *grpc.ClientConn, messages sessionService, pingDB, checkKafka func(context.Context) error) (*http.Server, error) {
+	mux := runtime.NewServeMux(runtime.WithForwardResponseOption(func(_ context.Context, w http.ResponseWriter, response proto.Message) error {
+		switch response.(type) {
+		case *chatpb.Conversation:
+			w.WriteHeader(http.StatusCreated)
+		case *chatpb.DeleteConversationResponse, *chatpb.DeleteAllConversationsResponse:
+			w.WriteHeader(http.StatusNoContent)
+		}
+		return nil
+	}), runtime.WithIncomingHeaderMatcher(func(key string) (string, bool) {
 		if key == "X-Conversation-Id" {
 			return "x-conversation-id", true
 		}
@@ -282,6 +293,10 @@ func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn 
 	}
 	if err := chatpb.RegisterChatServiceHandler(ctx, mux, gatewayConn); err != nil {
 		return nil, fmt.Errorf("register Chat HTTP routes: %w", err)
+	}
+
+	if err := chatpb.RegisterConversationServiceHandler(ctx, mux, gatewayConn); err != nil {
+		return nil, fmt.Errorf("register Conversation HTTP routes: %w", err)
 	}
 
 	if err := chatpb.RegisterActionServiceHandler(ctx, mux, gatewayConn); err != nil {
@@ -298,7 +313,6 @@ func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn 
 
 		eventHandler.Subscribe(w, r.WithContext(requestCtx))
 	})
-	registerConversationRoutes(httpMux, db, messages)
 	httpMux.Handle("/", mux)
 
 	return &http.Server{

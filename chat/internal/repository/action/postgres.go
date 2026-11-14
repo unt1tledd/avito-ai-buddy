@@ -8,6 +8,7 @@ import (
 
 	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
+	"avito-ai-buddy/chat/internal/port"
 	sqlc "avito-ai-buddy/chat/internal/repository/action/sqlc"
 	"avito-ai-buddy/pkg/transactor"
 
@@ -89,4 +90,23 @@ func (r *PostgresRepository) SaveAccessRequest(ctx context.Context, proposalID i
 		return chaterrors.ErrProposalNotFound
 	}
 	return nil
+}
+
+// ApplyTaskStatus returns the ID of the visible conversation to notify.
+// A missing proposal or deleted conversation has no notification target.
+func (r *PostgresRepository) ApplyTaskStatus(ctx context.Context, userID int64, event port.TaskEvent) (int64, error) {
+	row, err := r.getQueries(ctx).ApplyTaskStatus(ctx, sqlc.ApplyTaskStatusParams{
+		UserID: userID, ProposalID: event.ProposalID, TaskID: event.TaskID,
+		ExternalRequestID: event.ExternalRequestID, Status: event.Status,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if row.ConversationDeleted {
+		return 0, nil
+	}
+	return row.ConversationID, nil
 }

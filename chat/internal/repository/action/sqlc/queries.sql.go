@@ -9,6 +9,47 @@ import (
 	"context"
 )
 
+const applyTaskStatus = `-- name: ApplyTaskStatus :one
+UPDATE chat.action a
+SET task_id = $1,
+    external_request_id = $2,
+    status = $3
+FROM chat.message m
+JOIN chat.conversation c ON c.id = m.conversation_id
+WHERE m.id = a.message_id AND c.user_id = $4
+  AND (($5::bigint > 0 AND a.id = $5)
+       OR ($5::bigint = 0 AND a.task_id = $1))
+  AND a.status IN ('pending_dispatch', 'pending')
+  AND (a.task_id = '' OR a.task_id = $1)
+RETURNING c.id AS conversation_id, (c.deleted_at IS NOT NULL)::boolean AS conversation_deleted
+`
+
+type ApplyTaskStatusParams struct {
+	TaskID            string `json:"task_id"`
+	ExternalRequestID string `json:"external_request_id"`
+	Status            string `json:"status"`
+	UserID            int64  `json:"user_id"`
+	ProposalID        int64  `json:"proposal_id"`
+}
+
+type ApplyTaskStatusRow struct {
+	ConversationID      int64 `json:"conversation_id"`
+	ConversationDeleted bool  `json:"conversation_deleted"`
+}
+
+func (q *Queries) ApplyTaskStatus(ctx context.Context, arg ApplyTaskStatusParams) (ApplyTaskStatusRow, error) {
+	row := q.db.QueryRow(ctx, applyTaskStatus,
+		arg.TaskID,
+		arg.ExternalRequestID,
+		arg.Status,
+		arg.UserID,
+		arg.ProposalID,
+	)
+	var i ApplyTaskStatusRow
+	err := row.Scan(&i.ConversationID, &i.ConversationDeleted)
+	return i, err
+}
+
 const create = `-- name: Create :one
 INSERT INTO chat.action (message_id, resource_id, resource_label, access_level)
 VALUES ($1, $2, $3, $4)

@@ -93,7 +93,7 @@ func (r *PostgresRepository) Decide(ctx context.Context, decision entity.Decisio
 
 		result = toEntity(row)
 		payload, err := json.Marshal(entity.StatusEvent{
-			UserID: result.UserID, TaskID: result.ID, Status: result.Status,
+			UserID: result.UserID, TaskID: result.ID, ProposalID: result.ProposalID, Status: result.Status,
 			ExternalRequestID: result.ExternalRequestID,
 		})
 		if err != nil {

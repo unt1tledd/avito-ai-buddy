@@ -7,7 +7,7 @@ CREATE TABLE chat.outbox
 (
     idempotency_key TEXT PRIMARY KEY,
     data            JSONB                   NOT NULL,
-    status          chat.outbox_status           NOT NULL,
+    status          chat.outbox_status      NOT NULL,
     kind            INT                     NOT NULL,
     attempts        INT                     NOT NULL DEFAULT 0,
     created_at      TIMESTAMP DEFAULT now() NOT NULL,

@@ -95,13 +95,20 @@ func TestAccessRequestLifecycle(t *testing.T) {
 					return false
 				}
 				count := 0
+				proposalUpdated := false
 				for _, m := range history.Messages {
+					if proposal := m.GetProposal(); proposal != nil && proposal.GetId() == fmt.Sprint(task.ProposalId) {
+						request := proposal.GetAccessRequest()
+						proposalUpdated = request.GetStatus() == word &&
+							request.GetTaskId() == fmt.Sprint(task.TaskId) &&
+							request.GetExternalRequestId() == got.ExternalRequestId
+					}
 					if m.Text == expected {
 						count++
 					}
 				}
-				return count == 1
-			}, 30*time.Second, 100*time.Millisecond, "task event must appear once in chat history")
+				return count == 1 && proposalUpdated
+			}, 30*time.Second, 100*time.Millisecond, "task event must appear once and update the original proposal")
 		})
 	}
 }

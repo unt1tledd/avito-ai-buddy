@@ -18,8 +18,8 @@ import (
 	"go.uber.org/zap"
 )
 
-type conversationService interface {
-	GetOrCreate(ctx context.Context, userID int64) (*entity.Conversation, error)
+type actionRepository interface {
+	ApplyTaskStatus(ctx context.Context, userID int64, event port.TaskEvent) (int64, error)
 }
 
 type messageRepository interface {
@@ -33,16 +33,16 @@ type hubNotifier interface {
 //go:generate mockgen -source=taskstatus.go -destination=mocks/taskstatus_mocks.go -package=mocks
 
 type Service struct {
-	logger        *zap.Logger
-	conversations conversationService
-	messages      messageRepository
-	hub           hubNotifier
+	logger   *zap.Logger
+	actions  actionRepository
+	messages messageRepository
+	hub      hubNotifier
 }
 
-// New builds the service: it needs the conversation service, the idempotent
+// New builds the service: it needs the action repository, the idempotent
 // message repository and the hub used for the live WebSocket push.
-func New(logger *zap.Logger, conversations conversationService, messages messageRepository, hub hubNotifier) *Service {
-	return &Service{logger: logger, conversations: conversations, messages: messages, hub: hub}
+func New(logger *zap.Logger, actions actionRepository, messages messageRepository, hub hubNotifier) *Service {
+	return &Service{logger: logger, actions: actions, messages: messages, hub: hub}
 }
 
 // SaveTaskStatus stores the message in the caller's transaction. A nil message
@@ -53,23 +53,19 @@ func (s *Service) SaveTaskStatus(ctx context.Context, event port.TaskEvent) (*en
 		return nil, fmt.Errorf("invalid user id %q", event.UserID)
 	}
 
-	var conversation *entity.Conversation
-	if resolver, ok := s.conversations.(interface {
-		GetForTask(context.Context, int64, string) (*entity.Conversation, error)
-	}); ok {
-		conversation, err = resolver.GetForTask(ctx, userID, event.TaskID)
-	} else {
-		conversation, err = s.conversations.GetOrCreate(ctx, userID)
+	if event.TaskID == "" || event.ProposalID < 0 || (event.Status != "approved" && event.Status != "rejected") {
+		return nil, fmt.Errorf("invalid task decision")
 	}
+	conversationID, err := s.actions.ApplyTaskStatus(ctx, userID, event)
 	if err != nil {
-		return nil, fmt.Errorf("get conversation: %w", err)
+		return nil, fmt.Errorf("apply task status: %w", err)
 	}
 
-	if conversation == nil {
+	if conversationID == 0 {
 		return nil, nil
 	}
 	message := entity.Message{
-		ConversationID: conversation.ID,
+		ConversationID: conversationID,
 		Role:           entity.MessageRoleAssistant,
 		Text:           statusText(event),
 		CreatedAt:      time.Now().UTC(),

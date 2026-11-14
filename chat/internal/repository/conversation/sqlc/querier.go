@@ -9,7 +9,12 @@ import (
 )
 
 type Querier interface {
-	GetOrCreate(ctx context.Context, userID int64) (ChatConversation, error)
+	Create(ctx context.Context, userID int64) (CreateRow, error)
+	Delete(ctx context.Context, arg DeleteParams) (int64, error)
+	DeleteAll(ctx context.Context, userID int64) error
+	GetByID(ctx context.Context, arg GetByIDParams) (GetByIDRow, error)
+	GetOrCreate(ctx context.Context, userID int64) (GetOrCreateRow, error)
+	List(ctx context.Context, userID int64) ([]ListRow, error)
 }
 
 var _ Querier = (*Queries)(nil)
