@@ -22,6 +22,37 @@ service ChatService {
   }
 }
 
+service ConversationService {
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse) {
+    option (google.api.http) = { get: "/v1/chat/conversations" };
+  }
+  rpc CreateConversation(CreateConversationRequest) returns (Conversation) {
+    option (google.api.http) = { post: "/v1/chat/conversations" };
+  }
+  rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse) {
+    option (google.api.http) = { delete: "/v1/chat/conversations/{id}" };
+  }
+  rpc DeleteAllConversations(DeleteAllConversationsRequest) returns (DeleteAllConversationsResponse) {
+    option (google.api.http) = { delete: "/v1/chat/conversations" };
+  }
+}
+
+message Conversation {
+  int64 id = 1 [(validate.rules).int64.gt = 0];
+  string title = 2 [(validate.rules).string.min_len = 1];
+  google.protobuf.Timestamp created_at = 3 [(validate.rules).timestamp.required = true];
+}
+
+message ListConversationsRequest {}
+message ListConversationsResponse {
+  repeated Conversation conversations = 1 [(validate.rules).repeated.items.message.required = true];
+}
+message CreateConversationRequest {}
+message DeleteConversationRequest { int64 id = 1 [(validate.rules).int64.gt = 0]; }
+message DeleteConversationResponse {}
+message DeleteAllConversationsRequest {}
+message DeleteAllConversationsResponse {}
+
 service ActionService {
   rpc ConfirmProposal(ConfirmProposalRequest) returns (ConfirmProposalResponse) {
     option (google.api.http) = {

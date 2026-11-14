@@ -65,6 +65,9 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 
 		if proposal.AccessRequest != nil {
 			request = *proposal.AccessRequest
+			if request.Status == "approved" || request.Status == "rejected" {
+				return nil
+			}
 			status, _, err := s.outbox.GetMessageStatus(txCtx, idempotencyKey)
 			if err != nil {
 				return fmt.Errorf("load outbox message: %w", err)

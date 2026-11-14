@@ -10,6 +10,10 @@ import (
 
 type repository interface {
 	GetOrCreate(ctx context.Context, userID int64) (*entity.Conversation, error)
+	List(context.Context, int64) ([]entity.ConversationSummary, error)
+	Create(context.Context, int64) (entity.ConversationSummary, error)
+	Delete(context.Context, int64, int64) (bool, error)
+	DeleteAll(context.Context, int64) error
 }
 
 // Service resolves an intern to their one-on-one conversation, creating it
@@ -28,12 +32,18 @@ func (s *Service) GetOrCreate(ctx context.Context, userID int64) (*entity.Conver
 	return s.repo.GetOrCreate(ctx, userID)
 }
 
-// GetForTask resolves persisted proposal ownership without creating an empty chat.
-func (s *Service) GetForTask(ctx context.Context, userID int64, taskID string) (*entity.Conversation, error) {
-	if repo, ok := s.repo.(interface {
-		GetForTask(context.Context, int64, string) (*entity.Conversation, error)
-	}); ok {
-		return repo.GetForTask(ctx, userID, taskID)
-	}
-	return s.repo.GetOrCreate(ctx, userID)
+func (s *Service) List(ctx context.Context, userID int64) ([]entity.ConversationSummary, error) {
+	return s.repo.List(ctx, userID)
+}
+
+func (s *Service) Create(ctx context.Context, userID int64) (entity.ConversationSummary, error) {
+	return s.repo.Create(ctx, userID)
+}
+
+func (s *Service) Delete(ctx context.Context, userID, conversationID int64) (bool, error) {
+	return s.repo.Delete(ctx, userID, conversationID)
+}
+
+func (s *Service) DeleteAll(ctx context.Context, userID int64) error {
+	return s.repo.DeleteAll(ctx, userID)
 }

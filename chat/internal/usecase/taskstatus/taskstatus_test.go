@@ -12,16 +12,16 @@ import (
 	"go.uber.org/zap"
 )
 
-type fakeConversations struct {
+type fakeActions struct {
 	id  int64
 	err error
 }
 
-func (c *fakeConversations) GetOrCreate(_ context.Context, userID int64) (*entity.Conversation, error) {
+func (c *fakeActions) ApplyTaskStatus(_ context.Context, _ int64, _ port.TaskEvent) (int64, error) {
 	if c.err != nil {
-		return nil, c.err
+		return 0, c.err
 	}
-	return &entity.Conversation{ID: c.id, UserID: userID}, nil
+	return c.id, nil
 }
 
 type fakeMessages struct {
@@ -60,7 +60,7 @@ func (h *fakeHub) PublishMessage(_ context.Context, _ string, message entity.Mes
 
 func TestSaveTaskStatus(t *testing.T) {
 	ctx := context.Background()
-	conversations := &fakeConversations{id: 21}
+	conversations := &fakeActions{id: 21}
 	messages := &fakeMessages{}
 	hub := &fakeHub{}
 	service := New(zap.NewNop(), conversations, messages, hub)
@@ -90,7 +90,7 @@ func TestSaveTaskStatus(t *testing.T) {
 
 func TestSaveTaskStatusSkipsRedeliveredEvents(t *testing.T) {
 	ctx := context.Background()
-	conversations := &fakeConversations{id: 21}
+	conversations := &fakeActions{id: 21}
 	messages := &fakeMessages{}
 	hub := &fakeHub{}
 	service := New(zap.NewNop(), conversations, messages, hub)
@@ -110,7 +110,7 @@ func TestSaveTaskStatusSkipsRedeliveredEvents(t *testing.T) {
 
 func TestSaveTaskStatusKeepsStableKeyPerEvent(t *testing.T) {
 	ctx := context.Background()
-	conversations := &fakeConversations{id: 21}
+	conversations := &fakeActions{id: 21}
 	messages := &fakeMessages{}
 	hub := &fakeHub{}
 	service := New(zap.NewNop(), conversations, messages, hub)
@@ -131,7 +131,7 @@ func TestSaveTaskStatusKeepsStableKeyPerEvent(t *testing.T) {
 
 func TestSaveTaskStatusRejectsInvalidUser(t *testing.T) {
 	ctx := context.Background()
-	service := New(zap.NewNop(), &fakeConversations{}, &fakeMessages{}, &fakeHub{})
+	service := New(zap.NewNop(), &fakeActions{}, &fakeMessages{}, &fakeHub{})
 
 	for _, userID := range []string{"", "abc", "0", "-7"} {
 		if _, err := service.SaveTaskStatus(ctx, port.TaskEvent{UserID: userID, TaskID: "task-42", Status: "approved"}); err == nil {
@@ -142,7 +142,7 @@ func TestSaveTaskStatusRejectsInvalidUser(t *testing.T) {
 
 func TestPublishSavedTaskStatus(t *testing.T) {
 	ctx := context.Background()
-	conversations := &fakeConversations{id: 21}
+	conversations := &fakeActions{id: 21}
 	messages := &fakeMessages{}
 	hub := &fakeHub{}
 	service := New(zap.NewNop(), conversations, messages, hub)
@@ -167,7 +167,7 @@ func TestPublishSavedTaskStatus(t *testing.T) {
 func TestSaveTaskStatusPropagatesStorageFailure(t *testing.T) {
 	ctx := context.Background()
 	dbErr := errors.New("database unavailable")
-	conversations := &fakeConversations{}
+	conversations := &fakeActions{id: 21}
 	messages := &fakeMessages{err: dbErr}
 	service := New(zap.NewNop(), conversations, messages, &fakeHub{})
 
