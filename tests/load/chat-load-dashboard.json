@@ -1,0 +1,289 @@
+{
+  "id": null,
+  "uid": "chat-load-suite",
+  "title": "Chat · Нагрузочные тесты",
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "run_prefix",
+        "label": "Набор, ступень или аккаунт",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Завершения RPC по методу и коду за минуту",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (method, code) (count_over_time({service=\"chat\"} |= \"RPC completed\" | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\" | json method=\"rpc\", code=\"code\", ms=\"duration_ms\" | method=~\".*/(GetHistory|SendMessage|ConfirmProposal)\" | drop rid, ms [1m]))",
+          "queryType": "range",
+          "legendFormat": "{{method}} · {{code}}",
+          "maxLines": 500
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "p95 успешных RPC Chat",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, {service=\"chat\"} |= \"RPC completed\" | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\" | json method=\"rpc\", code=\"code\", ms=\"duration_ms\" | method=~\".*/(GetHistory|SendMessage|ConfirmProposal)\" | code=\"OK\" | drop rid | unwrap ms | __error__=\"\" [2m]) by (method)",
+          "queryType": "range",
+          "legendFormat": "{{method}}",
+          "maxLines": 500
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Ошибки отправки по этапу",
+      "type": "bargauge",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (stage) (count_over_time({service=\"chat\"} |= \"send message failed\" | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\" | json stage=\"stage\" | drop rid [$__range]))",
+          "queryType": "instant",
+          "legendFormat": "{{stage}}",
+          "maxLines": 500
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "p95 успешных операций AI",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, {service=\"ai\"} | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\" | json op=\"operation\", result=\"result\", ms=\"duration_ms\" | op=~\"llm[.]respond|embeddings[.]embed|db[.]search\" | result=\"ok\" | drop rid | unwrap ms | __error__=\"\" [2m]) by (op)",
+          "queryType": "range",
+          "legendFormat": "{{op}}",
+          "maxLines": 500
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 5,
+      "title": "Сбои AI по операции и причине",
+      "type": "bargauge",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (op, result) (count_over_time({service=\"ai\"} | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\" | json op=\"operation\", result=\"result\", ms=\"duration_ms\" | op=~\"llm[.]respond|embeddings[.]embed|db[.]search\" | result!=\"\" | result!=\"ok\" | drop rid, ms [$__range]))",
+          "queryType": "instant",
+          "legendFormat": "{{op}} · {{result}}",
+          "maxLines": 500
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 6,
+      "title": "Журнал ошибок и предупреждений",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{service=~\"chat|ai|task|user|onboarding|auth\"} |~ `\"level\"\\s*:\\s*\"(error|warn|warning)\"` | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\"",
+          "queryType": "range",
+          "legendFormat": "",
+          "maxLines": 500
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Журнал запросов",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{service=~\"chat|ai|task|user|onboarding|auth\"} | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\"",
+          "queryType": "range",
+          "legendFormat": "",
+          "maxLines": 500
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    }
+  ]
+}
