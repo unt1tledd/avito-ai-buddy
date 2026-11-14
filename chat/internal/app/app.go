@@ -97,7 +97,7 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 	consumerCtx, stopConsumer := context.WithCancel(ctx)
 	defer stopConsumer()
 	checkKafka := publisher.CheckTopics(cfg.Kafka.TaskCommandsTopic, cfg.Kafka.TaskEventsTopic, cfg.Kafka.DLQTopic)
-	httpServer, err := newHTTPServer(consumerCtx, socketCtx, hub, gatewayConn, messages, db.Ping, checkKafka)
+	httpServer, err := newHTTPServer(consumerCtx, socketCtx, hub, gatewayConn, messages, db, db.Ping, checkKafka)
 	if err != nil {
 		return err
 	}
@@ -267,8 +267,11 @@ func connectGateway(listener net.Listener, opts grpc.DialOption) (*grpc.ClientCo
 	return conn, nil
 }
 
-func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn *grpc.ClientConn, messages sessionService, pingDB, checkKafka func(context.Context) error) (*http.Server, error) {
+func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn *grpc.ClientConn, messages sessionService, db *pgxpool.Pool, pingDB, checkKafka func(context.Context) error) (*http.Server, error) {
 	mux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(func(key string) (string, bool) {
+		if key == "X-Conversation-Id" {
+			return "x-conversation-id", true
+		}
 		if key == http.CanonicalHeaderKey(observability.RequestIDHeader) {
 			return key, true
 		}
@@ -295,6 +298,7 @@ func newHTTPServer(ctx, socketCtx context.Context, hub *events.Hub, gatewayConn 
 
 		eventHandler.Subscribe(w, r.WithContext(requestCtx))
 	})
+	registerConversationRoutes(httpMux, db, messages)
 	httpMux.Handle("/", mux)
 
 	return &http.Server{

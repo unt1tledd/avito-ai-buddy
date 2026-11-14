@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Annotated, Literal
 from unicodedata import normalize
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, ValidationError
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError
 
 from ..clients.embeddings import EmbeddingError
 from ..clients.llm import FunctionCall, LanguageModel, ModelError, ModelResponse
@@ -20,6 +20,7 @@ from ..schemas.clarifications import CLARIFICATION_QUESTIONS, ONBOARDING_TRACK_C
 from ..schemas.contracts import (
     AccessProposal, Actor, ChatResponse, MAX_RESPONSE_SOURCES, Message, OnboardingPlan, SearchHit, SearchResult, valid_utf8,
 )
+from ..schemas.support import EMPATHY_PREFIXES, TEMPLATES, EmpathyID, TemplateAnswer, needs_safety_routing
 
 
 MAX_TOOL_CALLS = 3
@@ -61,6 +62,10 @@ class FinalAnswer(BaseModel):
         str, StringConstraints(strip_whitespace=True, min_length=1), AfterValidator(valid_utf8),
     ]
     proposal: AccessProposal | None = None
+    empathy_id: EmpathyID | None = None
+
+
+FINAL_OUTPUT = TypeAdapter(Annotated[FinalAnswer | TemplateAnswer, Field(discriminator="kind")])
 
 
 def json_size(value: object) -> int:
@@ -88,6 +93,7 @@ class Turn:
     message: str = ""
     history: Sequence[Message] = ()
     selected_resource_id: str | None = None
+    tools_called: bool = False
 
     def add_sources(self, result: SearchResult) -> None:
         # Keep every source actually sent to the model, independently of the response limit.
@@ -100,9 +106,22 @@ class Turn:
         if not response.text:
             raise ModelError("Модель не вернула ответ.", reason="empty_answer")
         try:
-            final = FinalAnswer.model_validate_json(response.text)
+            final = FINAL_OUTPUT.validate_json(response.text)
         except ValidationError as error:
             raise ModelError("Модель вернула некорректный формат итогового ответа.", reason="invalid_answer") from error
+        if isinstance(final, TemplateAnswer):
+            # A failed/empty search must never be recast as emotional support.
+            if self.tools_called or self.searched:
+                raise ModelError("Шаблонный ответ недопустим после вызова инструмента.", reason="invalid_route")
+            return ChatResponse(answer=TEMPLATES[final.template_id], sources=[])
+        if final.empathy_id is not None and final.kind == "clarification":
+            raise ModelError("Уточнение должно совпадать с разрешённым вопросом.", reason="invalid_answer")
+        result = self._work_response(final)
+        if final.empathy_id is not None and result.answer not in CLARIFICATION_QUESTIONS:
+            result = result.model_copy(update={"answer": EMPATHY_PREFIXES[final.empathy_id] + "\n\n" + result.answer})
+        return result
+
+    def _work_response(self, final: FinalAnswer) -> ChatResponse:
         if final.proposal is not None and final.kind != "grounded_answer":
             raise ModelError("Предложение заявки допустимо только с подтверждённым ответом.", reason="invalid_proposal")
         if not self.searched and final.kind != "clarification":
@@ -150,6 +169,10 @@ class Agent:
         self.prompt = (
             prompt + "\n\nРазрешённые вопросы для kind=clarification (выбери answer дословно):\n"
             + json.dumps(CLARIFICATION_QUESTIONS, ensure_ascii=False)
+            + "\n\nКаталог template_id для шаблонных ответов (текст подставит код):\n"
+            + json.dumps(TEMPLATES, ensure_ascii=False)
+            + "\nРазрешённые empathy_id для смешанного рабочего ответа:\n"
+            + json.dumps(EMPATHY_PREFIXES, ensure_ascii=False)
         )
 
     async def answer(
@@ -158,8 +181,10 @@ class Agent:
         history: Sequence[Message] = (),
     ) -> ChatResponse:
         turn = Turn(message=message)
+        safety_context = needs_safety_routing(message)
+        # Potential danger takes priority over the deterministic step clarification.
         ambiguous, selected_plan = resolve_step_reference(message, onboarding_plans, history)
-        if ambiguous:
+        if ambiguous and not safety_context:
             return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
         recent_history = await prepare_history(history, actor, self.knowledge)
         turn.history = recent_history
@@ -188,21 +213,36 @@ class Agent:
             tools = [FIND_INSTRUCTION_TOOL] if remaining else []
             if json_size([self.prompt, messages, tools]) > MAX_CONTEXT_BYTES:
                 raise ModelError("Превышен бюджет контекста модели.", reason="context_limit")
-            response = await self.model.respond(instructions=self.prompt, messages=messages, tools=tools)
+            try:
+                response = await self.model.respond(instructions=self.prompt, messages=messages, tools=tools)
+            except ModelError:
+                if safety_context and not turn.tools_called:
+                    return ChatResponse(answer=TEMPLATES["immediate_safety"], sources=[])
+                raise
             calls = response.calls
             if response.refused or not calls:
                 try:
                     return turn.response(response)
                 except ModelError as error:
+                    # A provider refusal or malformed classification must not leave
+                    # a potentially endangered person with a generic gateway error.
+                    # No facts/actions are generated, and timeouts still propagate.
+                    if safety_context and not turn.tools_called:
+                        return ChatResponse(answer=TEMPLATES["immediate_safety"], sources=[])
                     if error.reason != "missing_citation":
                         raise
                     return await self._repair_citations(turn, messages, response, error, deadline)
+            if ambiguous:
+                # Deferring the shortcut for possible danger does not authorize
+                # searching an arbitrary track when the model chooses work.
+                return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
             if not remaining:
                 raise ModelError("Модель не завершила обработку запроса.", reason="unexpected_call")
             call_ids = {call.call_id for call in calls}
             if len(call_ids) != len(calls) or call_ids & seen_call_ids:
                 raise ModelError("Модель вернула повторяющиеся идентификаторы вызовов инструментов.", reason="duplicate_call_id")
             seen_call_ids.update(call_ids)
+            turn.tools_called = True
             items = [item.model_dump(mode="json", exclude_unset=True) for item in response.output]
             messages.extend(items)
             next_tools = [FIND_INSTRUCTION_TOOL] if remaining > len(calls) else []

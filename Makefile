@@ -24,3 +24,7 @@ vet:
 tools-check:
 	go version
 	golangci-lint version
+
+.PHONY: integration-test
+integration-test:
+	bash integration-tests/run.sh

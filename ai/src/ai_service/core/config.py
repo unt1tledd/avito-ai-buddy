@@ -1,11 +1,14 @@
 import hashlib
 import json
 from dataclasses import dataclass, field
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from .text_preparation import CONTEXT_PROMPT, CONTEXT_PROMPT_VERSION, TEXT_PREPARATION_VERSION
 
 
 DEFAULT_KNOWLEDGE_MIN_SIMILARITY = 0.3
@@ -55,6 +58,21 @@ class Settings(BaseModel):
     embedding_dimensions: int | None = None
     embedding_provider: str = Field(default="", pattern=r"^[a-z0-9/_-]{0,100}$")
     embedding_index_version: str = Field(default="1", pattern=r"^[A-Za-z0-9._-]{1,64}$")
+    retrieval_mode: Literal["vector", "hybrid"] = "hybrid"
+    search_candidates: int = Field(default=10, ge=1, le=100)
+    search_top_k: int = Field(default=3, ge=1, le=3)
+    rrf_k: float = Field(default=60, gt=0, le=1000)
+    rrf_bm25_weight: float = Field(default=1, gt=0, le=100)
+    rrf_vector_weight: float = Field(default=1, gt=0, le=100)
+    bm25_k1: float = Field(default=1.2, gt=0, le=10)
+    bm25_b: float = Field(default=0.75, ge=0, le=1)
+    contextualization_enabled: bool = True
+    context_prompt_version: str = Field(default=CONTEXT_PROMPT_VERSION, pattern=r"^[A-Za-z0-9._-]{1,64}$")
+    context_timeout_seconds: float = Field(default=25, gt=0, le=120)
+    context_concurrency: int = Field(default=4, ge=1, le=32)
+    context_min_interval_seconds: float = Field(default=0, ge=0, le=60)
+    context_cache_path: str = ".data/context-cache.sqlite3"
+    import_timeout_seconds: float = Field(default=900, gt=0, le=7200)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -84,7 +102,7 @@ class EmbeddingProfile:
 
 
 def resolve_embedding_profile(settings: Settings) -> EmbeddingProfile:
-    """Validate provider settings and preserve the existing knowledge index identity."""
+    """Validate providers and version the complete text/embedding preparation."""
     base_url = settings.embedding_base_url or settings.llm_base_url
     validate_base_url("EMBEDDING_BASE_URL" if settings.embedding_base_url else "LLM_BASE_URL", base_url)
     url = str(httpx.URL(f"{base_url.rstrip('/')}/embeddings"))
@@ -127,7 +145,11 @@ def resolve_embedding_profile(settings: Settings) -> EmbeddingProfile:
     if (openrouter or siliconflow or host == "api.openai.com") and not api_key:
         raise RuntimeError("EMBEDDING_API_KEY must be configured for the hosted embeddings endpoint")
     dimensions = request_dimensions or EMBEDDING_DIMENSIONS
-    identity = (url, provider, model, dimensions, settings.embedding_index_version)
+    preparation = (TEXT_PREPARATION_VERSION, settings.contextualization_enabled)
+    if settings.contextualization_enabled:
+        preparation += (settings.context_prompt_version, hashlib.sha256(CONTEXT_PROMPT.encode()).hexdigest(),
+                        settings.llm_base_url.rstrip("/"), settings.llm_model)
+    identity = (url, provider, model, dimensions, settings.embedding_index_version, preparation)
     return EmbeddingProfile(
         url=url, api_key=api_key, model=model, provider=provider, openrouter=openrouter,
         request_dimensions=request_dimensions, dimensions=dimensions,

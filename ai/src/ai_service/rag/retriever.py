@@ -13,7 +13,7 @@ class Retriever:
 
     async def search(self, query: str, actor: Actor) -> SearchResult:
         [embedding] = await self.embeddings.embed([query])
-        return await self.repository.search(embedding, self.embeddings.profile, actor, self.min_similarity)
+        return await self.repository.search(embedding, self.embeddings.profile, actor, self.min_similarity, query=query)
 
     async def check_ready(self) -> None:
         await self.repository.check_ready(self.embeddings.profile)

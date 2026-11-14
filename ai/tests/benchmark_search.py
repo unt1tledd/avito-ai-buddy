@@ -12,6 +12,7 @@ from psycopg.conninfo import make_conninfo
 
 from ai_service.repositories.knowledge import SEARCH_SQL, KnowledgeRepository
 from ai_service.schemas.contracts import Actor
+from ai_service.core.text_preparation import TEXT_PREPARATION_VERSION
 
 from test_rag import PROFILE, VECTOR, doc, migration_sql, pool_for
 
@@ -25,11 +26,11 @@ async def benchmark() -> None:
         await admin.execute(sql.SQL("CREATE SCHEMA {}").format(identifier))
         try:
             async with await AsyncConnection.connect(scoped) as db:
-                for version in (1, 2, 3):
+                for version in (1, 2, 3, 4):
                     await db.execute(migration_sql(version))
             async with pool_for(scoped) as pool:
                 repository = KnowledgeRepository(scoped, pool)
-                for count in (100, 1000):
+                for count in (100, 1000, 4000):
                     teams = ["51"] * (count * 9 // 10) + ["52"] * (count // 100)
                     teams += ["53"] * (count - len(teams))
                     await repository.replace(
@@ -45,6 +46,9 @@ async def benchmark() -> None:
                         params = {
                             "profile": PROFILE, "role": actor.role, "team": team, "vector": json.dumps(VECTOR),
                             "limit": 3, "max_distance": 0.7,
+                            "preparation": TEXT_PREPARATION_VERSION, "query": "doc", "candidates": 10,
+                            "rrf_k": 60., "bm25_k1": 1.2, "bm25_b": .75,
+                            "bm25_weight": 1., "vector_weight": 1.,
                         }
                         async with pool.connection() as db:
                             cursor = await db.execute("EXPLAIN (ANALYZE, BUFFERS) " + SEARCH_SQL, params)
@@ -52,7 +56,7 @@ async def benchmark() -> None:
                         samples = []
                         for index in range(105):
                             start = perf_counter()
-                            result = await repository.search(VECTOR, PROFILE, actor, 0.3)
+                            result = await repository.search(VECTOR, PROFILE, actor, 0.3, query="doc")
                             if index >= 5:
                                 samples.append((perf_counter() - start) * 1000)
                             assert len(result.hits) == min(3, teams.count(team))

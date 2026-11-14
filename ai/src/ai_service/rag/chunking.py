@@ -17,6 +17,7 @@ def split_text(text: str) -> list[str]:
     start = 0
     while start < len(text):
         end = min(start + MAX_CHUNK_TEXT, len(text))
+        sentence_split = False
         if end < len(text):
             # Avoid tiny chunks when an early paragraph is followed by a long one.
             minimum = start + MAX_CHUNK_TEXT // 2
@@ -24,14 +25,23 @@ def split_text(text: str) -> list[str]:
                 matches = list(boundary.finditer(text, minimum, end))
                 if matches:
                     end = matches[-1].end()
+                    sentence_split = boundary is SENTENCE_END
                     break
         parts.append(text[start:end])
         if end == len(text):
             break
-        next_start = end - CHUNK_OVERLAP
-        # Start at a complete word where possible; unbroken strings use a hard cut.
-        boundary = WORD_END.search(text, next_start, end)
-        start = boundary.end() if boundary else next_start
+        previous_start = start
+        start = end
+        if sentence_split:
+            # Repeat only complete sentences, never an arbitrary word suffix:
+            # dropping the first word can turn "Не объявляйте" into "объявляйте".
+            minimum_start = max(previous_start + 1, end - CHUNK_OVERLAP)
+            for boundary in SENTENCE_END.finditer(text, previous_start, end):
+                if minimum_start <= boundary.end() < end:
+                    start = boundary.end()
+                    break
+        # A finished paragraph needs no overlap. Word/character fallback also
+        # continues at end rather than copying a partial sentence.
     return parts
 
 
@@ -52,7 +62,7 @@ def chunk_documents(documents: list[Document]) -> list[DocumentChunk]:
                 raise ValueError("ID полученных фрагментов конфликтуют; измените ID исходных документов.")
             ids.add(identifier)
             chunks.append(DocumentChunk.model_validate({
-                **document.model_dump(), "id": identifier, "text": text,
+                **document.model_dump(), "id": identifier, "text": text, "original_document": document.text, "original_document_id": document.id,
             }))
             if len(chunks) > MAX_IMPORT_CHUNKS:
                 raise ValueError(f"После разбиения база знаний превышает {MAX_IMPORT_CHUNKS} фрагментов.")

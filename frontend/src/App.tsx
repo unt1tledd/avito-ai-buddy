@@ -1,99 +1,37 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChatPage } from './pages/ChatPage';
-import {
-  INITIAL_ONBOARDING_STEPS,
-  OnboardingStep,
-  AccessTask,
-  fetchOnboardingPlan,
-  fetchAccessTasks,
-} from './lib/api';
-
-const recomputeCurrentFlags = (list: OnboardingStep[]): OnboardingStep[] => {
-  const firstUncompletedIdx = list.findIndex((s) => !s.completed);
-  return list.map((s, idx) => ({
-    ...s,
-    current: firstUncompletedIdx !== -1 && idx === firstUncompletedIdx,
-  }));
-};
-
-const normalizeInitialSteps = (rawSteps: OnboardingStep[]): OnboardingStep[] =>
-  recomputeCurrentFlags(
-    rawSteps.map((step) => ({
-      ...step,
-      completed: false,
-    }))
-  );
-
-const LOGO_DOT_COLORS = ['#04E061', '#00AAFF', '#965EEB', '#FF4053'] as const;
-
-export const App: React.FC = () => {
-  const [steps, setSteps] = useState<OnboardingStep[]>(() =>
-    normalizeInitialSteps(INITIAL_ONBOARDING_STEPS)
-  );
-  const [tasks, setTasks] = useState<AccessTask[]>([]);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  useEffect(() => {
-    fetchOnboardingPlan().then((loaded) => setSteps(normalizeInitialSteps(loaded)));
-    fetchAccessTasks().then(setTasks);
+import { SetupPage } from './pages/SetupPage';
+import { currentUser, refreshSession, login, request, ApiError } from './lib/api';
+export default function App() {
+  const [user, setUser] = useState('');
+  const [metadata,setMetadata] = useState<any>(null);
+  const [profile,setProfile] = useState<'loading'|'missing'|'ready'|'error'>('loading');
+  const [profileError,setProfileError] = useState('');
+  const checkProfile = async (id:string) => {
+    setProfile('loading');
+    try { setMetadata(await request(`/v1/user/${encodeURIComponent(id)}/metadata`));setProfile('ready'); }
+    catch(e) { if(e instanceof ApiError && e.status===404) setProfile('missing');
+      else {setProfile('error');setProfileError(e instanceof Error?e.message:'Не удалось загрузить профиль');} }
+  };
+  useEffect(()=>{if(user)void checkProfile(user);},[user]);
+  const [checking, setChecking] = useState(true);
+  const [register,setRegister] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [dark, setDark] = useState(false);
+  useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
+  useEffect(() => { let active = true;
+    refreshSession().then(currentUser).then(id => { if(active) setUser(id); })
+      .catch(() => {}).finally(() => { if(active) setChecking(false); });
+    return () => { active = false; };
   }, []);
-
-  const handleToggleStep = useCallback((stepId: string) => {
-    setSteps((prev) => {
-      const target = prev.find((s) => s.step_id === stepId);
-      const nextCompleted = target ? !target.completed : true;
-
-      if (target?.resource_id && !nextCompleted) {
-        setTasks((prevTasks) =>
-          prevTasks.filter((t) => t.resource_id !== target.resource_id)
-        );
-      }
-
-      return recomputeCurrentFlags(
-        prev.map((s) =>
-          s.step_id === stepId ? { ...s, completed: nextCompleted } : s
-        )
-      );
-    });
-  }, []);
-
-  const handleProposalConfirmed = useCallback((resourceId: string, issueKey: string) => {
-    const newTask: AccessTask = {
-      task_id: `task-${issueKey}`,
-      proposal_id: `prop-${issueKey}`,
-      resource_id: resourceId,
-      title: `Выдать стажёру доступ к пространству команды (${resourceId})`,
-      assignee: 'Тимлид команды',
-      tracker_issue_key: issueKey,
-      status: 'approved',
-      created_at: 'Сегодня',
-    };
-
-    setTasks((prev) =>
-      prev.some((t) => t.resource_id === resourceId) ? prev : [newTask, ...prev]
-    );
-
-    setSteps((prev) =>
-      recomputeCurrentFlags(
-        prev.map((s) =>
-          s.resource_id === resourceId ? { ...s, completed: true } : s
-        )
-      )
-    );
-  }, []);
-
-  const isDark = theme === 'dark';
-
-  return (
-    <div className="app-root">
+  return <div className="app-root">
       <header className="app-header">
         <div className="aibuddy-logo-pill">
           <span className="aibuddy-logo-dots" aria-hidden="true">
-            {LOGO_DOT_COLORS.map((color) => (
+            {['#04E061', '#00AAFF', '#965EEB', '#FF4053'].map((color) => (
               <span
                 key={color}
                 className="aibuddy-logo-dot"
@@ -106,13 +44,13 @@ export const App: React.FC = () => {
 
         <button
           type="button"
-          className={`theme-toggle-btn${isDark ? ' theme-toggle-btn--dark' : ''}`}
-          onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
-          title={isDark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
+          className={`theme-toggle-btn${dark ? ' theme-toggle-btn--dark' : ''}`}
+          onClick={() => setDark(prev=>!prev)}
+          title={dark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
           aria-label="Переключить тему оформления"
         >
           <span className="theme-toggle-thumb">
-            {isDark ? (
+            {dark ? (
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="4.2" />
                 <path d="M12 2.5v2.3M12 19.2v2.3M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2.5 12h2.3M19.2 12h2.3M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6" />
@@ -126,14 +64,14 @@ export const App: React.FC = () => {
         </button>
       </header>
 
-      <ChatPage
-        steps={steps}
-        tasks={tasks}
-        onToggleStep={handleToggleStep}
-        onProposalConfirmed={handleProposalConfirmed}
-      />
-    </div>
-  );
-};
-
-export default App;
+    {checking ? <p role="status">Проверяем сессию…</p> : user ? (profile==='ready'?<ChatPage key={user} userId={user} profile={{name:[metadata?.intern?.first_name,metadata?.intern?.last_name].filter(Boolean).join(' '),email:localStorage.getItem(`buddy-email-${user}`)||'',team:metadata?.team?.name,track:metadata?.track}}/>:profile==='missing'?<SetupPage userId={user} onDone={()=>void checkProfile(user)}/>:profile==='error'?<div role="alert">{profileError}<button onClick={()=>void checkProfile(user)}>Повторить загрузку профиля</button></div>:<p role="status">Загружаем профиль…</p>) :
+      <form className="login-card" onSubmit={async e => { e.preventDefault(); setBusy(true); setError('');
+        try { if(register) await request('/v1/auth/register',{method:'POST',body:JSON.stringify({email,password})},false);const id=await login(email,password);localStorage.setItem(`buddy-email-${id}`,email);setUser(id); } catch(e) { setError(e instanceof Error ? e.message : 'Не удалось войти'); }
+        finally { setBusy(false); } }}>
+        <h1>{register?'Регистрация':'Вход в AI-buddy'}</h1><p>Используй учётную запись, подготовленную командой.</p>
+        <label>Почта<input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required/></label>
+        <label>Пароль<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>
+        {error && <p role="alert">{error}</p>}<button disabled={busy}>{busy?'Подождите…':register?'Зарегистрироваться':'Войти'}</button><button type="button" onClick={()=>{setRegister(!register);setError('');}}>{register?'Уже есть аккаунт? Войти':'Создать аккаунт'}</button>
+      </form>}
+  </div>;
+}

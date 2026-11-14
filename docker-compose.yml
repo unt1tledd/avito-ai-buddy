@@ -102,7 +102,25 @@ services:
       EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS:-}"
       EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
       KNOWLEDGE_PROCESSING_APPROVED: "${KNOWLEDGE_PROCESSING_APPROVED:-false}"
-      CHAT_TIMEOUT_SECONDS: "${CHAT_TIMEOUT_SECONDS:-60}"
+      EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS}"
+      EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
+      RETRIEVAL_MODE: "${RETRIEVAL_MODE:-hybrid}"
+      SEARCH_CANDIDATES: "${SEARCH_CANDIDATES:-10}"
+      SEARCH_TOP_K: "${SEARCH_TOP_K:-3}"
+      RRF_K: "${RRF_K:-60}"
+      RRF_BM25_WEIGHT: "${RRF_BM25_WEIGHT:-1}"
+      RRF_VECTOR_WEIGHT: "${RRF_VECTOR_WEIGHT:-1}"
+      BM25_K1: "${BM25_K1:-1.2}"
+      BM25_B: "${BM25_B:-0.75}"
+      CONTEXTUALIZATION_ENABLED: "${CONTEXTUALIZATION_ENABLED:-true}"
+      CONTEXT_PROMPT_VERSION: "${CONTEXT_PROMPT_VERSION:-chunk-context-v1}"
+      CONTEXT_TIMEOUT_SECONDS: "${CONTEXT_TIMEOUT_SECONDS:-25}"
+      CONTEXT_CONCURRENCY: "${CONTEXT_CONCURRENCY:-4}"
+      CONTEXT_MIN_INTERVAL_SECONDS: "${CONTEXT_MIN_INTERVAL_SECONDS:-0}"
+      CONTEXT_CACHE_PATH: /app/.data/context-cache.sqlite3
+      IMPORT_TIMEOUT_SECONDS: "${IMPORT_TIMEOUT_SECONDS:-900}"
+    volumes:
+      - ai_context_cache:/app/.data
     depends_on:
       db:
         condition: service_healthy
@@ -247,6 +265,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "127.0.0.1:8085:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
   loki:
     image: grafana/loki:3.7.0
@@ -293,8 +313,5 @@ services:
 
 volumes:
   postgres_data:
+  ai_context_cache:
   kafka_data:
-  loki_data:
-  alloy_data:
-  prometheus_data:
-  grafana_data:
