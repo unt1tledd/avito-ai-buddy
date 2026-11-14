@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"avito-ai-buddy/task/internal/app"
@@ -15,12 +16,20 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+			if attr.Key == slog.LevelKey {
+				attr.Value = slog.StringValue(strings.ToLower(attr.Value.String()))
+			}
+			return attr
+		},
+	})).With("service", "task")
 	cfg, err := config.New()
 	if err == nil {
-		err = app.Run(ctx, slog.Default(), cfg)
+		err = app.Run(ctx, logger, cfg)
 	}
 	if err != nil {
-		slog.Error("task service stopped", "error", err)
+		logger.Error("task service stopped", "error", err)
 		os.Exit(1)
 	}
 }

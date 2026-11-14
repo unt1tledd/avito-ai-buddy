@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"avito-ai-buddy/chat/internal/port"
 
@@ -43,6 +44,35 @@ func NewPublisher(brokers []string, topic string) (*Publisher, error) {
 // Close flushes the pending messages and releases librdkafka resources.
 func (p *Publisher) Close() {
 	p.producer.Close()
+}
+
+func (p *Publisher) CheckTopics(topics ...string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return errors.New("Kafka readiness check requires a deadline")
+		}
+		timeout := int(time.Until(deadline).Milliseconds())
+		if timeout <= 0 || ctx.Err() != nil {
+			return context.DeadlineExceeded
+		}
+		metadata, err := p.producer.GetMetadata(nil, true, timeout)
+		if err != nil {
+			return err
+		}
+		for _, name := range topics {
+			topic, found := metadata.Topics[name]
+			if !found || topic.Error.Code() != ckafka.ErrNoError || len(topic.Partitions) == 0 {
+				return fmt.Errorf("Kafka topic %q is unavailable", name)
+			}
+			for _, partition := range topic.Partitions {
+				if partition.Error.Code() != ckafka.ErrNoError || partition.Leader < 0 {
+					return fmt.Errorf("Kafka topic %q partition %d is unavailable", name, partition.ID)
+				}
+			}
+		}
+		return ctx.Err()
+	}
 }
 
 type createAccessRequestPayload struct {

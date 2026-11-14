@@ -1,0 +1,230 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "task/v1/task.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "TaskService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/internal/v1/tasks": {
+      "get": {
+        "operationId": "TaskService_ListPending",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "$ref": "#/definitions/v1AccessRequest"
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "afterId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/internal/v1/tasks/{taskId}/decision": {
+      "put": {
+        "operationId": "TaskService_Decide",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AccessRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "decision",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1Decision"
+            }
+          }
+        ],
+        "tags": [
+          "TaskService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1AccessRequest": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "proposalId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "userId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "teamId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "accessLevel": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1AccessRequestStatus"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "decidedByUserId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "decisionComment": {
+          "type": "string"
+        },
+        "externalRequestId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AccessRequestStatus": {
+      "type": "string",
+      "enum": [
+        "ACCESS_REQUEST_STATUS_UNSPECIFIED",
+        "ACCESS_REQUEST_STATUS_PENDING",
+        "ACCESS_REQUEST_STATUS_APPROVED",
+        "ACCESS_REQUEST_STATUS_REJECTED"
+      ],
+      "default": "ACCESS_REQUEST_STATUS_UNSPECIFIED"
+    },
+    "v1Decision": {
+      "type": "object",
+      "properties": {
+        "teamId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "decidedByUserId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "status": {
+          "$ref": "#/definitions/v1AccessRequestStatus"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "externalRequestId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListPendingResponse": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AccessRequest"
+          }
+        }
+      }
+    }
+  }
+}

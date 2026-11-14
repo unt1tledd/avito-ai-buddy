@@ -10,10 +10,17 @@ import (
 	"avito-ai-buddy/onboarding/internal/config"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	logger, err := zap.NewProduction()
+	logConfig := zap.NewProductionConfig()
+	logConfig.EncoderConfig.TimeKey = "time"
+	logConfig.EncoderConfig.MessageKey = "msg"
+	logConfig.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+	logConfig.DisableStacktrace = true
+	logConfig.InitialFields = map[string]any{"service": "onboarding"}
+	logger, err := logConfig.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -24,10 +31,10 @@ func main() {
 
 	cfg, err := config.New()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal("cannot load onboarding configuration", zap.Error(err))
 	}
 
 	if err := app.Run(ctx, logger, cfg); err != nil {
-		log.Fatal(err)
+		logger.Fatal("onboarding service stopped", zap.Error(err))
 	}
 }

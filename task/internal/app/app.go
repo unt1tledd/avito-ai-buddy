@@ -10,20 +10,24 @@ import (
 	"net/url"
 	"time"
 
+	"avito-ai-buddy/pkg/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	taskv1 "avito-ai-buddy/pkg/generated/task/v1"
+	"avito-ai-buddy/pkg/health"
 	"avito-ai-buddy/pkg/transactor"
 
 	chatkafka "avito-ai-buddy/task/internal/adapter/chat/kafka"
 	userhttp "avito-ai-buddy/task/internal/adapter/user/http"
 	"avito-ai-buddy/task/internal/config"
 	kafkaconsumer "avito-ai-buddy/task/internal/consumer/kafka"
+	"avito-ai-buddy/task/internal/controller"
 	taskctrl "avito-ai-buddy/task/internal/controller/task"
 	"avito-ai-buddy/task/internal/outbox"
 	outboxrepo "avito-ai-buddy/task/internal/repository/outbox"
@@ -49,21 +53,33 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	defer func() { _ = publisher.Close() }()
 	outboxWorker := outbox.New(logger, outboxrepo.PostgresRepository{}, transactor.NewTransactor(db), publisher, cfg.Outbox)
 
-	controller := taskctrl.NewController(service, logger, cfg.TrackerToken)
+	taskController := taskctrl.NewController(service, logger, cfg.TrackerToken)
 	grpcListener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.GRPCAddr)
 	if err != nil {
 		return fmt.Errorf("listen for tracker gRPC: %w", err)
 	}
 	defer func() { _ = grpcListener.Close() }()
-	grpcServer := grpc.NewServer()
-	taskv1.RegisterTaskServiceServer(grpcServer, controller)
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
+		level := slog.LevelInfo
+		if code == codes.Internal || code == codes.Unavailable || code == codes.Unknown {
+			level = slog.LevelError
+		} else if code == codes.DeadlineExceeded {
+			level = slog.LevelWarn
+		}
+		logger.Log(ctx, level, "RPC completed", "rpc", method, "code", code.String(),
+			"duration_ms", elapsed.Milliseconds(), "request_id", observability.RequestID(ctx))
+	})))
+	taskv1.RegisterTaskServiceServer(grpcServer, taskController)
+	healthServer := health.RegisterGRPC(grpcServer)
 
 	gatewayConn, err := connectGateway(grpcListener.Addr().(*net.TCPAddr))
 	if err != nil {
 		return fmt.Errorf("connect tracker gateway: %w", err)
 	}
 	defer func() { _ = gatewayConn.Close() }()
-	server, err := newHTTPServer(ctx, gatewayConn)
+	group, ctx := errgroup.WithContext(ctx)
+	checkKafka := publisher.CheckTopics(cfg.TaskCommandsTopic, cfg.TaskEventsTopic, cfg.KafkaConsumer.DLQTopic)
+	server, err := newHTTPServer(ctx, gatewayConn, db.Ping, checkKafka)
 	if err != nil {
 		return err
 	}
@@ -73,7 +89,6 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 		return fmt.Errorf("listen for tracker HTTP: %w", err)
 	}
 	defer func() { _ = listener.Close() }()
-	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		logger.Info("task gRPC starting", "addr", grpcListener.Addr())
 		if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
@@ -90,6 +105,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	})
 	group.Go(func() error {
 		<-ctx.Done()
+		healthServer.Shutdown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		shutdownErr := server.Shutdown(shutdownCtx)
 		cancel()
@@ -128,7 +144,7 @@ func connectGateway(addr *net.TCPAddr) (*grpc.ClientConn, error) {
 	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
 }
 
-func newHTTPServer(ctx context.Context, conn *grpc.ClientConn) (*http.Server, error) {
+func newHTTPServer(ctx context.Context, conn *grpc.ClientConn, pingDB, checkKafka func(context.Context) error) (*http.Server, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, trackerJSON{JSONPb: &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{UseProtoNames: true},
@@ -136,6 +152,9 @@ func newHTTPServer(ctx context.Context, conn *grpc.ClientConn) (*http.Server, er
 		// Authorization is forwarded automatically. Ignore Grpc-Metadata-* headers.
 		runtime.WithIncomingHeaderMatcher(func(string) (string, bool) { return "", false }),
 	)
+	if err := controller.RegisterHealth(ctx, mux, conn, pingDB, checkKafka); err != nil {
+		return nil, fmt.Errorf("register health endpoint: %w", err)
+	}
 	if err := taskv1.RegisterTaskServiceHandler(ctx, mux, conn); err != nil {
 		return nil, fmt.Errorf("register tracker HTTP routes: %w", err)
 	}

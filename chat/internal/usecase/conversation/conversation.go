@@ -27,3 +27,13 @@ func NewService(repo repository) *Service {
 func (s *Service) GetOrCreate(ctx context.Context, userID int64) (*entity.Conversation, error) {
 	return s.repo.GetOrCreate(ctx, userID)
 }
+
+// GetForTask resolves persisted proposal ownership without creating an empty chat.
+func (s *Service) GetForTask(ctx context.Context, userID int64, taskID string) (*entity.Conversation, error) {
+	if repo, ok := s.repo.(interface {
+		GetForTask(context.Context, int64, string) (*entity.Conversation, error)
+	}); ok {
+		return repo.GetForTask(ctx, userID, taskID)
+	}
+	return s.repo.GetOrCreate(ctx, userID)
+}

@@ -40,45 +40,8 @@ jobs:
 
           printf '%s\n' "$GOBIN" >> "$GITHUB_PATH"
 
-      - name: Generate User, Chat and Onboarding protobuf code
-        run: |
-          google_proto_dir="$RUNNER_TEMP/googleapis"
-          git init --quiet "$google_proto_dir"
-          git -C "$google_proto_dir" fetch --depth=1 \
-            https://github.com/googleapis/googleapis.git \
-            89c3153888201c9e80bc5ec78d6ffca0debe6b52
-          git -C "$google_proto_dir" checkout --quiet FETCH_HEAD
-
-          GOWORK=off go mod download github.com/envoyproxy/protoc-gen-validate@v1.3.3
-          validate_proto_dir="$(go env GOMODCACHE)/github.com/envoyproxy/protoc-gen-validate@v1.3.3"
-
-          mkdir -p pkg/generated
-
-          protoc \
-            --experimental_allow_proto3_optional \
-            -I user/api \
-            -I chat/api \
-            -I onboarding/api \
-            -I "$google_proto_dir" \
-            -I "$validate_proto_dir" \
-            -I /usr/include \
-            --go_out=pkg/generated \
-            --go_opt=paths=source_relative \
-            --go-grpc_out=pkg/generated \
-            --go-grpc_opt=paths=source_relative,require_unimplemented_servers=false \
-            --grpc-gateway_out=pkg/generated \
-            --grpc-gateway_opt=paths=source_relative \
-            --validate_out=lang=go,paths=source_relative:pkg/generated \
-            user/api/user/v1/user.proto \
-            chat/api/chat/v1/chat.proto \
-            onboarding/api/plan/v1/plan.proto \
-            onboarding/api/step/v1/step.proto
-
-          test -f pkg/generated/user/v1/user.pb.go
-          test -f pkg/generated/user/v1/user_grpc.pb.go
-          test -f pkg/generated/chat/v1/chat.pb.go
-          test -f pkg/generated/plan/v1/plan.pb.go
-          test -f pkg/generated/step/v1/step.pb.go
+      - name: Generate User, Chat, Onboarding and Task protobuf code
+        run: bash infra/scripts/generate-proto.sh
 
       - name: Generate Go test mocks
         run: |
@@ -93,13 +56,13 @@ jobs:
 
       - name: Run Go tests
         run: |
-          for module in auth user chat onboarding pkg; do
+          for module in auth user chat onboarding task pkg; do
             printf '\n=== %s ===\n' "$module"
-            (cd "$module" && go test -race -count=1 ./...)
+            (cd "$module" && CGO_ENABLED=1 go test -race -count=1 ./...)
           done
 
       - name: Go coverage
-        run: bash infra/scripts/coverage.sh auth user chat onboarding pkg
+        run: bash infra/scripts/coverage.sh auth user chat onboarding task pkg
 
       - name: Validate Compose and build images
         env:
@@ -109,10 +72,11 @@ jobs:
           AUTH_DB_PASSWORD: ci-auth
           CHAT_DB_PASSWORD: ci-chat
           ONBOARDING_DB_PASSWORD: ci-onboarding
+          TASK_DB_PASSWORD: ci-task
           EMBEDDING_DIMENSIONS: "1536"
         run: |
           docker compose config --quiet
-          docker compose build auth user chat onboarding ai
+          docker compose build auth user chat onboarding ai task frontend
 
   ai-tests:
     name: AI tests

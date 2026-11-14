@@ -1,4 +1,4 @@
-FROM golang:1.27.0
+FROM golang:1.27.3-bookworm AS build
 WORKDIR /app
 ENV GOWORK=off
 
@@ -9,7 +9,13 @@ COPY repository ./repository
 COPY usecase ./usecase
 COPY cmd/auth ./cmd/auth
 
-RUN go build -mod=mod -o /usr/local/bin/auth ./cmd/auth
+RUN CGO_ENABLED=0 go build -mod=mod -o /usr/local/bin/auth ./cmd/auth
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /usr/local/bin/auth /usr/local/bin/auth
 
 EXPOSE 8080
 CMD ["/usr/local/bin/auth"]

@@ -13,6 +13,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -54,6 +55,7 @@ func TestAuthorizeRequests(t *testing.T) {
 		{"cannot reopen another user's step", reopenStep, &steppb.ReopenStepRequest{UserId: 8, Status: "pending"}, accessToken, http.StatusOK, validOwner, codes.PermissionDenied},
 		{"different owner", completeStep, &steppb.CompleteStepRequest{UserId: 8}, accessToken, http.StatusOK, validOwner, codes.PermissionDenied},
 		{"missing token", getPlan, &planpb.GetPlanRequest{UserId: 7}, "", 0, "", codes.Unauthenticated},
+		{"health check without token", healthpb.Health_Check_FullMethodName, &healthpb.HealthCheckRequest{}, "", 0, "", codes.OK},
 		{"invalid token", getPlan, &planpb.GetPlanRequest{UserId: 7}, accessToken, http.StatusUnauthorized, "", codes.Unauthenticated},
 		{"invalid identity from Auth", getPlan, &planpb.GetPlanRequest{UserId: 7}, accessToken, http.StatusOK, `{"is_valid":true,"user_id":0}`, codes.Unavailable},
 		{"Auth unavailable", getPlan, &planpb.GetPlanRequest{UserId: 7}, accessToken, http.StatusServiceUnavailable, "", codes.Unavailable},

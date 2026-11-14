@@ -7,8 +7,10 @@ import (
 
 	"avito-ai-buddy/chat/internal/entity"
 	userv1 "avito-ai-buddy/pkg/generated/user/v1"
+	"avito-ai-buddy/pkg/observability"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // Client implements the user context port over the user service gRPC API.
@@ -29,6 +31,9 @@ func (c *Client) GetUserContext(ctx context.Context, userID string) (entity.User
 		return entity.UserContext{}, fmt.Errorf("invalid user id %q", userID)
 	}
 
+	if id := observability.RequestID(ctx); id != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-request-id", id)
+	}
 	metadata, err := c.client.GetMetadata(ctx, &userv1.GetMetadataRequest{UserId: id})
 	if err != nil {
 		return entity.UserContext{}, fmt.Errorf("get user metadata: %w", err)

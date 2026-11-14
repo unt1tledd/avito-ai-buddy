@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"avito-ai-buddy/chat/internal/entity"
+	"avito-ai-buddy/pkg/observability"
 )
 
 const (
@@ -108,6 +109,9 @@ func (c *Client) GetAnswer(ctx context.Context, request entity.AnswerRequest) (e
 	req.Header.Set("Authorization", "Bearer "+c.serviceToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	if id := observability.RequestID(ctx); id != "" {
+		req.Header.Set(observability.RequestIDHeader, id)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -115,7 +119,7 @@ func (c *Client) GetAnswer(ctx context.Context, request entity.AnswerRequest) (e
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return entity.Answer{}, fmt.Errorf("AI service returned HTTP %d", resp.StatusCode)
+		return entity.Answer{}, fmt.Errorf("AI answer endpoint returned HTTP %d", resp.StatusCode)
 	}
 
 	var payload answerResponse
