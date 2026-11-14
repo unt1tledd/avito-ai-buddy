@@ -36,6 +36,7 @@ export interface OnboardingStep {
   description: string;
   period: string;
   resource_id?: string;
+  action_type?: string;
   completed: boolean;
   current?: boolean;
 }
@@ -122,7 +123,7 @@ export async function sendChatMessage(text:string, key:string, conversationId?:s
 }
 export async function confirmAccessProposal(id:string): Promise<{status:string; tracker_issue_key:string}> {
   const data = await request(`/v1/chat/proposals/${encodeURIComponent(id)}/confirm`, {method:'POST'});
-  if (!data.accessRequest) throw new Error('Сервер не вернул результат заявки');
+  if (!data.accessRequest?.status) throw new Error('Сервер не вернул результат заявки');
   return {status:data.accessRequest.status, tracker_issue_key:data.accessRequest.externalRequestId || data.accessRequest.taskId || ''};
 }
 export async function fetchOnboardingPlan(userId:string): Promise<OnboardingStep[]> {
@@ -130,25 +131,32 @@ export async function fetchOnboardingPlan(userId:string): Promise<OnboardingStep
   let data;
   try { data = await request(path); }
   catch (err) { if (!(err instanceof ApiError) || err.status !== 404) throw err;
-    data = await request(path, {method:'POST', body:'{}'}); }
+    return []; // Wait for assignment; reading must never create a plan.
+  }
   let foundCurrent = false;
   return (data.steps || []).map((s:any, i:number) => {
     const completed = s.status === 'completed';
     const current = !completed && !foundCurrent;
     if (current) foundCurrent = true;
     return {step_id:s.id, step_number:i+1, title:s.title, description:s.description,
-      period:s.period, resource_id:s.resource_id, completed, current};
+      period:s.period, resource_id:s.resource_id, action_type:s.action_type, completed, current};
   });
 }
 export async function toggleStep(userId:string, step:OnboardingStep): Promise<void> {
   await request(`/v1/step/${encodeURIComponent(userId)}/${encodeURIComponent(step.step_id)}/completion`,
     step.completed ? {method:'PATCH', body:JSON.stringify({status:'pending'})} : {method:'PUT'});
 }
-export const statusLabel = (status:string) => ({draft:'Готова к отправке',pending_dispatch:'Отправляется',
-  pending:'Ожидает решения',pending_approval:'Ожидает решения',approved:'Доступ одобрен',
+export const statusLabel = (status:string) => ({draft:'Готова к отправке',pending_dispatch:'В очереди',
+  pending:'Заявка отправлена · ожидает решения',pending_approval:'Заявка отправлена · ожидает решения',approved:'Доступ одобрен',
   rejected:'Заявка отклонена',failed:'Не удалось отправить'}[status] || status);
 
 export interface Conversation {id:string;title:string;createdAt:string}
 export async function listConversations():Promise<Conversation[]> { return (await request('/v1/chat/conversations')).conversations || []; }
 export async function createConversation():Promise<Conversation> { return request('/v1/chat/conversations',{method:'POST'}); }
 export async function deleteConversation(id?:string):Promise<void> { await request('/v1/chat/conversations'+(id?`/${encodeURIComponent(id)}`:''),{method:'DELETE'}); }
+
+export function stepQuestion(step: OnboardingStep): string {
+  return step.action_type === 'access_request'
+    ? `Как получить доступ для шага «${step.title}»?${step.resource_id ? ` Ресурс: ${step.resource_id}.` : ''}`
+    : `Как выполнить шаг адаптации «${step.title}»?`;
+}

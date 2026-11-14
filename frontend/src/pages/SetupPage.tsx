@@ -1,23 +1,25 @@
 import React, { useState } from 'react';
 import { request } from '../lib/api';
 export function SetupPage({userId,onDone}:{userId:string;onDone:()=>void}) {
-  const [demoPeriod,setDemoPeriod]=useState(true);
-  const start=new Date();const end=new Date(start);end.setMonth(end.getMonth()+6);
-  const date=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const teams = [{id:'900001',name:'Backend',track:'backend'}, {id:'900002',name:'Frontend',track:'frontend'}, {id:'900003',name:'Data Analytics',track:'data_analytics'}, {id:'900004',name:'Platform',track:'platform'}, {id:'900005',name:'QA',track:'qa'}];
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);
   return <form className="login-card" style={{overflowY:'auto'}} onSubmit={async e=>{
-    e.preventDefault();const fields=new FormData(e.currentTarget);setBusy(true);setError('');
+    e.preventDefault();const fields=new FormData(e.currentTarget);setError('');
+    if(String(fields.get('end_date')) < String(fields.get('start_date'))) { setError('Дата окончания должна быть не раньше первого дня стажировки.');return; }
+    setBusy(true);
     try {await request('/v1/user',{method:'POST',body:JSON.stringify({user_id:userId,
       first_name:fields.get('first_name'),last_name:fields.get('last_name'),team_id:fields.get('team_id'),
-      track:fields.get('track'),start_date:demoPeriod?date(start):fields.get('start_date'),planned_end_date:demoPeriod?date(end):fields.get('end_date')})});onDone();}
+      track:teams.find(team=>team.id===fields.get('team_id'))!.track,start_date:fields.get('start_date'),planned_end_date:fields.get('end_date')})});onDone();}
     catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить профиль');}finally{setBusy(false);}
   }}>
-    <h1>Профиль стажировки</h1><p>Учётная запись создана. Для чата и плана адаптации заполни данные стажировки. Используй тестовые данные.</p>
+    <h1>Профиль стажировки</h1><p>Расскажи немного о себе. Треки адаптации назначит бадди.</p>
     <label>Имя<input name="first_name" required/></label><label>Фамилия<input name="last_name" required/></label>
-    <label>Команда<select name="team_id"><option value="900001">Backend</option><option value="900002">Frontend</option><option value="900003">Data Analytics</option><option value="900004">Platform</option><option value="900005">QA</option></select></label>
-    <label>План адаптации<select name="track"><option value="backend">Backend</option><option value="qa">QA</option></select></label>
-    <label><span><input type="checkbox" checked={demoPeriod} onChange={e=>setDemoPeriod(e.target.checked)}/> Использовать тестовый период: 6 месяцев с сегодняшнего дня</span></label>
-    {!demoPeriod && <><label>Начало<input name="start_date" type="date" required/></label><label>Плановое окончание<input name="end_date" type="date" required/></label></>}
-    {error&&<p role="alert">{error}</p>}<button disabled={busy}>{busy?'Сохраняем…':'Начать адаптацию'}</button>
+    <label>Команда<select name="team_id">{teams.map(team=><option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+    <div className="profile-date-fields">
+      <label>Первый день стажировки<input name="start_date" type="date" required/></label>
+      <label>Плановая дата окончания<input name="end_date" type="date" required/></label>
+    </div>
+    <p className="profile-form-hint">Укажи согласованные команду и сроки. Если пока их не знаешь, уточни у бадди.</p>
+    {error&&<p role="alert">{error}</p>}<button disabled={busy}>{busy?'Сохраняем…':'Сохранить профиль'}</button>
   </form>;
 }

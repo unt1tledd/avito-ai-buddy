@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatMessage, OnboardingStep, fetchHistory, fetchOnboardingPlan, toggleStep, sendChatMessage, confirmAccessProposal, statusLabel, refreshSession, Conversation, listConversations, createConversation, deleteConversation } from '../lib/api';
+import { ResizableSidebar } from './ResizableSidebar';
+import { AccessProposalCard } from './AccessProposalCard';
 import { OnboardingPage } from './OnboardingPage';
 const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -36,8 +38,11 @@ export function ChatPage({userId,profile}:{userId:string;profile:{name:string;em
   const [input,setInput] = useState('');
   const [error,setError] = useState('');
   const [planError,setPlanError] = useState('');
+  const [planLoading,setPlanLoading] = useState(true);
+  const planRequest = useRef(0);
   const [busy,setBusy] = useState(false);
   const sending = useRef(false);
+  const [proposalErrors,setProposalErrors] = useState<Record<string,string>>({});
   const [pending,setPending] = useState<string[]>([]);
   const locks = useRef(new Set<string>());
   const [savingSteps,setSavingSteps] = useState<string[]>([]);
@@ -54,15 +59,24 @@ export function ChatPage({userId,profile}:{userId:string;profile:{name:string;em
   const [loading,setLoading] = useState(true);
   const [live,setLive] = useState('Подключаем уведомления…');
   const end = useRef<HTMLDivElement>(null);
-  const loadPlan = useCallback(async () => {
-    try { setSteps(await fetchOnboardingPlan(userId)); setPlanError(''); }
-    catch(e) { setPlanError(errorText(e)); }
+  const loadPlan = useCallback(async (silent = false) => {
+    const requestId = ++planRequest.current;
+    if(!silent)setPlanLoading(true);
+    try { const result = await fetchOnboardingPlan(userId); if(requestId === planRequest.current){setSteps(result);setPlanError('');} }
+    catch(e) { if(requestId === planRequest.current)setPlanError(errorText(e)); }
+    finally { if(requestId === planRequest.current)setPlanLoading(false); }
   },[userId]);
   const loadHistory = useCallback(async (older=false, page='') => {
-    try { const id=activeRef.current;if(!id){setLoading(false);return;} const result = await fetchHistory(page,id); if(activeRef.current!==id)return;
+    const id=activeRef.current;
+    if(!id){setLoading(false);return;}
+    try {
+      const result=await fetchHistory(page,id);
+      if(activeRef.current!==id)return;
       setMessages(prev=>ordered([...prev,...result.messages]));
-      if(older || !page) setNext(result.next); setError('');
-    } catch(e) { setError(errorText(e)); } finally { setLoading(false); }
+      if(older || !page)setNext(result.next);
+      setError('');
+    } catch(e) {if(activeRef.current===id)setError(errorText(e));}
+    finally {if(activeRef.current===id)setLoading(false);}
   },[]);
   useEffect(()=>{void loadChats(); void loadPlan();setLoading(false);},[loadChats,loadPlan]);
   useEffect(()=>{end.current?.scrollIntoView({behavior:'smooth'});},[messages.length,busy]);
@@ -78,6 +92,15 @@ export function ChatPage({userId,profile}:{userId:string;profile:{name:string;em
     }; connect();
     return ()=>{stopped=true;clearTimeout(timer);socket?.close();};
   },[loadHistory,loadPlan]);
+  useEffect(()=>{
+    if(drawer !== 'roadmap')return;
+    void loadPlan();
+    const refresh = ()=>{if(document.visibilityState === 'visible')void loadPlan(true);};
+    const timer = window.setInterval(refresh,15000);
+    window.addEventListener('focus',refresh);
+    document.addEventListener('visibilitychange',refresh);
+    return ()=>{window.clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
+  },[drawer,loadPlan]);
   const send=async(text=input, key=String(Date.now()), failedId?:string)=>{
     text=text.trim(); if(!text || sending.current)return;
     setSuggestionsDismissed(true);sending.current=true;setBusy(true);setError('');
@@ -92,11 +115,11 @@ export function ChatPage({userId,profile}:{userId:string;profile:{name:string;em
     } finally {sending.current=false;setBusy(false);}
   };
   const confirm=async(id:string)=>{
-    if(locks.current.has(id))return;locks.current.add(id);setPending(p=>[...p,id]);
+    if(locks.current.has(id))return;locks.current.add(id);setPending(p=>[...p,id]);setProposalErrors(prev=>({...prev,[id]:''}));
     try {const result=await confirmAccessProposal(id);
       setMessages(prev=>prev.map(m=>m.proposal?.proposal_id===id?{...m,proposal:{...m.proposal,status:result.status,tracker_issue_key:result.tracker_issue_key}}:m));
       void loadPlan();
-    }catch(e){setError(errorText(e));}finally{locks.current.delete(id);setPending(p=>p.filter(x=>x!==id));}
+    }catch(e){setProposalErrors(prev=>({...prev,[id]:errorText(e)}));}finally{locks.current.delete(id);setPending(p=>p.filter(x=>x!==id));}
   };
   const changeStep=async(id:string)=>{
     const step=steps.find(s=>s.step_id===id);if(!step||locks.current.has(id))return;
@@ -110,8 +133,8 @@ export function ChatPage({userId,profile}:{userId:string;profile:{name:string;em
     try{await deleteConversation(id);if(!id||id===activeRef.current)newChat();await loadChats();}catch(e){setError(errorText(e));}
   };
   return <div className="workspace-layout">
-    <div className={`drawer-shell${drawer ? ` drawer-shell--open-${drawer}` : ''}`}>
-      {drawer === 'roadmap' && <OnboardingPage savingSteps={savingSteps} steps={steps} tasks={[]} isClosing={false} onClose={()=>setDrawer(null)} onToggleStep={changeStep} onSelectStepQuestion={q=>{void send(q);}}/>}
+    <ResizableSidebar panel={drawer}>
+      {drawer === 'roadmap' && <OnboardingPage savingSteps={savingSteps} steps={steps} loading={planLoading} error={planError} onRetry={()=>void loadPlan()} chatBusy={busy} isClosing={false} onClose={()=>setDrawer(null)} onToggleStep={changeStep} onSelectStepQuestion={q=>{setDrawer(null);void send(q);}}/>}
       {drawer === 'profile' && <aside className="drawer-panel profile-panel"><div className="drawer-header"><h2>Профиль</h2><button className="ui-icon-circle" onClick={()=>setDrawer(null)} aria-label="Закрыть профиль">✕</button></div>
         <div className="profile-avatar">{profile.name?.[0] || 'Я'}</div><h3>{profile.name || 'Стажёр'}</h3><dl><dt>Почта</dt><dd>{profile.email || 'Войди повторно, чтобы отобразить почту'}</dd><dt>Команда</dt><dd>{profile.team || 'Не указана'}</dd><dt>Направление</dt><dd>{profile.track || 'Не указано'}</dd></dl></aside>}
       {drawer === 'history' && <aside className="drawer-panel" style={{width:360,minWidth:360}}>
@@ -122,26 +145,21 @@ export function ChatPage({userId,profile}:{userId:string;profile:{name:string;em
           <button className="delete-chat" disabled={busy} aria-label={`Удалить чат ${chat.title}`} onClick={()=>void removeChat(chat.id)}>×</button>
         </div>)}
         {chats.length>historyLimit && <button className="history-load-more" onClick={()=>setHistoryLimit(n=>n+10)}>Загрузить ещё</button>}
-        {!chats.length && <p>История пока пуста</p>}
         {!!chats.length && <button className="history-entry" disabled={busy} onClick={()=>{if(window.confirm('Удалить все чаты этого аккаунта?'))void removeChat();}}>Удалить все чаты</button>}
       </aside>}
-    </div>
+    </ResizableSidebar>
     {drawer && <div className="mobile-drawer-backdrop" onClick={()=>setDrawer(null)}/>}
     <main className="chat-main">
       <div className="floating-nav-icons"><button className="drawer-toggle-btn" aria-label="История запросов" onClick={()=>setDrawer(drawer==='history'?null:'history')}><ClockIcon/></button><button className="drawer-toggle-btn" aria-label="Roadmap" onClick={()=>setDrawer(drawer==='roadmap'?null:'roadmap')}><RoadmapIcon/></button><button className="drawer-toggle-btn profile-nav" aria-label="Профиль" onClick={()=>setDrawer(drawer==='profile'?null:'profile')}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" strokeWidth="1.8"/><circle cx="12" cy="9" r="3" strokeWidth="1.8"/><path d="M6.5 19c.4-5.5 10.6-5.5 11 0" strokeWidth="1.8"/></svg></button></div>
       <div className="chat-scroll-area"><div className="chat-feed-column">
-      {error && <p role="alert">{error}<button onClick={()=>void loadHistory()}>Повторить</button></p>}{planError && <p role="alert">План адаптации: {planError}<button onClick={()=>void loadPlan()}>Повторить</button></p>}
+      {error && <p role="alert">{error}<button onClick={()=>void loadHistory()}>Повторить</button></p>}
         {loading && <p>Загружаем историю…</p>}
         {next && <button disabled={busy} onClick={()=>void loadHistory(true,next)}>Загрузить предыдущие сообщения</button>}
         {visibleMessages.map(m=><article key={m.id} className={m.sender==='user'?'user-msg-bubble':'assistant-msg-card'}>
           {m.sender==='assistant' && <span className="ai-name-badge">AI-buddy</span>}<p style={{whiteSpace:'pre-wrap'}}>{m.text}</p>
           {m.error && <button disabled={busy} onClick={()=>void send(m.retry_text,m.idempotency_key,m.id)}>Повторить</button>}
           {!!m.sources?.length && <ul>{m.sources.map((s,i)=><li key={s.id||i}>{/^https?:\/\//i.test(s.url)?<a href={s.url} target="_blank" rel="noreferrer">{s.title}</a>:s.title}</li>)}</ul>}
-          {m.proposal && <section className="proposal-card"><h3>{m.proposal.title}</h3><p>Уровень доступа: {m.proposal.access_level}</p>
-            <p role="status">{statusLabel(m.proposal.status)}</p>
-            {m.proposal.tracker_issue_key && <p>Заявка: {m.proposal.tracker_issue_key}</p>}
-            {['draft','failed'].includes(m.proposal.status) && <button disabled={pending.includes(m.proposal.proposal_id)} onClick={()=>void confirm(m.proposal!.proposal_id)}>{pending.includes(m.proposal.proposal_id)?'Отправляем…':'Отправить заявку'}</button>}
-          </section>}
+          {m.proposal && <AccessProposalCard proposal={m.proposal} sending={pending.includes(m.proposal.proposal_id)} error={proposalErrors[m.proposal.proposal_id]} onConfirm={()=>void confirm(m.proposal!.proposal_id)}/>}
         </article>)}{busy && <p role="status">AI-buddy готовит ответ…</p>}<div ref={end}/>
       </div></div><div className="chat-composer">{!suggestionsDismissed && !messages.length && !loading && <div className="suggestion-list">{['Как выполнить текущий шаг?','Как оформить отгул?','Какие правила работы с персональными данными?'].map(q=><button key={q} className="suggestion-pill" disabled={busy} onClick={()=>void send(q)}>{q}</button>)}</div>}<form className="chat-input-bar" onClick={()=>textarea.current?.focus()} onSubmit={e=>{e.preventDefault();void send();}}>
         <textarea ref={textarea} rows={1} aria-label="Вопрос помощнику" placeholder="Введите вопрос" title="Enter — отправить, Shift + Enter — новая строка" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send();}}}/>
