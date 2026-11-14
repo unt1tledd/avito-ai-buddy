@@ -34,6 +34,7 @@ services:
       EMBEDDING_INDEX_VERSION: "1"
       KNOWLEDGE_PROCESSING_APPROVED: "true"
       CHAT_TIMEOUT_SECONDS: "25"
+      CONTEXTUALIZATION_ENABLED: "false"
     volumes:
       - ./tests/load/mock-documents.json:/load-documents.json:ro
 
