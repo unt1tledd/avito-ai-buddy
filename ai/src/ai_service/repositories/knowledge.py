@@ -44,7 +44,9 @@ ACCESSIBLE_SOURCES_SQL = f"""
       AND {DOCUMENT_ACCESS_SQL}
 """
 
-SEARCH_SQL = f"""
+# Shared snapshot, ACL and BM25 statistics for normal and degraded retrieval.
+def _search_ctes(*, include_embedding: bool) -> str:
+    return f"""
     WITH index_state AS (
         SELECT count(*) > 0 AS present,
                coalesce(bool_and(text_preparation_version IS NOT DISTINCT FROM %(preparation)s
@@ -52,7 +54,7 @@ SEARCH_SQL = f"""
         FROM document_chunks WHERE embedding_profile = %(profile)s
     ), eligible AS MATERIALIZED (
         SELECT c.id AS chunk_id, c.source_id AS id, d.title, d.url, c.body AS text,
-               d.access_policies, c.embedding, c.token_count
+               d.access_policies, {"c.embedding, " if include_embedding else ""}c.token_count
         FROM document_chunks AS c JOIN documents AS d ON d.id = c.document_id
         WHERE c.embedding_profile = %(profile)s
           AND c.text_preparation_version = %(preparation)s
@@ -76,7 +78,24 @@ SEARCH_SQL = f"""
     ), lexical AS (
         SELECT id, score FROM bm25_scores WHERE score > 0
         ORDER BY score DESC, id COLLATE "C" LIMIT %(candidates)s
-    ), semantic AS (
+    )
+"""
+
+SEARCH_RESULT_SQL = """
+    SELECT index_state.present, index_state.prepared, e.id, e.title, e.url, e.text, e.access_policies
+    FROM index_state LEFT JOIN (fused JOIN eligible e USING (id)) ON true
+    ORDER BY fused.score DESC, e.id COLLATE "C"
+"""
+
+LEXICAL_SEARCH_SQL = _search_ctes(include_embedding=False) + """
+    , fused AS (
+        SELECT id, score FROM lexical
+        ORDER BY score DESC, id COLLATE "C" LIMIT %(limit)s
+    )
+""" + SEARCH_RESULT_SQL
+
+SEARCH_SQL = _search_ctes(include_embedding=True) + """
+    , semantic AS (
         SELECT id, embedding <=> %(vector)s::vector AS distance
         FROM eligible
         WHERE embedding <=> %(vector)s::vector <= %(max_distance)s
@@ -91,10 +110,7 @@ SEARCH_SQL = f"""
         SELECT id, sum(score) AS score FROM votes GROUP BY id
         ORDER BY score DESC, id COLLATE "C" LIMIT %(limit)s
     )
-    SELECT index_state.present, index_state.prepared, e.id, e.title, e.url, e.text, e.access_policies
-    FROM index_state LEFT JOIN (fused JOIN eligible e USING (id)) ON true
-    ORDER BY fused.score DESC, e.id COLLATE "C"
-"""
+""" + SEARCH_RESULT_SQL
 
 
 class KnowledgeError(UpstreamError):
@@ -143,21 +159,31 @@ class KnowledgeRepository:
     async def search(
         self, embedding: list[float], profile: str, actor: Actor, min_similarity: float, *, query: str = ""
     ) -> SearchResult:
+        return await self._search(SEARCH_SQL, profile, actor, {
+            "vector": json.dumps(embedding),
+            "query": query if self.settings.retrieval_mode == "hybrid" else "",
+            "rrf_k": self.settings.rrf_k,
+            "bm25_weight": self.settings.rrf_bm25_weight,
+            "vector_weight": self.settings.rrf_vector_weight,
+            "max_distance": 1 - min_similarity,
+        })
+
+    async def search_lexical(self, query: str, profile: str, actor: Actor) -> SearchResult:
+        # No query vector or cosine operator; keep the active corpus and ACL checks.
+        return await self._search(LEXICAL_SEARCH_SQL, profile, actor, {"query": query})
+
+    async def _search(self, statement: str, profile: str, actor: Actor, parameters: dict) -> SearchResult:
         assert self.pool is not None
         with operation("db.search"):
             try:
                 async with asyncio.timeout(SEARCH_DB_TIMEOUT_SECONDS), self.pool.connection() as db:
-                    cursor = await db.execute(SEARCH_SQL, {
+                    cursor = await db.execute(statement, {
                         "profile": profile, "role": actor.role, "team": actor.team,
-                        "vector": json.dumps(embedding), "limit": self.settings.search_top_k,
+                        "limit": self.settings.search_top_k,
                         "preparation": TEXT_PREPARATION_VERSION,
-                        "query": query if self.settings.retrieval_mode == "hybrid" else "",
                         "candidates": self.settings.search_candidates,
-                        "rrf_k": self.settings.rrf_k,
                         "bm25_k1": self.settings.bm25_k1, "bm25_b": self.settings.bm25_b,
-                        "bm25_weight": self.settings.rrf_bm25_weight,
-                        "vector_weight": self.settings.rrf_vector_weight,
-                        "max_distance": 1 - min_similarity,
+                        **parameters,
                     })
                     rows = await cursor.fetchall()
                 if not rows[0]["present"]:

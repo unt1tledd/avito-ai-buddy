@@ -23,7 +23,7 @@ class JSONFormatter(logging.Formatter):
         correlation = request_id.get()
         if correlation != "-":
             fields["request_id"] = correlation
-        for key in ("operation", "result", "duration_ms", "method", "route", "status", "reason"):
+        for key in ("operation", "result", "duration_ms", "method", "route", "status", "reason", "retrieval_mode", "hit_count"):
             if hasattr(record, key):
                 fields[key] = getattr(record, key)
         return json.dumps(fields, ensure_ascii=True)

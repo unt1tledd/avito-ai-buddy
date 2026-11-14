@@ -58,6 +58,9 @@ class Settings(BaseModel):
     embedding_dimensions: int | None = None
     embedding_provider: str = Field(default="", pattern=r"^[a-z0-9/_-]{0,100}$")
     embedding_index_version: str = Field(default="1", pattern=r"^[A-Za-z0-9._-]{1,64}$")
+    search_embedding_timeout_seconds: float = Field(default=30, gt=0, le=60)
+    embedding_circuit_failure_threshold: int = Field(default=3, ge=1, le=100)
+    embedding_circuit_reset_seconds: float = Field(default=30, gt=0, le=300)
     retrieval_mode: Literal["vector", "hybrid"] = "hybrid"
     search_candidates: int = Field(default=10, ge=1, le=100)
     search_top_k: int = Field(default=3, ge=1, le=3)
