@@ -6,6 +6,8 @@ import psycopg
 from psycopg_pool import AsyncConnectionPool, PoolTimeout, TooManyRequests
 from pydantic import ValidationError
 
+from ..core.config import Settings
+from ..core.text_preparation import TEXT_PREPARATION_VERSION
 from ..core.diagnostics import UpstreamError, operation
 from ..schemas.contracts import Actor, Document, DocumentChunk, MAX_CHUNK_TEXT, SearchHit, SearchResult
 
@@ -37,26 +39,61 @@ ACCESSIBLE_SOURCES_SQL = f"""
     FROM document_chunks AS c
     JOIN documents AS d ON d.id = c.document_id
     WHERE c.embedding_profile = %(profile)s
+      AND c.text_preparation_version = %(preparation)s
       AND c.source_id = ANY(%(source_ids)s::text[])
       AND {DOCUMENT_ACCESS_SQL}
 """
 
 SEARCH_SQL = f"""
-    SELECT profile.present, nearest.id, nearest.title, nearest.url, nearest.text, nearest.access_policies
-    FROM (SELECT EXISTS (
-        SELECT 1 FROM document_chunks WHERE embedding_profile = %(profile)s
-    ) AS present) AS profile
-    LEFT JOIN LATERAL (
-        SELECT c.source_id AS id, d.title, d.url, c.body AS text, d.access_policies,
-               c.embedding <=> %(vector)s::vector AS distance
-        FROM document_chunks AS c
-        JOIN documents AS d ON d.id = c.document_id
+    WITH index_state AS (
+        SELECT count(*) > 0 AS present,
+               coalesce(bool_and(text_preparation_version IS NOT DISTINCT FROM %(preparation)s
+                                 AND search_text <> ''), false) AS prepared
+        FROM document_chunks WHERE embedding_profile = %(profile)s
+    ), eligible AS MATERIALIZED (
+        SELECT c.id AS chunk_id, c.source_id AS id, d.title, d.url, c.body AS text,
+               d.access_policies, c.embedding, c.token_count
+        FROM document_chunks AS c JOIN documents AS d ON d.id = c.document_id
         WHERE c.embedding_profile = %(profile)s
+          AND c.text_preparation_version = %(preparation)s
           AND {DOCUMENT_ACCESS_SQL}
-        ORDER BY distance, c.source_id COLLATE "C"
-        LIMIT %(limit)s
-    ) AS nearest ON nearest.distance <= %(max_distance)s
-    ORDER BY nearest.distance, nearest.id COLLATE "C"
+    ), corpus AS (
+        SELECT count(*)::float8 AS n, avg(token_count)::float8 AS avgdl FROM eligible
+    ), query_terms AS (
+        SELECT term FROM knowledge_terms(%(query)s)
+    ), matches AS (
+        SELECT e.chunk_id, e.id, e.token_count, p.tf, corpus.n, corpus.avgdl,
+               count(*) OVER (PARTITION BY p.term)::float8 AS df
+        FROM query_terms q JOIN chunk_terms p ON p.term = q.term
+        JOIN eligible e ON e.chunk_id = p.chunk_id CROSS JOIN corpus
+    ), bm25_scores AS (
+        SELECT id, sum(
+            ln(1 + (n - df + 0.5) / (df + 0.5)) *
+            (tf * (%(bm25_k1)s + 1)) /
+            (tf + %(bm25_k1)s * (1 - %(bm25_b)s + %(bm25_b)s * token_count / nullif(avgdl, 0)))
+        ) AS score
+        FROM matches GROUP BY id
+    ), lexical AS (
+        SELECT id, score FROM bm25_scores WHERE score > 0
+        ORDER BY score DESC, id COLLATE "C" LIMIT %(candidates)s
+    ), semantic AS (
+        SELECT id, embedding <=> %(vector)s::vector AS distance
+        FROM eligible
+        WHERE embedding <=> %(vector)s::vector <= %(max_distance)s
+        ORDER BY distance, id COLLATE "C" LIMIT %(candidates)s
+    ), votes AS (
+        SELECT id, %(bm25_weight)s::float8 / (%(rrf_k)s + row_number() OVER (ORDER BY score DESC, id COLLATE "C")) AS score
+        FROM lexical
+        UNION ALL
+        SELECT id, %(vector_weight)s::float8 / (%(rrf_k)s + row_number() OVER (ORDER BY distance, id COLLATE "C")) AS score
+        FROM semantic
+    ), fused AS (
+        SELECT id, sum(score) AS score FROM votes GROUP BY id
+        ORDER BY score DESC, id COLLATE "C" LIMIT %(limit)s
+    )
+    SELECT index_state.present, index_state.prepared, e.id, e.title, e.url, e.text, e.access_policies
+    FROM index_state LEFT JOIN (fused JOIN eligible e USING (id)) ON true
+    ORDER BY fused.score DESC, e.id COLLATE "C"
 """
 
 
@@ -83,9 +120,10 @@ def missing_profile() -> KnowledgeError:
 
 
 class KnowledgeRepository:
-    def __init__(self, dsn: str, pool: AsyncConnectionPool | None = None):
+    def __init__(self, dsn: str, pool: AsyncConnectionPool | None = None, settings: Settings | None = None):
         self.dsn = dsn
         self.pool = pool
+        self.settings = settings or Settings()
 
     async def accessible_source_ids(self, source_ids: set[str], profile: str, actor: Actor) -> set[str]:
         if not source_ids:
@@ -96,13 +134,14 @@ class KnowledgeRepository:
                 async with asyncio.timeout(SEARCH_DB_TIMEOUT_SECONDS), self.pool.connection() as db:
                     cursor = await db.execute(ACCESSIBLE_SOURCES_SQL, {
                         "source_ids": sorted(source_ids), "profile": profile, "role": actor.role, "team": actor.team,
+                        "preparation": TEXT_PREPARATION_VERSION,
                     })
                     return {row["id"] for row in await cursor.fetchall()}
             except (psycopg.Error, PoolTimeout, TimeoutError) as error:
                 raise KnowledgeError("Не удалось проверить доступ к источникам истории.", reason=db_failure(error)) from error
 
     async def search(
-        self, embedding: list[float], profile: str, actor: Actor, min_similarity: float
+        self, embedding: list[float], profile: str, actor: Actor, min_similarity: float, *, query: str = ""
     ) -> SearchResult:
         assert self.pool is not None
         with operation("db.search"):
@@ -110,12 +149,21 @@ class KnowledgeRepository:
                 async with asyncio.timeout(SEARCH_DB_TIMEOUT_SECONDS), self.pool.connection() as db:
                     cursor = await db.execute(SEARCH_SQL, {
                         "profile": profile, "role": actor.role, "team": actor.team,
-                        "vector": json.dumps(embedding), "limit": MAX_SEARCH_HITS,
+                        "vector": json.dumps(embedding), "limit": self.settings.search_top_k,
+                        "preparation": TEXT_PREPARATION_VERSION,
+                        "query": query if self.settings.retrieval_mode == "hybrid" else "",
+                        "candidates": self.settings.search_candidates,
+                        "rrf_k": self.settings.rrf_k,
+                        "bm25_k1": self.settings.bm25_k1, "bm25_b": self.settings.bm25_b,
+                        "bm25_weight": self.settings.rrf_bm25_weight,
+                        "vector_weight": self.settings.rrf_vector_weight,
                         "max_distance": 1 - min_similarity,
                     })
                     rows = await cursor.fetchall()
                 if not rows[0]["present"]:
                     raise missing_profile()
+                if not rows[0]["prepared"]:
+                    raise KnowledgeError("Требуется полный повторный импорт базы знаний.", reason="reindex_required")
                 return SearchResult(hits=[
                     SearchHit.model_validate({key: row[key] for key in ("id", "title", "url", "text", "access_policies")})
                     for row in rows if row["id"] is not None
@@ -137,15 +185,17 @@ class KnowledgeRepository:
                     """)
                     cursor = await db.execute("""
                         SELECT count(*) AS chunks,
-                               coalesce(bool_or(char_length(body) > %s), false) AS oversized
+                               coalesce(bool_or(char_length(body) > %s), false) AS oversized,
+                               coalesce(bool_and(text_preparation_version IS NOT DISTINCT FROM %s
+                                                 AND search_text <> ''), false) AS prepared
                         FROM document_chunks WHERE embedding_profile = %s
-                    """, (MAX_CHUNK_TEXT, profile))
+                    """, (MAX_CHUNK_TEXT, TEXT_PREPARATION_VERSION, profile))
                     state = await cursor.fetchone()
                     if not state["chunks"]:
                         raise missing_profile()
-                    if state["oversized"]:
+                    if state["oversized"] or not state["prepared"]:
                         raise KnowledgeError(
-                            "База знаний содержит длинные фрагменты; выполните повторный импорт.",
+                            "Версия подготовки базы знаний устарела или содержит длинные фрагменты; выполните повторный импорт.",
                             reason="reindex_required",
                         )
             except (psycopg.Error, PoolTimeout, TimeoutError) as error:
@@ -155,14 +205,20 @@ class KnowledgeRepository:
         self, documents: Sequence[Document], vectors: list[list[float]], model: str, profile: str
     ) -> None:
         # Vectors must already correspond to bounded chunks. Never split after embedding.
-        chunks = [DocumentChunk.model_validate(document.model_dump()) for document in documents]
+        chunks = [document if isinstance(document, DocumentChunk) else DocumentChunk.model_validate(document.model_dump())
+                  for document in documents]
         rows = [
             (
                 document.title,
                 str(document.url) if document.url else None,
                 json.dumps([policy.model_dump(mode="json") for policy in document.access_policies]),
+                document.keywords,
+                document.original_document or document.text,
                 document.id,
                 document.text,
+                document.generated_context,
+                document.embedding_text(),
+                TEXT_PREPARATION_VERSION,
                 model,
                 profile,
                 json.dumps(vector),
@@ -188,11 +244,17 @@ class KnowledgeRepository:
             await db.cursor().executemany(
                 """
                 WITH new_document AS (
-                    INSERT INTO documents (title, url, access_policies) VALUES (%s, %s, %s::jsonb)
+                    INSERT INTO documents (title, url, access_policies, keywords, original_body) VALUES (%s, %s, %s::jsonb, %s, %s)
                     RETURNING id
                 ), new_chunk AS (
-                    INSERT INTO document_chunks (document_id, source_id, body, embedding_model, embedding_profile, embedding)
-                    SELECT id, %s, %s, %s, %s, %s::vector FROM new_document
+                    INSERT INTO document_chunks (document_id, source_id, body, generated_context, search_text,
+                                                 text_preparation_version, embedding_model, embedding_profile, embedding)
+                    SELECT id, %s, %s, %s, %s, %s, %s, %s, %s::vector FROM new_document
+                    RETURNING id, search_text
+                ), postings AS (
+                    INSERT INTO chunk_terms (chunk_id, term, tf)
+                    SELECT id, terms.term, terms.tf FROM new_chunk
+                    CROSS JOIN LATERAL knowledge_terms(search_text) AS terms
                 )
                 INSERT INTO document_access (document_id, principal_type, principal_id)
                 SELECT d.id, p.principal_type, p.principal_id
@@ -205,3 +267,9 @@ class KnowledgeRepository:
                 """,
                 rows,
             )
+
+            await db.execute("""
+                UPDATE document_chunks c SET token_count = stats.length
+                FROM (SELECT chunk_id, sum(tf)::integer AS length FROM chunk_terms GROUP BY chunk_id) stats
+                WHERE c.id = stats.chunk_id
+            """)

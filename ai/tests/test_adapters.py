@@ -195,3 +195,18 @@ def test_openrouter_provider_is_sent_and_changes_index_profile():
             assert await client.embed(["synthetic"]) == [FIRST_VECTOR]
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('usage', [None, {'prompt_tokens': 11, 'cost': 0.00001, 'details': None},
+                                   {'prompt_tokens': 'unavailable'}])
+def test_embedding_usage_metadata_does_not_break_valid_vectors(usage):
+    async def run():
+        handler = lambda request: httpx.Response(200, json={
+            'data': [{'index': 0, 'embedding': FIRST_VECTOR}], 'usage': usage,
+        })
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = Embeddings(http, resolve_embedding_profile(Settings(embedding_api_key='test')))
+            assert await client.embed(['Вопрос']) == [FIRST_VECTOR]
+            assert client.calls == 1
+            assert client.usage_complete == isinstance((usage or {}).get('prompt_tokens'), int)
+    asyncio.run(run())

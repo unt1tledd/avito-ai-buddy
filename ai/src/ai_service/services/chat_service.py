@@ -6,6 +6,7 @@ from ..agents.agent import Agent
 from ..core.diagnostics import operation
 from ..rag.onboarding import snapshot_answer
 from ..schemas.contracts import Actor, ChatActor, ChatResponse, Message, OnboardingPlan
+from ..schemas.support import needs_safety_routing
 
 
 class ChatUnavailable(Exception):
@@ -41,7 +42,7 @@ class ChatService:
             raise TimeoutError
         with operation("chat.answer"):
             async with asyncio.timeout_at(deadline):
-                snapshot = snapshot_answer(message, onboarding_plans)
+                snapshot = None if needs_safety_routing(message) else snapshot_answer(message, onboarding_plans)
                 if snapshot is not None:
                     return snapshot
                 if self.agent is None:

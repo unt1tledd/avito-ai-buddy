@@ -61,7 +61,7 @@ def test_paragraph_boundary_takes_precedence_over_following_sentences(separator)
     assert parts[0] == first
 
 
-def test_split_uses_whole_words_and_overlapping_context():
+def test_long_sentence_fallback_preserves_words_without_partial_overlap():
     text = " ".join(f"слово{index}" for index in range(400))
     parts = chunking.split_text(text)
     for part in parts:
@@ -69,8 +69,8 @@ def test_split_uses_whole_words_and_overlapping_context():
         assert part.split()[-1] in text.split()
     second_start = text.index(parts[1])
     overlap = len(parts[0]) - second_start
-    assert 0 < overlap <= chunking.CHUNK_OVERLAP
-    assert parts[0][-overlap:] == parts[1][:overlap]
+    assert overlap == 0
+    assert "".join(parts) == text
 
 
 def test_chunk_metadata_ids_and_short_documents_are_preserved():
@@ -108,7 +108,7 @@ def test_import_embeds_every_full_chunk_and_keeps_original_metadata(tmp_path, mo
     assert original.text.index(fact) > MAX_CHUNK_TEXT
     source = tmp_path / "corpus.json"
     source.write_text(json.dumps([original.model_dump(mode="json")]), encoding="utf-8")
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         knowledge_db_dsn="postgresql://unused.invalid/test", knowledge_processing_approved=True,
         embedding_api_key="test-key",
     )
@@ -149,7 +149,7 @@ def test_chunk_count_limit_is_checked_before_external_calls(tmp_path, monkeypatc
 def test_failed_embedding_batch_does_not_replace_existing_corpus(tmp_path, monkeypatch):
     source = tmp_path / "corpus.json"
     source.write_text(json.dumps([document("A" * 4000).model_dump(mode="json")]))
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         knowledge_db_dsn="postgresql://unused.invalid/test", knowledge_processing_approved=True,
         embedding_api_key="test-key",
     )
@@ -174,7 +174,52 @@ def test_failed_embedding_batch_does_not_replace_existing_corpus(tmp_path, monke
 
 def test_bundled_corpus_keeps_all_existing_ids_and_texts():
     source = Path(__file__).resolve().parents[1] / "knowledge" / "documents.json"
-    documents = [Document.model_validate(item) for item in json.loads(source.read_text())]
-    chunks = chunking.chunk_documents(documents)
-    assert len(documents) == len(chunks) == 144
-    assert [chunk.model_dump() for chunk in chunks] == [doc.model_dump() for doc in documents]
+    raw_documents = json.loads(source.read_text())
+    documents = [Document.model_validate(item) for item in raw_documents]
+    # Expanding the corpus must preserve all original short sources and IDs.
+    import hashlib
+    hashes = json.loads((source.parent / "sources/baseline-v1.2-hashes.json").read_text())["documents"]
+    originals = [doc for doc in documents if doc.id in hashes]
+    assert len(originals) == len(hashes) == 144
+    for doc in originals:
+        raw = next(item for item in raw_documents if item["id"] == doc.id)
+        assert hashlib.sha256(json.dumps(raw, ensure_ascii=False, sort_keys=True).encode()).hexdigest() == hashes[doc.id]
+    chunks = chunking.chunk_documents(originals)
+    assert [chunk.model_dump() for chunk in chunks] == [doc.model_dump() for doc in originals]
+
+
+def test_paragraph_overlap_never_drops_negation_from_next_chunk():
+    source = Path(__file__).resolve().parents[1] / 'knowledge/documents.json'
+    original = next(d for d in json.loads(source.read_text()) if d['id'] == 'learn-i-health-ready')
+    parts = chunking.split_text(original['text'])
+    assert len(parts) == 2
+    assert 'Не объявляйте сервис рабочим только по одному HTTP 200.' in parts[0]
+    assert parts[1].startswith('Разбор учебного примера\n')
+    assert ''.join(parts) == original['text']
+
+
+def test_sentence_overlap_preserves_complete_negative_sentences():
+    text = ' '.join(f'Не объявляйте запись {index} сохранённой без проверки.' for index in range(70))
+    parts = chunking.split_text(text)
+    assert len(parts) > 1
+    assert all(part.startswith('Не объявляйте запись ') for part in parts)
+    second_start = text.index(parts[1])
+    overlap = len(parts[0]) - second_start
+    assert 0 < overlap <= chunking.CHUNK_OVERLAP
+    assert parts[0][-overlap:] == parts[1][:overlap]
+    assert text[:second_start].endswith('. ')
+
+
+def test_all_learning_examples_start_on_a_complete_paragraph():
+    source = Path(__file__).resolve().parents[1] / 'knowledge/documents.json'
+    examples = 0
+    for original in json.loads(source.read_text()):
+        if not original['id'].startswith('learn-'):
+            continue
+        parts = chunking.split_text(original['text'])
+        if len(parts) > 1:
+            examples += 1
+            assert len(parts) == 2
+            assert parts[1].startswith('Разбор учебного примера\n'), original['id']
+            assert ''.join(parts) == original['text']
+    assert examples == 48

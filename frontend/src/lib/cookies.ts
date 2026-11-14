@@ -2,7 +2,7 @@ export type UserRole = 'intern' | 'teamlead';
 
 export function getAccessToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : 'demo-intern-jwt-token';
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 export function setAccessToken(token: string): void {

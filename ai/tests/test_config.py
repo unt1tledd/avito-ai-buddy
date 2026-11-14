@@ -100,13 +100,26 @@ def test_invalid_similarity_reports_the_setting_without_its_value(monkeypatch, v
       "embedding_provider": "siliconflow"},
      "2a1b0bddb119c09bcc8891d2424c607752af034f76a6718b8c188589d6e7fae3"),
 ])
-def test_embedding_profiles_preserve_existing_index_identity(overrides, expected_index_id):
+def test_embedding_profiles_version_text_preparation(overrides, expected_index_id):
     # Values captured from the client implementation before the configuration refactor.
     settings = Settings(embedding_api_key="test-key", **overrides)
     profile = resolve_embedding_profile(settings)
-    assert profile.index_id == expected_index_id
+    assert profile.index_id != expected_index_id
     rotated = resolve_embedding_profile(settings.model_copy(update={"embedding_api_key": "rotated-key"}))
     next_version = resolve_embedding_profile(settings.model_copy(update={"embedding_index_version": "2"}))
-    assert rotated.index_id == expected_index_id
-    assert next_version.index_id != expected_index_id
+    assert rotated.index_id == profile.index_id
+    assert next_version.index_id != profile.index_id
+    plain = resolve_embedding_profile(settings.model_copy(update={"contextualization_enabled": False}))
+    changed_prompt = resolve_embedding_profile(settings.model_copy(update={"context_prompt_version": "next"}))
+    assert len({plain.index_id, changed_prompt.index_id, profile.index_id}) == 3
     assert "test-key" not in repr(profile)
+
+
+def test_sentence_overlap_fix_invalidates_previous_text_profile(monkeypatch):
+    from ai_service.core import config
+
+    settings = Settings(embedding_api_key='test-key', contextualization_enabled=False)
+    corrected = resolve_embedding_profile(settings).index_id
+    monkeypatch.setattr(config, 'TEXT_PREPARATION_VERSION', 'hybrid-text-v1')
+    previous = resolve_embedding_profile(settings).index_id
+    assert corrected != previous
