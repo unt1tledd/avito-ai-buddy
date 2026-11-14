@@ -325,15 +325,37 @@ export function runTask(sessions) {
     return;
   }
 
+  let lastPoll;
   const pending = poll((attempt) => {
-    const list = request(user, 'e', 'GET', `${TASK}?team_id=${config.team}&after_id=${config.taskAfter}&limit=100`, null,
+    const url = `${TASK}?team_id=${config.team}&after_id=${config.taskAfter}&limit=100`;
+    const list = request(user, 'e', 'GET', url, null,
       { name: 'task_poll', internal: true, attempt, measure: false });
+
     const rows = Array.isArray(list.data) ? list.data : list.data?.tasks;
-    return list.response.status === 200 && rows?.find((row) =>
+    const match = rows?.find((row) =>
       String(row.proposalId ?? row.proposal_id) === user.proposal &&
       String(row.userId ?? row.user_id) === user.userId);
+
+    lastPoll = {
+      url,
+      status: list.response.status,
+      error_code: list.response.error_code,
+      request_id: list.id,
+      expected_proposal: user.proposal,
+      expected_proposal_type: typeof user.proposal,
+      expected_user: user.userId,
+      expected_user_type: typeof user.userId,
+      parsed_type: Array.isArray(list.data) ? 'array' : typeof list.data,
+      body_preview: String(list.response.body ?? '').slice(0, 300),
+      row_count: rows?.length,
+    };
+
+    return list.response.status === 200 && match;
   });
   if (!pending) {
+    if (exec.scenario.iterationInTest < 3) {
+      console.warn(JSON.stringify({ check: 'task_poll', ...lastPoll }));
+    }
     finish(user, 'task_delivery_timeout', null);
     return;
   }
