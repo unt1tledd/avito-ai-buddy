@@ -82,7 +82,7 @@ def settings(monkeypatch):
         assert len(texts) == 1
         return [EMBEDDING]
 
-    async def search(self, vector, profile, actor, min_similarity):
+    async def search(self, vector, profile, actor, min_similarity, *, query):
         assert len(profile) == 64
         assert vector == EMBEDDING
         assert min_similarity == 0.3
@@ -551,7 +551,7 @@ def test_rag_after_empty_tool_search(settings, monkeypatch, outcome):
     async def embed(self, texts):
         return [[2.0] if texts == ["окружение"] else [1.0]]
 
-    async def search(self, vector, profile, actor, min_similarity):
+    async def search(self, vector, profile, actor, min_similarity, *, query):
         if vector == [1.0]:
             return SearchResult(hits=[])
         if outcome == "search-error":
@@ -595,7 +595,7 @@ def test_model_formulates_first_query_before_embeddings(settings, monkeypatch, q
         queries.extend(texts)
         return [EMBEDDING]
 
-    async def search(self, vector, profile, actor, min_similarity):
+    async def search(self, vector, profile, actor, min_similarity, *, query):
         events.append("database")
         assert actor.model_dump() == ACTOR
         assert vector == EMBEDDING

@@ -56,6 +56,7 @@ ModelOutput = Annotated[OutputMessage | FunctionCall | Reasoning, Field(discrimi
 
 class ModelResponse(BaseModel):
     output: list[ModelOutput]
+    usage: dict[str, object] | None = None
     # Older compatible providers omit status on complete responses.
     status: str = "completed"
 

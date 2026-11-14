@@ -1,22 +1,22 @@
 {
   "dataset": "avito-wiki",
-  "version": "1.2",
+  "version": "1.3",
   "created_on": "2026-11-11",
   "synthetic": false,
-  "notice": "Смешанный корпус: 85 вымышленных демостатей и 59 фрагментов по приложенному чек-листу. Источник каждой статьи указан отдельно.",
-  "source_of_structure": "Пять исходных разделов из схемы пользователя и два дополнительных раздела для стажёров: адаптация и разработка. Дополнено двумя листами пользовательского Excel-чек-листа с сохранением периодов и строк.",
+  "notice": "Смешанный корпус: 85 исходных демостатей, 59 фрагментов исходного Excel и 160 авторских учебных демоматериалов. Учебный текст не является утверждённой политикой компании.",
+  "source_of_structure": "Пять исходных разделов из схемы пользователя и два дополнительных раздела для стажёров: адаптация и разработка. Дополнено двумя листами пользовательского Excel-чек-листа с сохранением периодов и строк. Учебное расширение: 16 авторских подразделов практики стажёра и наставника; их рекомендации не дополняют факты исходного Excel.",
   "timezone": "Europe/Moscow",
   "currency": "RUB",
   "source_domain": "wiki.avito.example",
   "links": "Домен wiki.avito.example относится только к вымышленным демостатьям. У фрагментов из Excel url=null: гиперссылок в исходнике нет.",
-  "document_count": 144,
-  "eval_case_count": 305,
+  "document_count": 304,
+  "eval_case_count": 589,
   "roles": {
     "intern": "Стажёр: общие статьи",
-    "mentor": "Наставник: общие статьи и восемь закрытых статей для наставника"
+    "mentor": "Наставник: общие и закрытые учебные материалы, только по серверной проверке роли"
   },
   "team_policy": "teams=[]: командных ограничений нет. team=101 в примерах — произвольный тестовый ID, не реальная команда.",
-  "max_text_characters": 935,
+  "max_text_characters": 1543,
   "sections": [
     {
       "id": "newcomers",
@@ -395,6 +395,274 @@
           ]
         }
       ]
+    },
+    {
+      "id": "intern-practice",
+      "title": "Практика стажёра",
+      "topics": [
+        {
+          "id": "intern-01",
+          "title": "Адаптация и самостоятельность",
+          "document_ids": [
+            "learn-i-map-team",
+            "learn-i-learning-goals",
+            "learn-i-week-review",
+            "learn-i-help-threshold",
+            "learn-i-learning-journal",
+            "learn-i-read-code-route",
+            "learn-i-notes-to-document",
+            "learn-i-context-switch",
+            "learn-i-feedback-request",
+            "learn-i-expectations-sync",
+            "learn-i-unknown-term",
+            "learn-i-learning-gap"
+          ]
+        },
+        {
+          "id": "intern-02",
+          "title": "Задачи и рабочая коммуникация",
+          "document_ids": [
+            "learn-i-acceptance",
+            "learn-i-decompose",
+            "learn-i-status-update",
+            "learn-i-estimate",
+            "learn-i-blocker",
+            "learn-i-change-scope",
+            "learn-i-async-question",
+            "learn-i-decision-log",
+            "learn-i-meeting-notes",
+            "learn-i-handoff-task",
+            "learn-i-demo-result",
+            "learn-i-priority-conflict"
+          ]
+        },
+        {
+          "id": "intern-03",
+          "title": "Git и проверка изменений",
+          "document_ids": [
+            "learn-i-clean-tree",
+            "learn-i-commit-scope",
+            "learn-i-pr-description",
+            "learn-i-review-response",
+            "learn-i-conflict-resolution",
+            "learn-i-review-small",
+            "learn-i-regression-diff",
+            "learn-i-revert-plan",
+            "learn-i-generated-files",
+            "learn-i-review-test-gap",
+            "learn-i-branch-sync",
+            "learn-i-merge-readiness"
+          ]
+        },
+        {
+          "id": "intern-04",
+          "title": "Тестирование и качество",
+          "document_ids": [
+            "learn-i-test-layers",
+            "learn-i-boundary-values",
+            "learn-i-negative-path",
+            "learn-i-fixtures",
+            "learn-i-flaky-tests",
+            "learn-i-time-tests",
+            "learn-i-contract-test",
+            "learn-i-concurrency-test",
+            "learn-i-coverage-meaning",
+            "learn-i-load-plan",
+            "learn-i-bug-report",
+            "learn-i-release-check"
+          ]
+        },
+        {
+          "id": "intern-05",
+          "title": "API и микросервисы",
+          "document_ids": [
+            "learn-i-request-path",
+            "learn-i-authn-authz",
+            "learn-i-error-contract",
+            "learn-i-timeout-chain",
+            "learn-i-retry-safety",
+            "learn-i-idempotency",
+            "learn-i-pagination",
+            "learn-i-versioning",
+            "learn-i-config-contract",
+            "learn-i-correlation",
+            "learn-i-queue-basics",
+            "learn-i-contract-owner"
+          ]
+        },
+        {
+          "id": "intern-06",
+          "title": "Данные и базы данных",
+          "document_ids": [
+            "learn-i-read-query",
+            "learn-i-null-semantics",
+            "learn-i-transaction",
+            "learn-i-schema-migration",
+            "learn-i-index-purpose",
+            "learn-i-query-plan",
+            "learn-i-unique-race",
+            "learn-i-connection-pool",
+            "learn-i-seed-data",
+            "learn-i-backup-restore",
+            "learn-i-data-pagination",
+            "learn-i-cache-consistency"
+          ]
+        },
+        {
+          "id": "intern-07",
+          "title": "Эксплуатация и диагностика",
+          "document_ids": [
+            "learn-i-local-start",
+            "learn-i-container-network",
+            "learn-i-health-ready",
+            "learn-i-log-reading",
+            "learn-i-metrics",
+            "learn-i-trace-reading",
+            "learn-i-incident-first",
+            "learn-i-rollback-observation",
+            "learn-i-resource-limit",
+            "learn-i-feature-flag",
+            "learn-i-runbook",
+            "learn-i-environment-diff"
+          ]
+        },
+        {
+          "id": "intern-08",
+          "title": "Безопасность и работа с информацией",
+          "document_ids": [
+            "learn-i-least-privilege",
+            "learn-i-secret-config",
+            "learn-i-secret-leak",
+            "learn-i-log-redaction",
+            "learn-i-external-ai",
+            "learn-i-prompt-injection",
+            "learn-i-source-verification",
+            "learn-i-privacy-task",
+            "learn-i-dependency-change",
+            "learn-i-unsafe-command",
+            "learn-i-access-end",
+            "learn-i-security-question"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mentor-practice",
+      "title": "Практика наставника",
+      "topics": [
+        {
+          "id": "mentor-01",
+          "title": "Старт и план наставничества",
+          "document_ids": [
+            "learn-m-prepare-start",
+            "learn-m-initial-dialog",
+            "learn-m-individual-plan",
+            "learn-m-mentor-capacity",
+            "learn-m-first-task-choice",
+            "learn-m-working-agreement",
+            "learn-m-plan-revision",
+            "learn-m-role-boundaries"
+          ]
+        },
+        {
+          "id": "mentor-02",
+          "title": "Постановка и дозирование задач",
+          "document_ids": [
+            "learn-m-learning-brief",
+            "learn-m-scaffold",
+            "learn-m-risk-ladder",
+            "learn-m-research-task",
+            "learn-m-acceptance-demo",
+            "learn-m-blocked-work",
+            "learn-m-parallel-tasks",
+            "learn-m-scope-mentor"
+          ]
+        },
+        {
+          "id": "mentor-03",
+          "title": "Встречи и обратная связь",
+          "document_ids": [
+            "learn-m-one-on-one-agenda",
+            "learn-m-feedback-facts",
+            "learn-m-positive-feedback",
+            "learn-m-feedback-check",
+            "learn-m-difficult-feedback",
+            "learn-m-written-feedback",
+            "learn-m-retrospective",
+            "learn-m-mentor-feedback"
+          ]
+        },
+        {
+          "id": "mentor-04",
+          "title": "Оценка прогресса",
+          "document_ids": [
+            "learn-m-evidence-map",
+            "learn-m-independence",
+            "learn-m-midpoint-review",
+            "learn-m-progress-stall",
+            "learn-m-fair-comparison",
+            "learn-m-review-summary",
+            "learn-m-assessment-change",
+            "learn-m-uncertain-evidence"
+          ]
+        },
+        {
+          "id": "mentor-05",
+          "title": "Сложные ситуации",
+          "document_ids": [
+            "learn-m-repeated-error",
+            "learn-m-missed-agreement",
+            "learn-m-conflict-review",
+            "learn-m-no-questions",
+            "learn-m-mentor-unavailable",
+            "learn-m-overwhelm",
+            "learn-m-unsafe-action",
+            "learn-m-communication-gap"
+          ]
+        },
+        {
+          "id": "mentor-06",
+          "title": "Техническое обучение и сопровождение",
+          "document_ids": [
+            "learn-m-pair-session",
+            "learn-m-debug-coaching",
+            "learn-m-code-reading-coach",
+            "learn-m-test-design-coach",
+            "learn-m-api-design-coach",
+            "learn-m-database-coach",
+            "learn-m-measurement-coach",
+            "learn-m-learning-ai-coach"
+          ]
+        },
+        {
+          "id": "mentor-07",
+          "title": "Командное наставничество",
+          "document_ids": [
+            "learn-m-review-queue",
+            "learn-m-shared-materials",
+            "learn-m-mentor-calibration",
+            "learn-m-backup-mentor",
+            "learn-m-team-expectations",
+            "learn-m-mentor-process-retro",
+            "learn-m-material-conflict",
+            "learn-m-onboarding-system"
+          ]
+        },
+        {
+          "id": "mentor-08",
+          "title": "Завершение и передача сопровождения",
+          "document_ids": [
+            "learn-m-final-evidence",
+            "learn-m-final-demo-coach",
+            "learn-m-result-handoff",
+            "learn-m-next-stage",
+            "learn-m-mentor-handoff",
+            "learn-m-archive-notes",
+            "learn-m-mentor-self-review",
+            "learn-m-completion-check"
+          ]
+        }
+      ]
     }
   ],
   "files": {
@@ -403,15 +671,19 @@
     "evaluation": "eval_cases.json",
     "instructions": "README.md",
     "checklist": "intern_checklist.md",
-    "checklist_source": "sources/intern-checklist.json"
+    "checklist_source": "sources/intern-checklist.json",
+    "learning_source": "sources/learning-expansion-v1.3.json",
+    "baseline_hashes": "sources/baseline-v1.2-hashes.json",
+    "builder": "build_learning_corpus.py"
   },
-  "updated_on": "2026-11-11",
+  "updated_on": "2026-11-13",
   "content_origin": "mixed",
   "content_counts": {
     "synthetic": 85,
     "checklist_rows": 47,
     "checklist_summaries": 11,
-    "checklist_guide": 1
+    "checklist_guide": 1,
+    "authored_learning": 160
   },
   "source_documents": [
     {
@@ -433,6 +705,32 @@
         }
       ],
       "actuality": "Дата утверждения и актуальность правил в файле не указаны; это содержание предоставленного документа, не проверка действующей политики компании."
+    },
+    {
+      "id": "authored-learning-v1.3",
+      "filename": "sources/learning-expansion-v1.3.json",
+      "type": "authored_demo",
+      "documents": 160,
+      "worked_examples": 48,
+      "actuality": "Авторские учебные рекомендации. Не утверждённая политика компании и не персональные результаты."
     }
-  ]
+  ],
+  "import_stats": {
+    "text_preparation_version": "hybrid-text-v2",
+    "chunks": 352,
+    "document_access_rows": 608,
+    "source_characters": 261277,
+    "json_bytes": 620939,
+    "multi_chunk_documents": 48,
+    "role_document_counts": {
+      "intern": 232,
+      "mentor": 304
+    },
+    "mentor_only_documents": 72,
+    "case_counts": {
+      "answerable": 496,
+      "insufficient_knowledge": 21,
+      "restricted_source": 72
+    }
+  }
 }

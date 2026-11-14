@@ -34,7 +34,7 @@ from ai_service.schemas.contracts import Actor, Document, MAX_CHUNK_TEXT, Search
 def test_import_rejects_invalid_source_before_external_calls(tmp_path, monkeypatch, payload, error, message):
     source = tmp_path / "documents.json"
     source.write_text(payload, encoding="utf-8")
-    settings = Settings(knowledge_db_dsn="postgresql://unused.invalid/knowledge")
+    settings = Settings(contextualization_enabled=False, knowledge_db_dsn="postgresql://unused.invalid/knowledge")
 
     def unexpected_embed(*args, **kwargs):
         pytest.fail("Import attempted to request embeddings")
@@ -81,6 +81,7 @@ def pg_schema():
     schema = f"ai_acl_{uuid4().hex}"
     identifier = sql.Identifier(schema)
     with psycopg.connect(dsn, autocommit=True) as db:
+        db.execute("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public")
         db.execute(sql.SQL("CREATE SCHEMA {}").format(identifier))
         try:
             yield make_conninfo(dsn, options=f"-csearch_path={schema},public")
@@ -98,6 +99,7 @@ def migrate(dsn):
         db.execute(migration_sql(1))
         db.execute(migration_sql(2))
         db.execute(migration_sql(3))
+        db.execute(migration_sql(4))
 
 
 def test_access_policies_round_trip_under_document_acl(pg_schema):
@@ -169,7 +171,7 @@ def test_qwen_import_query_and_atomic_reindex(pg_schema, tmp_path, monkeypatch):
     migrate(pg_schema)
     source = tmp_path / "corpus.json"
     source.write_text(json.dumps([doc("qwen", team="51").model_dump(mode="json")]), encoding="utf-8")
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         knowledge_db_dsn=pg_schema, knowledge_processing_approved=True,
         embedding_model="Qwen/Qwen3-Embedding-8B", embedding_base_url="https://api.siliconflow.com/v1",
         embedding_api_key="test-key", llm_api_key="other-key",
@@ -225,7 +227,7 @@ def test_qwen_import_query_and_atomic_reindex(pg_schema, tmp_path, monkeypatch):
                 await retriever.search("Question", ACTOR)
 
     asyncio.run(run())
-    assert requests[0] == [doc("qwen", team="51").embedding_text()]
+    assert requests[0] == [chunk_documents([doc("qwen", team="51")])[0].embedding_text()]
 
 
 def test_profile_migration_preserves_legacy_and_blocks_unsafe_rollback(pg_schema):
@@ -263,7 +265,7 @@ def test_readiness_detects_unapplied_profile_migration(pg_schema):
 
 
 def test_import_rejects_oversized_input_before_network(tmp_path):
-    settings = Settings(knowledge_db_dsn="postgresql://unused.invalid/db", knowledge_processing_approved=True)
+    settings = Settings(contextualization_enabled=False, knowledge_db_dsn="postgresql://unused.invalid/db", knowledge_processing_approved=True)
     source = tmp_path / "large.json"
     source.write_bytes(b" " * (4 * 1024 * 1024 + 1))
     with pytest.raises(ValueError, match="4 МиБ"):
@@ -280,7 +282,7 @@ def test_readiness_checks_real_pool_and_active_profile(pg_schema):
 
     from ai_service.main import create_app
 
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         service_token="chat-key", knowledge_db_dsn=pg_schema,
         knowledge_processing_approved=True, llm_api_key="llm-key", llm_model="test-model",
     )
@@ -316,7 +318,7 @@ def test_long_document_tail_reaches_model_and_preserves_acl_after_reimport(pg_sc
     by_id = {chunk.id: chunk for chunk in chunks}
     source = tmp_path / "long.json"
     source.write_text(json.dumps([original.model_dump(mode="json")]), encoding="utf-8")
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         service_token="chat-key", knowledge_db_dsn=pg_schema,
         knowledge_processing_approved=True, embedding_api_key="test-key",
     )
@@ -351,9 +353,10 @@ def test_long_document_tail_reaches_model_and_preserves_acl_after_reimport(pg_sc
             contexts.append(context)
             hits = context["hits"]
             if hits:
-                assert fact in hits[0]["text"]
+                assert any(fact in hit["text"] for hit in hits)
                 assert all(hit["text"] == by_id[hit["id"]].text for hit in hits)
-                text = f"Два рабочих дня. [source:{hits[0]['id']}]"
+                selected = next(hit for hit in hits if fact in hit["text"])
+                text = f"Два рабочих дня. [source:{selected['id']}]"
             else:
                 text = "Нет данных."
             final = json.dumps({"kind": "grounded_answer" if hits else "no_knowledge", "answer": text})
@@ -366,7 +369,7 @@ def test_long_document_tail_reaches_model_and_preserves_acl_after_reimport(pg_sc
         reply = client.post("/api/v1/answer", headers=headers, json=payload)
         assert reply.status_code == 200, reply.text
         assert "Два рабочих дня" in reply.json()["answer"]
-        assert reply.json()["sources"] == contexts[0]["hits"][:1]
+        assert reply.json()["sources"] == [hit for hit in contexts[0]["hits"] if fact in hit["text"]]
         assert all(hit["title"] == original.title and hit["url"] == str(original.url) for hit in reply.json()["sources"])
         for actor in ({"user_id": "42", "role": "mentor", "team": "51"},
                       {"user_id": "42", "role": "intern", "team": "52"}):
@@ -403,7 +406,7 @@ def test_plan_step_resource_cannot_bypass_document_acl(pg_schema, monkeypatch):
     from ai_service.main import create_app
 
     migrate(pg_schema)
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         service_token="chat-key", knowledge_db_dsn=pg_schema,
         knowledge_processing_approved=True, embedding_api_key="test-key",
     )
@@ -499,7 +502,7 @@ def test_history_is_filtered_again_after_role_team_change_or_source_deletion(pg_
     from ai_service.main import create_app
 
     migrate(pg_schema)
-    settings = Settings(
+    settings = Settings(contextualization_enabled=False,
         service_token="chat-key", knowledge_db_dsn=pg_schema,
         knowledge_processing_approved=True, embedding_api_key="test-key",
     )

@@ -16,12 +16,16 @@ class EmbeddingItem(BaseModel):
 
 class EmbeddingResponse(BaseModel):
     data: list[EmbeddingItem]
+    usage: dict[str, object] | None = None
 
 
 class Embeddings:
     def __init__(self, http: httpx.AsyncClient, profile: EmbeddingProfile):
         self.http = http
         self.config = profile
+        self.calls = 0
+        self.input_tokens = 0
+        self.usage_complete = True
 
     @property
     def model(self) -> str:
@@ -49,7 +53,8 @@ class Embeddings:
         try:
             response = await self.http.post(self.config.url, headers=headers, json=payload)
             response.raise_for_status()
-            items = EmbeddingResponse.model_validate_json(response.content).data
+            parsed = EmbeddingResponse.model_validate_json(response.content)
+            items = parsed.data
         except httpx.HTTPError as error:
             raise EmbeddingError("Не удалось получить эмбеддинги.", reason=http_failure(error)) from error
         except ValidationError as error:
@@ -66,4 +71,11 @@ class Embeddings:
             )
         if any(not any(vector) for vector in vectors):
             raise EmbeddingError("Сервис эмбеддингов вернул некорректные векторы.", reason="zero_vector")
+        self.calls += 1
+        usage = parsed.usage or {}
+        tokens = usage.get("prompt_tokens", usage.get("total_tokens"))
+        if not isinstance(tokens, int) or tokens < 0:
+            self.usage_complete = False
+        else:
+            self.input_tokens += tokens
         return vectors

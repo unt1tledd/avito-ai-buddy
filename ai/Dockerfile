@@ -13,6 +13,7 @@ COPY --from=build /app/.venv ./.venv
 COPY migrations ./migrations
 COPY knowledge ./knowledge
 COPY logging.json ./logging.json
+RUN mkdir -p /app/.data && chown 65532:65532 /app/.data
 USER 65532:65532
 ENV UVICORN_PORT=8080
 EXPOSE 8080
