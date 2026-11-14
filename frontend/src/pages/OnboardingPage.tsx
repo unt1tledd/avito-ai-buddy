@@ -1,50 +1,40 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { OnboardingStep, AccessTask } from '../lib/api';
+import { OnboardingStep, stepQuestion } from '../lib/api';
 
 interface OnboardingPageProps {
   steps: OnboardingStep[];
-  tasks: AccessTask[];
+  loading?: boolean;
+  error?: string;
+  onRetry: () => void;
+  chatBusy?: boolean;
   isClosing: boolean;
   onAnimationEnd?: React.AnimationEventHandler<HTMLElement>;
   onClose: () => void;
   onToggleStep: (stepId: string) => void;
+  savingSteps?: string[];
   onSelectStepQuestion: (question: string) => void;
 }
 
-type PeriodType = '1 неделя' | '2 неделя' | '1 месяц' | '3+ месяца';
-
-const PERIODS: readonly PeriodType[] = [
-  '1 неделя',
-  '2 неделя',
-  '1 месяц',
-  '3+ месяца',
-];
-
 export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   steps,
-  tasks,
+  loading = false,
+  error,
+  onRetry,
+  chatBusy = false,
   isClosing,
   onAnimationEnd,
   onClose,
   onToggleStep,
+  savingSteps = [],
   onSelectStepQuestion,
 }) => {
-  const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('1 неделя');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('1 неделя');
   const [viewMode, setViewMode] = useState<'graph' | 'cards'>('graph');
 
-  const getStepTask = useCallback(
-    (resourceId?: string) =>
-      resourceId ? tasks.find((t) => t.resource_id === resourceId) : undefined,
-    [tasks]
-  );
+  const periods = [...new Set(steps.map(step => step.period))];
+  const activePeriod = periods.includes(selectedPeriod) ? selectedPeriod : periods[0];
 
-  const isStepCompleted = useCallback(
-    (step: OnboardingStep) => {
-      const linkedTask = getStepTask(step.resource_id);
-      return step.completed || linkedTask?.status === 'approved';
-    },
-    [getStepTask]
-  );
+  const isStepCompleted = useCallback((step: OnboardingStep) => step.completed, []);
 
   const { completedCount, percent } = useMemo(() => {
     const done = steps.filter((s) => isStepCompleted(s)).length;
@@ -55,8 +45,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
   }, [steps, isStepCompleted]);
 
   const filteredSteps = useMemo(
-    () => steps.filter((s) => s.period === selectedPeriod),
-    [steps, selectedPeriod]
+    () => steps.filter((s) => s.period === activePeriod),
+    [steps, activePeriod]
   );
 
   return (
@@ -67,16 +57,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
     >
       <div className="drawer-header">
         <div className="drawer-header-title">
-          <svg className="drawer-title-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.1" />
-            <path
-              d="M12 19.2C12 16.3 11.7 13.4 11.4 9.5M12 16.8C10.4 14.3 7.2 12.8 7.1 6.8M11.6 14.4C14.1 13.5 16.7 11.6 16.7 7.6"
-              stroke="currentColor"
-              strokeWidth="2.1"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
           <h2>Roadmap</h2>
         </div>
 
@@ -91,6 +71,14 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
         </button>
       </div>
 
+      {loading ? <p role="status">Загружаем Roadmap…</p> : error ? (
+        <div role="alert">{error}<button className="ui-btn" onClick={onRetry}>Повторить</button></div>
+      ) : !steps.length ? (
+        <div className="roadmap-empty" role="status">
+          <h3>Твой путь скоро появится</h3>
+          <p>Бадди назначит треки, и здесь появится твой план адаптации.</p>
+        </div>
+      ) : <>
       {/* Блок прогресса */}
       <div
         style={{
@@ -111,7 +99,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           }}
         >
           <span>
-            1 неделя • Выполнено {completedCount} из {steps.length} шагов
+            Выполнено {completedCount} из {steps.length} шагов
           </span>
           <span>{percent}%</span>
         </div>
@@ -165,8 +153,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
 
       {viewMode === 'cards' && (
         <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
-          {PERIODS.map((period) => {
-            const isSelected = selectedPeriod === period;
+          {periods.map((period) => {
+            const isSelected = activePeriod === period;
             return (
               <button
                 key={period}
@@ -195,7 +183,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
       {viewMode === 'graph' ? (
         <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '4px' }}>
           {steps.map((step, idx) => {
-            const linkedTask = getStepTask(step.resource_id);
             const isDone = isStepCompleted(step);
             const prevStep = idx > 0 ? steps[idx - 1] : undefined;
             const nextStep = idx < steps.length - 1 ? steps[idx + 1] : undefined;
@@ -204,7 +191,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
 
             const isTopConnectorGreen = isPrevDone && isDone;
             const isBottomConnectorGreen = isDone && isNextDone;
-            const isPending = !isDone && linkedTask?.status === 'pending_approval';
             const isCurrent = !isDone && step.current;
 
             const toggleLabel = isDone
@@ -242,7 +228,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                   <button
                     type="button"
                     className={`roadmap-check-circle${isDone ? ' roadmap-check-circle--done' : ''}`}
-                    onClick={() => onToggleStep(step.step_id)}
+                    disabled={savingSteps.includes(step.step_id)}
+                      aria-pressed={isDone}
+                      onClick={() => onToggleStep(step.step_id)}
                     title={toggleLabel}
                     aria-label={toggleLabel}
                   >
@@ -296,8 +284,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                       style={{
                         background: isDone
                           ? '#C9FFBF'
-                          : isPending
-                          ? '#DFCDF3'
                           : isCurrent
                           ? '#BADAFB'
                           : '#F3F4F6',
@@ -305,8 +291,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                     >
                       {isDone
                         ? '✓ Выполнено'
-                        : isPending
-                        ? 'Ждёт тимлида'
                         : isCurrent
                         ? 'Текущий шаг'
                         : 'Следующий'}
@@ -320,11 +304,12 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                     {step.description}
                   </div>
 
-                  {isCurrent && (
+                  {!isDone && (isCurrent || step.action_type === 'access_request') && (
                     <button
                       type="button"
                       className="ui-btn"
-                      onClick={() => onSelectStepQuestion('Как выполнить текущий шаг адаптации?')}
+                      disabled={chatBusy}
+                      onClick={() => onSelectStepQuestion(stepQuestion(step))}
                       style={{
                         marginTop: '8px',
                         width: '100%',
@@ -375,6 +360,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                     <button
                       type="button"
                       className={`roadmap-check-circle${isDone ? ' roadmap-check-circle--done' : ''}`}
+                      disabled={savingSteps.includes(step.step_id)}
+                      aria-pressed={isDone}
                       onClick={() => onToggleStep(step.step_id)}
                       style={{ width: '28px', height: '28px', fontSize: '14px' }}
                       title={
@@ -405,11 +392,12 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                   {step.description}
                 </div>
-                {isCurrent && (
+                {!isDone && (isCurrent || step.action_type === 'access_request') && (
                   <button
                     type="button"
                     className="ui-btn"
-                    onClick={() => onSelectStepQuestion('Как выполнить текущий шаг адаптации?')}
+                    disabled={chatBusy}
+                      onClick={() => onSelectStepQuestion(stepQuestion(step))}
                     style={{
                       marginTop: '10px',
                       padding: '7px 12px',
@@ -429,6 +417,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({
           })}
         </div>
       )}
+      </>}
     </aside>
   );
 };

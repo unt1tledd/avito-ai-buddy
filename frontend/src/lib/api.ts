@@ -1,4 +1,4 @@
-import { getAccessToken } from './cookies';
+
 
 export interface SourceLink {
   id: string;
@@ -13,7 +13,7 @@ export interface Proposal {
   resource_id: string;
   resource_label: string;
   access_level: string;
-  status: 'draft' | 'pending_approval' | 'approved';
+  status: string;
   tracker_issue_key?: string;
 }
 
@@ -23,6 +23,7 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   idempotency_key?: string;
+  retry_text?: string;
   sources?: SourceLink[];
   proposal?: Proposal;
   error?: boolean;
@@ -33,8 +34,9 @@ export interface OnboardingStep {
   step_number: number;
   title: string;
   description: string;
-  period: '1 неделя' | '2 неделя' | '1 месяц' | '3+ месяца';
+  period: string;
   resource_id?: string;
+  action_type?: string;
   completed: boolean;
   current?: boolean;
 }
@@ -60,371 +62,101 @@ export interface HistoryItem {
   messages: ChatMessage[];
 }
 
-// Начальные шаги из таблицы «Чек-лист стажёра Авито»
-export const INITIAL_ONBOARDING_STEPS: OnboardingStep[] = [
-  {
-    step_id: 'step-1',
-    step_number: 1,
-    title: 'Познакомься с командой и чатами',
-    description: 'Добавиться во все командные каналы в мессенджере и познакомиться с коллегами.',
-    period: '1 неделя',
-    completed: true,
-  },
-  {
-    step_id: 'step-2',
-    step_number: 2,
-    title: 'Работа с наставником (назначить 1:1 и конспект)',
-    description: 'Договориться о регулярных встречах с бадди и завести документ для заметок и OKR.',
-    period: '1 неделя',
-    completed: true,
-  },
-  {
-    step_id: 'step-3',
-    step_number: 3,
-    title: 'Запроси доступ в пространство своего кластера (Confluence / Jira)',
-    description: 'Получить доступ к командному пространству team-space-a и репозиторию микросервиса.',
-    period: '1 неделя',
-    resource_id: 'team-space-a',
-    completed: false,
-    current: true,
-  },
-  {
-    step_id: 'step-4',
-    step_number: 4,
-    title: 'Запроси у куратора инструмент отслеживания прогресса',
-    description: 'Внести в трекер стажировки цели, задачи и ожидания на первые месяцы.',
-    period: '2 неделя',
-    completed: false,
-  },
-  {
-    step_id: 'step-5',
-    step_number: 5,
-    title: 'Изучи документы и мануалы своей вертикали',
-    description: 'Разобрать архитектурные схемы и стандарты разработки из AvitoTech Playbook.',
-    period: '2 неделя',
-    completed: false,
-  },
-  {
-    step_id: 'step-6',
-    step_number: 6,
-    title: 'Изучи основы защиты персональных данных и КИ',
-    description: 'Ознакомиться с лендингом «Защита данных» и политикой конфиденциальной информации.',
-    period: '1 месяц',
-    completed: false,
-  },
-  {
-    step_id: 'step-7',
-    step_number: 7,
-    title: 'Подготовься к экваторной встрече и выпускному',
-    description: 'Оформить презентацию с промежуточными результатами, провести репетицию с бадди.',
-    period: '3+ месяца',
-    completed: false,
-  },
-];
 
-export const INITIAL_HISTORY_ITEMS: HistoryItem[] = [
-  {
-    id: 'hist-access',
-    dayGroup: 'СЕГОДНЯ',
-    timeLabel: 'Сегодня, 14:20',
-    title: '«Запрос доступа в пространство кластера»',
-    badgeText: 'Заявка подтверждена',
-    badgeTone: 'green',
-    messages: [
-      {
-        id: 'm-h1',
-        sender: 'user',
-        text: 'Запрос доступа в пространство кластера',
-        timestamp: '14:20',
-      },
-      {
-        id: 'm-h2',
-        sender: 'assistant',
-        text: 'Заявка на доступ в пространство твоего кластера (Confluence и Jira) оформлена и подтверждена.',
-        timestamp: '14:20',
-        proposal: {
-          proposal_id: 'prop-1042',
-          title: 'Заявка на доступ: Пространство кластера Backend-команды',
-          role_label: 'Стажёр',
-          resource_id: 'team-space-a',
-          resource_label: 'Confluence + Jira Space (team-space-a)',
-          access_level: 'read_write',
-          status: 'approved',
-          tracker_issue_key: '1042',
-        },
-      },
-    ],
-  },
-  {
-    id: 'hist-dayoff',
-    dayGroup: 'СЕГОДНЯ',
-    timeLabel: 'Сегодня, 11:05',
-    title: '«Как оформить отгул на 1 день?»',
-    badgeText: 'Есть ответ',
-    badgeTone: 'blue',
-    messages: [
-      {
-        id: 'm-d1',
-        sender: 'user',
-        text: 'Как оформить отгул?',
-        timestamp: '11:05',
-      },
-      {
-        id: 'm-d2',
-        sender: 'assistant',
-        text: 'Чтобы оформить отгул на 1 день, выполни три простых шага:\n1. Предупреди команду: согласуй дату со своим наставником и руководителем в рабочем чате.\n2. Оформи заявку: зайди на внутренний портал в раздел «Отсутствия» и выбери нужную дату.\n3. Поставь статус: отметь день отсутствия в календаре и мессенджере.',
-        timestamp: '11:05',
-        sources: [
-          {
-            id: 's1',
-            title: '[1] Регламент сервиса Отсутствия',
-            url: 'https://github.com/avito-tech/playbook',
-          },
-          {
-            id: 's2',
-            title: '[2] Playbook: правила команды',
-            url: 'https://github.com/avito-tech/playbook',
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'hist-chats',
-    dayGroup: 'ВЧЕРА (ДЕНЬ 1)',
-    timeLabel: 'Вчера',
-    title: '«В какие чаты и каналы нужно добавиться?»',
-    badgeText: 'Просмотрено',
-    badgeTone: 'gray',
-    messages: [
-      {
-        id: 'm-c1',
-        sender: 'user',
-        text: 'В какие чаты и каналы нужно добавиться в первую неделю?',
-        timestamp: 'Вчера',
-      },
-      {
-        id: 'm-c2',
-        sender: 'assistant',
-        text: 'В первую неделю попроси наставника (бадди) добавить тебя в командный чат, канал кластера, канал анонсов AvitoTech и чат комьюнити стажёров Avito Start.',
-        timestamp: 'Вчера',
-        sources: [
-          {
-            id: 's3',
-            title: '[1] Чек-лист стажёра Авито (1 неделя)',
-            url: 'https://docs.google.com/spreadsheets/d/1qKFqOzfSZ2jEz57jBSmq7rukDXi_tRfWohgemViceV0/edit?usp=sharing',
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'hist-1on1',
-    dayGroup: 'ВЧЕРА (ДЕНЬ 1)',
-    timeLabel: 'Вчера',
-    title: '«Как подготовиться к первой встрече 1:1 с бадди?»',
-    badgeText: 'Просмотрено',
-    badgeTone: 'gray',
-    messages: [
-      {
-        id: 'm-o1',
-        sender: 'user',
-        text: 'Как подготовиться к первой встрече 1:1 с бадди?',
-        timestamp: 'Вчера',
-      },
-      {
-        id: 'm-o2',
-        sender: 'assistant',
-        text: 'Заведи единый конспект стажировки, выпиши вопросы по прошедшим командным встречам и обсуди с бадди ожидания и OKR на испытательный срок.',
-        timestamp: 'Вчера',
-      },
-    ],
-  },
-];
-
-// Ручка 1: GET /api/v1/chat/history
-export async function fetchChatHistory(): Promise<ChatMessage[]> {
-  try {
-    const res = await fetch('/api/v1/chat/history', {
-      headers: { Authorization: `Bearer ${getAccessToken()}` },
-    });
-    if (!res.ok) throw new Error('Backend offline');
-    const data = await res.json();
-    return data.messages || [];
-  } catch {
-    return [];
-  }
+let token = '';
+let refreshPending: Promise<void> | null = null;
+export class ApiError extends Error {
+  constructor(public status: number, message: string) { super(message); }
 }
-
-// Ручка 2: POST /api/v1/chat/messages
-export async function sendChatMessage(
-  text: string,
-  idempotencyKey: string,
-  simulateError = false
-): Promise<ChatMessage> {
-  if (simulateError) {
-    throw new Error('AI_SERVICE_TIMEOUT');
-  }
-
-  try {
-    const res = await fetch('/api/v1/chat/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${getAccessToken()}`,
-        'Idempotency-Key': idempotencyKey,
-      },
-      body: JSON.stringify({ text, idempotency_key: idempotencyKey }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        id: 'msg-' + Date.now(),
-        sender: 'assistant',
-        text: data.message,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        sources: data.sources,
-        proposal: data.proposal,
-      };
-    }
-  } catch {
-    // Используем локальную демонстрационную логику, если Go-бэкенд не запущен
-  }
-
-  await new Promise((r) => setTimeout(r, 450));
-  const lower = text.toLowerCase();
-
-  if (lower.includes('отгул') || lower.includes('отпуск')) {
-    return {
-      id: 'msg-' + Date.now(),
-      sender: 'assistant',
-      text: 'Чтобы оформить отгул на 1 день, выполни три простых шага:\n1. Предупреди команду: согласуй дату со своим наставником и руководителем в рабочем чате.\n2. Оформи заявку: зайди на внутренний портал в раздел «Отсутствия» и выбери нужную дату.\n3. Поставь статус: отметь день отсутствия в календаре и мессенджере.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      sources: [
-        {
-          id: 's-1',
-          title: '[1] Регламент сервиса Отсутствия',
-          url: 'https://github.com/avito-tech/playbook',
-        },
-        {
-          id: 's-2',
-          title: '[2] Playbook: правила команды',
-          url: 'https://github.com/avito-tech/playbook',
-        },
-      ],
-    };
-  }
-
-  if (lower.includes('текущий шаг') || lower.includes('доступ') || lower.includes('кластер')) {
-    return {
-      id: 'msg-' + Date.now(),
-      sender: 'assistant',
-      text: 'Твой текущий шаг 1-й недели — получить доступ в пространство кластера в Confluence и Jira. Я уже подготовил заявку для твоей команды:',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      proposal: {
-        proposal_id: 'prop-1042',
-        title: 'Заявка на доступ: Пространство кластера Backend-команды',
-        role_label: 'Стажёр',
-        resource_id: 'team-space-a',
-        resource_label: 'Confluence + Jira Space',
-        access_level: 'read_write',
-        status: 'draft',
-        tracker_issue_key: '1042',
-      },
-    };
-  }
-
-  if (lower.includes('персональн') || lower.includes('защит') || lower.includes('безопасност')) {
-    return {
-      id: 'msg-' + Date.now(),
-      sender: 'assistant',
-      text: 'При работе с персональными данными и внутренней информацией используй только корпоративные сервисы Авито и не загружай рабочие файлы на сторонние сайты.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      sources: [
-        {
-          id: 's-sec-1',
-          title: '[1] Лендинг «Защита данных»',
-          url: 'https://avito.tech/',
-        },
-        {
-          id: 's-sec-2',
-          title: '[2] Памятка по безопасности',
-          url: 'https://github.com/avito-tech/playbook',
-        },
-      ],
-    };
-  }
-
-  return {
-    id: 'msg-' + Date.now(),
-    sender: 'assistant',
-    text: `Я проверил базу знаний AvitoTech Playbook и твой план адаптации по запросу «${text}». Текущий фокус первой недели — завершить настройку доступов в Confluence и Jira (ресурс team-space-a).`,
-    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    sources: [
-      {
-        id: 's-gen-1',
-        title: '[1] AvitoTech Playbook',
-        url: 'https://github.com/avito-tech/playbook',
-      },
-    ],
-  };
+async function decode(res: Response) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data.message || data.error || `Ошибка сервера (${res.status})`);
+  return data;
 }
-
-// Ручка 3: POST /api/v1/chat/proposals/{proposal_id}/confirm
-export async function confirmAccessProposal(proposalId: string): Promise<{
-  task_id: string;
-  tracker_issue_key: string;
-  status: 'pending_approval' | 'approved';
-}> {
-  try {
-    const res = await fetch(`/api/v1/chat/proposals/${proposalId}/confirm`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${getAccessToken()}` },
-    });
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch {
-    // Fallback для локального демо
-  }
-  await new Promise((r) => setTimeout(r, 400));
-  return {
-    task_id: 'task-1042',
-    tracker_issue_key: '1042',
-    status: 'approved',
-  };
+export async function refreshSession(): Promise<void> {
+  if (!refreshPending) refreshPending = fetch('/v1/auth/refresh', {method:'POST', credentials:'same-origin'})
+    .then(decode).then(data => { token = data.access_token; }).finally(() => { refreshPending = null; });
+  return refreshPending;
 }
-
-// Ручка 4: GET /api/v1/onboarding/plan
-export async function fetchOnboardingPlan(): Promise<OnboardingStep[]> {
-  try {
-    const res = await fetch('/api/v1/onboarding/plan', {
-      headers: { Authorization: `Bearer ${getAccessToken()}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.steps) && data.steps.length > 0) {
-        return data.steps;
-      }
-    }
-  } catch {
-    // Fallback
-  }
-  return INITIAL_ONBOARDING_STEPS;
+export async function request(path: string, init: RequestInit = {}, retry = true): Promise<any> {
+  const headers = new Headers(init.headers);
+  if (init.body) headers.set('Content-Type', 'application/json');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  let res: Response;
+  try { res = await fetch(path, {...init, headers, credentials:'same-origin', signal:init.signal || controller.signal}); }
+  finally { clearTimeout(timeout); }
+  if (res.status === 401 && retry) { await refreshSession(); return request(path, init, false); }
+  return decode(res);
 }
-
-// Ручка 5: GET /api/v1/tasks?kind=access_request
-export async function fetchAccessTasks(): Promise<AccessTask[]> {
-  try {
-    const res = await fetch('/api/v1/tasks?kind=access_request', {
-      headers: { Authorization: `Bearer ${getAccessToken()}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-    }
-  } catch {
-    // Fallback
+export async function login(email: string, password: string): Promise<string> {
+  const data = await request('/v1/auth/login', {method:'POST', body:JSON.stringify({email,password})}, false);
+  token = data.access_token;
+  return currentUser();
+}
+export async function currentUser(): Promise<string> {
+  const data = await request('/v1/auth/validate', {method:'POST'});
+  if (!data.is_valid || !data.user_id) throw new Error('Сессия недействительна');
+  return String(data.user_id);
+}
+export function messageFromApi(raw: any): ChatMessage {
+  const proposal = raw.proposal;
+  const access = proposal?.accessRequest;
+  return {id:String(raw.id), sender:raw.role === 'MESSAGE_ROLE_USER' ? 'user' : 'assistant',
+    text:raw.text || '', timestamp:raw.createdAt || '',
+    sources:(raw.sources || []).map((s:any) => ({id:s.documentId, title:s.title, url:s.url})),
+    proposal:proposal ? {proposal_id:String(proposal.id), resource_id:proposal.resourceId,
+      resource_label:proposal.resourceLabel, title:`Заявка: ${proposal.resourceLabel}`, role_label:'',
+      access_level:proposal.accessLevel, status:access?.status || 'draft',
+      tracker_issue_key:access?.externalRequestId || access?.taskId} : undefined};
+}
+export async function fetchHistory(pageToken = '', conversationId?:string): Promise<{messages:ChatMessage[]; next:string}> {
+  const query = new URLSearchParams({pageSize:'50', pageToken});
+  const data = await request(`/v1/chat/messages?${query}`, {headers:conversationId ? {'X-Conversation-Id':conversationId} : {}});
+  return {messages:(data.messages || []).map(messageFromApi), next:data.nextPageToken || ''};
+}
+export async function sendChatMessage(text:string, key:string, conversationId?:string): Promise<ChatMessage> {
+  const data = await request('/v1/chat/messages', {method:'POST', headers:conversationId ? {'X-Conversation-Id':conversationId} : {}, body:JSON.stringify({text,idempotencyKey:key})});
+  if (!data.assistantMessage) throw new Error('Сервер не вернул ответ помощника');
+  return messageFromApi(data.assistantMessage);
+}
+export async function confirmAccessProposal(id:string): Promise<{status:string; tracker_issue_key:string}> {
+  const data = await request(`/v1/chat/proposals/${encodeURIComponent(id)}/confirm`, {method:'POST'});
+  if (!data.accessRequest?.status) throw new Error('Сервер не вернул результат заявки');
+  return {status:data.accessRequest.status, tracker_issue_key:data.accessRequest.externalRequestId || data.accessRequest.taskId || ''};
+}
+export async function fetchOnboardingPlan(userId:string): Promise<OnboardingStep[]> {
+  const path = `/v1/users/${encodeURIComponent(userId)}/plan`;
+  let data;
+  try { data = await request(path); }
+  catch (err) { if (!(err instanceof ApiError) || err.status !== 404) throw err;
+    return []; // Wait for assignment; reading must never create a plan.
   }
-  return [];
+  let foundCurrent = false;
+  return (data.steps || []).map((s:any, i:number) => {
+    const completed = s.status === 'completed';
+    const current = !completed && !foundCurrent;
+    if (current) foundCurrent = true;
+    return {step_id:s.id, step_number:i+1, title:s.title, description:s.description,
+      period:s.period, resource_id:s.resource_id, action_type:s.action_type, completed, current};
+  });
+}
+export async function toggleStep(userId:string, step:OnboardingStep): Promise<void> {
+  await request(`/v1/step/${encodeURIComponent(userId)}/${encodeURIComponent(step.step_id)}/completion`,
+    step.completed ? {method:'PATCH', body:JSON.stringify({status:'pending'})} : {method:'PUT'});
+}
+export const statusLabel = (status:string) => ({draft:'Готова к отправке',pending_dispatch:'В очереди',
+  pending:'Заявка отправлена · ожидает решения',pending_approval:'Заявка отправлена · ожидает решения',approved:'Доступ одобрен',
+  rejected:'Заявка отклонена',failed:'Не удалось отправить'}[status] || status);
+
+export interface Conversation {id:string;title:string;createdAt:string}
+export async function listConversations():Promise<Conversation[]> { return (await request('/v1/chat/conversations')).conversations || []; }
+export async function createConversation():Promise<Conversation> { return request('/v1/chat/conversations',{method:'POST'}); }
+export async function deleteConversation(id?:string):Promise<void> { await request('/v1/chat/conversations'+(id?`/${encodeURIComponent(id)}`:''),{method:'DELETE'}); }
+
+export function stepQuestion(step: OnboardingStep): string {
+  return step.action_type === 'access_request'
+    ? `Как получить доступ для шага «${step.title}»?${step.resource_id ? ` Ресурс: ${step.resource_id}.` : ''}`
+    : `Как выполнить шаг адаптации «${step.title}»?`;
 }
