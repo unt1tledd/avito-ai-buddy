@@ -11,7 +11,9 @@ from ..clients.llm import LanguageModel, ModelError
 from ..core.config import Settings
 from ..core.diagnostics import UpstreamError
 from ..core.text_preparation import CONTEXT_PROMPT, MAX_GENERATED_CONTEXT
+from ..repositories.queries import CONTEXT_CACHE_CREATE_SQL, CONTEXT_CACHE_GET_SQL, CONTEXT_CACHE_PUT_SQL
 from ..schemas.contracts import DocumentChunk
+from .import_retry import retry_import_request
 
 
 class ContextCache:
@@ -26,7 +28,7 @@ class ContextCache:
         os.fchmod(descriptor, 0o600)
         os.close(descriptor)
         self.db = sqlite3.connect(self.path, timeout=5)
-        self.db.execute("CREATE TABLE IF NOT EXISTS contexts (key TEXT PRIMARY KEY, context TEXT NOT NULL)")
+        self.db.execute(CONTEXT_CACHE_CREATE_SQL)
         self.db.commit()
         return self
 
@@ -34,7 +36,7 @@ class ContextCache:
         self.db.close()
 
     def get(self, key: str) -> str | None:
-        row = self.db.execute("SELECT context FROM contexts WHERE key = ?", (key,)).fetchone()
+        row = self.db.execute(CONTEXT_CACHE_GET_SQL, (key,)).fetchone()
         if row is None:
             return None
         if not row[0].strip() or len(row[0]) > MAX_GENERATED_CONTEXT:
@@ -42,7 +44,7 @@ class ContextCache:
         return row[0]
 
     def put(self, key: str, context: str) -> None:
-        self.db.execute("INSERT OR REPLACE INTO contexts VALUES (?, ?)", (key, context))
+        self.db.execute(CONTEXT_CACHE_PUT_SQL, (key, context))
         self.db.commit()
 
 
@@ -50,7 +52,7 @@ async def contextualize(chunks: list[DocumentChunk], model: LanguageModel, setti
     try:
         return await _contextualize(chunks, model, settings)
     except sqlite3.Error as error:
-        raise ModelError("Кеш контекстуализации недоступен; индекс не изменён.", reason="cache_failed") from error
+        raise ModelError("Context cache is unavailable; the index was not changed.", reason="cache_failed") from error
 
 
 async def _contextualize(chunks: list[DocumentChunk], model: LanguageModel, settings: Settings) -> dict:
@@ -78,7 +80,6 @@ async def _contextualize(chunks: list[DocumentChunk], model: LanguageModel, sett
 
     with ContextCache(settings.context_cache_path) as cache:
         async def generate(key, payload, targets):
-            nonlocal next_start
             cached = cache.get(key)
             if cached is not None:
                 stats["cache_hits"] += len(targets)
@@ -86,21 +87,28 @@ async def _contextualize(chunks: list[DocumentChunk], model: LanguageModel, sett
                     chunk.generated_context = cached
                 return
             async with semaphore:
-                async with start_lock:
-                    loop = asyncio.get_running_loop()
-                    await asyncio.sleep(max(0, next_start - loop.time()))
-                    next_start = loop.time() + settings.context_min_interval_seconds
-                try:
-                    async with asyncio.timeout(settings.context_timeout_seconds):
-                        response = await model.respond(
-                            instructions=CONTEXT_PROMPT,
-                            messages=[{"role": "user", "content": payload}], tools=[],
-                        )
-                except TimeoutError as error:
-                    raise ModelError("Истекло время контекстуализации; индекс не изменён.", reason="timeout") from error
+                async def request_context():
+                    nonlocal next_start
+                    # Retries obey the same pacing and concurrency as first attempts.
+                    async with start_lock:
+                        loop = asyncio.get_running_loop()
+                        await asyncio.sleep(max(0, next_start - loop.time()))
+                        next_start = loop.time() + settings.context_min_interval_seconds
+                    try:
+                        async with asyncio.timeout(settings.context_timeout_seconds):
+                            return await model.respond(
+                                instructions=CONTEXT_PROMPT,
+                                messages=[{"role": "user", "content": payload}], tools=[],
+                            )
+                    except TimeoutError as error:
+                        raise ModelError(
+                            "Contextualization timed out; the index was not changed.", code="context_timeout", reason="timeout",
+                        ) from error
+
+                response = await retry_import_request(request_context)
                 context = response.text
                 if response.calls or response.refused or response.status != "completed" or not context or len(context) > MAX_GENERATED_CONTEXT:
-                    raise ModelError("Некорректный контекст фрагмента; индекс не изменён.", reason="invalid_context")
+                    raise ModelError("Invalid chunk context; the index was not changed.", reason="invalid_context")
                 stats["calls"] += 1
                 for name in ("input_tokens", "output_tokens"):
                     value = (response.usage or {}).get(name)
@@ -121,5 +129,7 @@ async def _contextualize(chunks: list[DocumentChunk], model: LanguageModel, sett
             # Keep corpus/prompts out of CLI diagnostics.
             first = errors.exceptions[0]
             reason = first.reason if isinstance(first, UpstreamError) else "context_failed"
-            raise ModelError("Контекстуализация не завершена; индекс не изменён.", reason=reason) from errors
+            raise ModelError(
+                "Contextualization failed; the index was not changed.", code="context_failed", reason=reason,
+            ) from errors
     return stats

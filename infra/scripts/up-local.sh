@@ -67,8 +67,11 @@ run_migration ai-migrate
 
 if [[ "$import_ai" == true ]]; then
   printf '\n== Import the AI knowledge corpus ==\n'
-  run_docker compose run --rm --no-deps --quiet-pull ai \
-    /app/.venv/bin/python -m ai_service.rag.import_documents \
+  run_docker compose run --rm --no-deps --quiet-pull \
+    -e "CONTEXT_CONCURRENCY=${CONTEXT_CONCURRENCY:-1}" \
+    -e "CONTEXT_MIN_INTERVAL_SECONDS=${CONTEXT_MIN_INTERVAL_SECONDS:-5}" \
+    -e "IMPORT_TIMEOUT_SECONDS=${IMPORT_TIMEOUT_SECONDS:-7200}" \
+    ai /app/.venv/bin/python -m ai_service.rag.import_documents \
     /app/knowledge/documents.json
 fi
 

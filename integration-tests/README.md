@@ -8,6 +8,20 @@ make integration-test
 task integration-test
 ```
 
+Перед запуском на чистом checkout сгенерируйте protobuf-код.
+Нужны `protoc` и плагины, перечисленные в `.github/workflows/ci.yaml`.
+
+```bash
+bash infra/scripts/generate-proto.sh
+```
+
+На Linux, где Docker вызывается через `sudo`:
+
+```bash
+DOCKER_USE_SUDO=1 make integration-test
+```
+
+
 Каждый запуск создаёт отдельный Compose-проект без опубликованных портов и без
 использования рабочего `.env`. PostgreSQL хранит данные в tmpfs. После завершения,
 в том числе при ошибке теста, скрипт удаляет только свой стенд. При ошибке выводятся

@@ -144,7 +144,7 @@ def test_postgres_search_filters_by_role_team_threshold_and_profile(pg_schema):
     async def run():
         async with pool_for(pg_schema) as pool:
             repository = KnowledgeRepository(pg_schema, pool)
-            with pytest.raises(KnowledgeError, match="не проиндексирована"):
+            with pytest.raises(KnowledgeError, match="index is missing"):
                 await repository.check_ready(PROFILE)
             await repository.replace(documents, [VECTOR] * 3 + [far], "test-model", PROFILE)
             await repository.check_ready(PROFILE)
@@ -199,12 +199,12 @@ def test_qwen_import_query_and_atomic_reindex(pg_schema, tmp_path, monkeypatch):
             retriever = Retriever(repo, embeddings, 0.3)
             assert [hit.id for hit in (await retriever.search("Question", ACTOR)).hits] == ["qwen"]
             changed = Embeddings(http, resolve_embedding_profile(settings.model_copy(update={"embedding_index_version": "2"})))
-            with pytest.raises(KnowledgeError, match="не проиндексирована"):
+            with pytest.raises(KnowledgeError, match="index is missing"):
                 await Retriever(repo, changed, 0.3).search("Question", ACTOR)
             assert Embeddings(http, resolve_embedding_profile(settings.model_copy(update={
                 "embedding_base_url": "https://api.siliconflow.cn/v1",
             }))).profile != embeddings.profile
-            with pytest.raises(KnowledgeError, match="заменить"):
+            with pytest.raises(KnowledgeError, match="replace the knowledge index"):
                 await repo.replace([doc("broken")], [[1.0]], changed.model, changed.profile)
             assert [hit.id for hit in (await retriever.search("Question", ACTOR)).hits] == ["qwen"]
 
@@ -223,7 +223,7 @@ def test_qwen_import_query_and_atomic_reindex(pg_schema, tmp_path, monkeypatch):
 
             new_result = await Retriever(repo, changed, 0.3).search("Question", ACTOR)
             assert len(new_result.hits) == 1 and new_result.hits[0].id in {"first", "second"}
-            with pytest.raises(KnowledgeError, match="не проиндексирована"):
+            with pytest.raises(KnowledgeError, match="index is missing"):
                 await retriever.search("Question", ACTOR)
 
     asyncio.run(run())

@@ -24,7 +24,7 @@ func StepToProto(step entity.Step) *steppb.Step {
 	return &steppb.Step{
 		Id: step.ID, Title: step.Title, Description: step.Description,
 		Period: step.Period, ResourceId: step.ResourceID, Status: string(step.Status),
-		ActionType: actionType(step),
+		ActionType: actionType(step), Track: step.Track,
 	}
 }
 

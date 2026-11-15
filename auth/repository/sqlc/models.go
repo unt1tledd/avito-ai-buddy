@@ -8,6 +8,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuthRefreshToken struct {
+	UserID    int64              `json:"user_id"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
 type AuthUser struct {
 	ID           int64              `json:"id"`
 	Email        string             `json:"email"`

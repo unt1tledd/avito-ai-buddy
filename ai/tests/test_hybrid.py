@@ -258,3 +258,112 @@ def test_old_overlap_preparation_cannot_mix_with_corrected_index(pg_schema):
                 assert error.value.reason == 'reindex_required'
             assert await repo.accessible_source_ids({'old-overlap'}, PROFILE, ACTOR) == set()
     asyncio.run(run())
+
+
+def test_lexical_only_filters_acl_and_profile_and_preserves_source_metadata(pg_schema):
+    from ai_service.schemas.contracts import AccessPolicy
+
+    migrate(pg_schema)
+    policy = AccessPolicy(repository_host='git.example.test', resource_label='Git', access_levels=['Developer'])
+    hidden = [document(f'other-team-{i:02}', 'VPN VPN VPN', teams={'52'}) for i in range(15)]
+    hidden += [document('mentor-only', 'VPN VPN VPN').model_copy(update={'roles': {'mentor'}})]
+    hidden += [document('old-profile', 'VPN VPN VPN')]
+    visible = document('visible', 'Настройте VPN.', teams={'51'}, access_policies=[policy])
+
+    async def run():
+        async with pool_for(pg_schema) as pool:
+            repo = KnowledgeRepository(pg_schema, pool)
+            await repo.replace([*hidden, visible], [FAR] * (len(hidden) + 1), 'test', PROFILE)
+            with psycopg.connect(pg_schema) as db:
+                db.execute("UPDATE document_chunks SET embedding_profile = %s WHERE source_id = 'old-profile'", ('b' * 64,))
+            result = await repo.search_lexical('VPN', PROFILE, ACTOR)
+            assert [hit.id for hit in result.hits] == ['visible']
+            assert result.hits[0].text == visible.text
+            assert result.hits[0].access_policies == [policy]
+            assert result == await repo.search(VECTOR, PROFILE, ACTOR, .9, query='VPN')
+            assert (await repo.search_lexical('несуществующийтерм', PROFILE, ACTOR)).hits == []
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('state', ['missing', 'unprepared', 'no_access'])
+def test_lexical_only_distinguishes_index_errors_from_no_access(pg_schema, state):
+    from ai_service.schemas.contracts import Actor
+
+    migrate(pg_schema)
+
+    async def run():
+        async with pool_for(pg_schema) as pool:
+            repo = KnowledgeRepository(pg_schema, pool)
+            if state != 'missing':
+                await repo.replace([document('vpn', 'VPN инструкция.', teams={'51'})], [VECTOR], 'test', PROFILE)
+            if state == 'unprepared':
+                with psycopg.connect(pg_schema) as db:
+                    db.execute("UPDATE document_chunks SET text_preparation_version = 'obsolete'")
+            if state == 'no_access':
+                assert (await repo.search_lexical('VPN', PROFILE, Actor(user_id='42', team='52', role='intern'))).hits == []
+            else:
+                with pytest.raises(KnowledgeError) as caught:
+                    await repo.search_lexical('VPN', PROFILE, ACTOR)
+                assert caught.value.reason == ('profile_missing' if state == 'missing' else 'reindex_required')
+
+    asyncio.run(run())
+
+
+def test_lexical_only_ranking_limits_and_technical_query_quality(pg_schema):
+    migrate(pg_schema)
+    docs = [document('auth', 'Ошибка AUTH-403 при входе.'), document('vpn', 'Настройка VPN.'),
+            document('request', 'Отслеживание заявки на доступ.')]
+
+    async def run():
+        async with pool_for(pg_schema) as pool:
+            # Diagnostic vector mode still permits explicit lexical recovery.
+            repo = KnowledgeRepository(pg_schema, pool, Settings(retrieval_mode='vector', search_top_k=1))
+            await repo.replace(docs, [FAR] * len(docs), 'test', PROFILE)
+            for query, expected in [('AUTH-403', 'auth'), ('VPN', 'vpn'), ('заявками', 'request')]:
+                assert [h.id for h in (await repo.search_lexical(query, PROFILE, ACTOR)).hits] == [expected]
+            first = await repo.search_lexical('AUTH-403 VPN заявка', PROFILE, ACTOR)
+            assert len(first.hits) == 1
+            assert first == await repo.search_lexical('AUTH-403 VPN заявка', PROFILE, ACTOR)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('outage', ['http_503', 'timeout', 'invalid_dimensions'])
+def test_chat_with_real_postgres_returns_cited_lexical_answer_during_embedding_outage(pg_schema, monkeypatch, outage):
+    import httpx
+    from fastapi.testclient import TestClient
+    from ai_service.core.config import resolve_embedding_profile
+    from ai_service.main import create_app
+    from test_chat import AUTH, answer, searched_model
+
+    migrate(pg_schema)
+    settings = Settings(service_token='chat-test-token', knowledge_db_dsn=pg_schema,
+                        knowledge_processing_approved=True, contextualization_enabled=False,
+                        embedding_api_key='test', search_embedding_timeout_seconds=.01)
+    profile = resolve_embedding_profile(settings).index_id
+
+    async def seed():
+        await KnowledgeRepository(pg_schema).replace(
+            [document('vpn', 'Настройте VPN.', teams={'51'}), document('hidden', 'VPN секрет.', teams={'52'})],
+            [FAR, VECTOR], 'test', profile,
+        )
+
+    asyncio.run(seed())
+    async_client = httpx.AsyncClient
+
+    async def handler(request):
+        if outage == 'timeout':
+            await asyncio.Event().wait()
+        if outage == 'http_503':
+            return httpx.Response(503)
+        return httpx.Response(200, json={'data': [{'index': 0, 'embedding': [1., 0.]}]})
+
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kwargs: async_client(transport=httpx.MockTransport(handler), **kwargs))
+    model = searched_model(answer('Настройте VPN. [source:vpn]'), query='VPN')
+    with TestClient(create_app(settings, model=model)) as client:
+        response = client.post('/api/v1/answer', headers=AUTH,
+                               json={'message': 'Как настроить VPN?', 'actor': ACTOR.model_dump()})
+    assert response.status_code == 200
+    assert response.json() == {'answer': 'Настройте VPN. [source:vpn]',
+                               'sources': [{'id': 'vpn', 'title': 'Инструкция', 'url': None, 'text': 'Настройте VPN.'}]}

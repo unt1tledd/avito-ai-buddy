@@ -15,6 +15,7 @@ from ..repositories.knowledge import KnowledgeRepository
 from ..schemas.contracts import Document
 from .chunking import chunk_documents
 from .contextualization import contextualize
+from .import_retry import retry_import_request
 
 
 IMPORT_EMBEDDING_TIMEOUT_SECONDS = 25
@@ -28,7 +29,7 @@ async def import_documents(source: Path, settings: Settings) -> dict:
         async with asyncio.timeout(settings.import_timeout_seconds):
             return await _import_documents(source, settings)
     except TimeoutError as error:
-        raise ModelError("Истекло время импорта; индекс не изменён.", reason="timeout") from error
+        raise ModelError("Import timed out; the index was not changed.", code="import_timeout", reason="timeout") from error
 
 
 async def _import_documents(source: Path, settings: Settings) -> dict:
@@ -71,7 +72,8 @@ async def _import_documents(source: Path, settings: Settings) -> dict:
             context_stats = await contextualize(chunks, model, settings)
         for start in range(0, len(chunks), IMPORT_EMBEDDING_BATCH_SIZE):
             batch = chunks[start:start + IMPORT_EMBEDDING_BATCH_SIZE]
-            vectors.extend(await embeddings.embed([chunk.embedding_text() for chunk in batch]))
+            texts = [chunk.embedding_text() for chunk in batch]
+            vectors.extend(await retry_import_request(lambda: embeddings.embed(texts)))
 
     await KnowledgeRepository(settings.knowledge_db_dsn).replace(chunks, vectors, embeddings.model, embeddings.profile)
     return {

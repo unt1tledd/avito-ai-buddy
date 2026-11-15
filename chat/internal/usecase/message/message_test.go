@@ -81,7 +81,7 @@ func TestInternAsksForAccessDuringOnboarding(t *testing.T) {
 					ConversationID: 21, Role: entity.MessageRoleUser, Text: question,
 				}), testIdempotencyKey).Return(int64(11), question, nil),
 				messages.EXPECT().ClaimReply(gomock.Any(), int64(11), replyLease).Return(claimUntil, nil),
-				messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(0), "11").Return(history, "", nil),
+				messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(30), "11").Return(history, "", nil),
 				users.EXPECT().GetUserContext(gomock.Any(), "7").Return(entity.UserContext{TeamID: "platform", Role: "intern"}, nil),
 				onboarding.EXPECT().GetOnboardingPlans(gomock.Any(), int64(7), "session").Return(plans, nil),
 				ai.EXPECT().GetAnswer(gomock.Any(), entity.AnswerRequest{
@@ -122,7 +122,7 @@ func TestInternAsksForAccessDuringOnboarding(t *testing.T) {
 				return fn(txCtx)
 			})
 
-			got, err := NewService(conversations, messages, actions, users, onboarding, ai, auth, tx).
+			got, err := NewService(conversations, messages, actions, users, onboarding, ai, auth, tx, 4000, 30).
 				SendMessage(ctx, "session", question, testIdempotencyKey)
 			if tc.wantErr != nil {
 				if !reflect.DeepEqual(got, entity.Message{}) || !errors.Is(err, tc.wantErr) || !errors.Is(err, tc.wantCause) {
@@ -178,7 +178,7 @@ func TestSendMessageWithExistingIdempotencyKey(t *testing.T) {
 				messages.EXPECT().GetReply(gomock.Any(), int64(11)).Return(tc.reply, nil)
 			}
 			auth := validatorFunc(func(context.Context, string) (int64, error) { return 7, nil })
-			reply, err := NewService(conversations, messages, nil, nil, nil, nil, auth, nil).
+			reply, err := NewService(conversations, messages, nil, nil, nil, nil, auth, nil, 4000, 30).
 				SendMessage(ctx, "session", question, testIdempotencyKey)
 			want := entity.Message{}
 			if tc.reply != nil {
@@ -211,7 +211,7 @@ func TestSendMessageRetriesFailedQuestion(t *testing.T) {
 	messages.EXPECT().GetOrCreateQuestion(ctx, matchNewMessage(entity.Message{
 		ConversationID: 21, Role: entity.MessageRoleUser, Text: question,
 	}), testIdempotencyKey).Return(int64(11), question, nil).Times(2)
-	messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(0), "11").Return(nil, "", nil).Times(2)
+	messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(30), "11").Return(nil, "", nil).Times(2)
 	users.EXPECT().GetUserContext(gomock.Any(), "7").Return(entity.UserContext{}, nil).Times(2)
 	onboarding.EXPECT().GetOnboardingPlans(gomock.Any(), int64(7), "session").Return(nil, nil).Times(2)
 	gomock.InOrder(
@@ -226,7 +226,7 @@ func TestSendMessageRetriesFailedQuestion(t *testing.T) {
 
 	auth := validatorFunc(func(context.Context, string) (int64, error) { return 7, nil })
 	tx := transactorFunc(func(_ context.Context, f func(context.Context) error) error { return f(txCtx) })
-	service := NewService(conversations, messages, nil, users, onboarding, ai, auth, tx)
+	service := NewService(conversations, messages, nil, users, onboarding, ai, auth, tx, 4000, 30)
 	if _, err := service.SendMessage(ctx, "session", question, testIdempotencyKey); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("first SendMessage() error = %v, want deadline exceeded", err)
 	}
@@ -242,7 +242,7 @@ func TestGetHistory(t *testing.T) {
 	conversations := mocks.NewMockconversationService(ctrl)
 	messages := mocks.NewMockmessageRepository(ctrl)
 	auth := validatorFunc(func(context.Context, string) (int64, error) { return 7, nil })
-	service := NewService(conversations, messages, nil, nil, nil, nil, auth, nil)
+	service := NewService(conversations, messages, nil, nil, nil, nil, auth, nil, 4000, 30)
 	history := []entity.Message{{ID: 11, ConversationID: 21, Role: entity.MessageRoleUser, Text: "Question"}}
 	gomock.InOrder(
 		conversations.EXPECT().GetOrCreate(ctx, int64(7)).Return(&entity.Conversation{ID: 21}, nil),
@@ -261,7 +261,7 @@ func TestSignedOutInternCannotReadHistoryOrAskAQuestion(t *testing.T) {
 	conversations := mocks.NewMockconversationService(ctrl)
 	messages := mocks.NewMockmessageRepository(ctrl)
 	auth := validatorFunc(func(context.Context, string) (int64, error) { return 0, chaterrors.ErrInvalidToken })
-	service := NewService(conversations, messages, nil, nil, nil, nil, auth, nil)
+	service := NewService(conversations, messages, nil, nil, nil, nil, auth, nil, 4000, 30)
 
 	got, err := service.GetHistory(t.Context(), "invalid", 2, "")
 	if !reflect.DeepEqual(got, entity.HistoryPage{}) || !errors.Is(err, chaterrors.ErrInvalidToken) {
@@ -308,7 +308,7 @@ func TestQuestionSurvivesUnavailableOnboardingContext(t *testing.T) {
 					ConversationID: 21, Role: entity.MessageRoleUser, Text: question,
 				}), testIdempotencyKey).Return(int64(11), question, nil),
 				messages.EXPECT().ClaimReply(gomock.Any(), int64(11), replyLease).Return(claimUntil, nil),
-				messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(0), "11").Return(nil, "", tc.historyErr),
+				messages.EXPECT().ListByConversation(gomock.Any(), int64(21), int32(30), "11").Return(nil, "", tc.historyErr),
 			}
 			if tc.historyErr == nil {
 				calls = append(calls, users.EXPECT().GetUserContext(gomock.Any(), "7").Return(entity.UserContext{}, tc.userErr))
@@ -319,7 +319,7 @@ func TestQuestionSurvivesUnavailableOnboardingContext(t *testing.T) {
 			calls = append(calls, messages.EXPECT().FinishReply(gomock.Any(), int64(11), claimUntil, int64(0)).Return(nil))
 			gomock.InOrder(calls...)
 
-			got, err := NewService(conversations, messages, actions, users, onboarding, ai, auth, tx).
+			got, err := NewService(conversations, messages, actions, users, onboarding, ai, auth, tx, 4000, 30).
 				SendMessage(ctx, "session", question, testIdempotencyKey)
 			if !reflect.DeepEqual(got, entity.Message{}) || !errors.Is(err, tc.wantErr) || !errors.Is(err, unavailable) {
 				t.Fatalf("SendMessage() = %+v, %v, want no reply and %v wrapping %v", got, err, tc.wantErr, unavailable)
@@ -355,7 +355,7 @@ func TestInternSessionIsBoundedByVerifiedTokenExpiry(t *testing.T) {
 				}
 				return 7, tc.authErr
 			})
-			service := NewService(nil, nil, nil, nil, nil, nil, auth, nil)
+			service := NewService(nil, nil, nil, nil, nil, nil, auth, nil, 4000, 30)
 			userID, expiresAt, err := service.GetSession(ctx, token)
 			if tc.wantErr != nil {
 				if userID != "" || !expiresAt.IsZero() || !errors.Is(err, tc.wantErr) {
@@ -379,10 +379,20 @@ func TestReopeningChatReportsUnavailableHistory(t *testing.T) {
 	conversations.EXPECT().GetOrCreate(ctx, int64(7)).Return(&entity.Conversation{ID: 21}, nil)
 	messages.EXPECT().ListByConversation(ctx, int64(21), int32(10), "").Return(nil, "", unavailable)
 	auth := validatorFunc(func(context.Context, string) (int64, error) { return 7, nil })
-	service := NewService(conversations, messages, nil, nil, nil, nil, auth, nil)
+	service := NewService(conversations, messages, nil, nil, nil, nil, auth, nil, 4000, 30)
 
 	got, err := service.GetHistory(ctx, "session", 10, "")
 	if !reflect.DeepEqual(got, entity.HistoryPage{}) || !errors.Is(err, chaterrors.ErrListMessages) || !errors.Is(err, unavailable) {
 		t.Fatalf("GetHistory() = %+v, %v, want empty page and history unavailable", got, err)
+	}
+}
+
+func TestSendMessageRejectsQuestionAboveConfiguredLimitBeforeSaving(t *testing.T) {
+	auth := validatorFunc(func(context.Context, string) (int64, error) { return 7, nil })
+	service := NewService(nil, nil, nil, nil, nil, nil, auth, nil, 3, 30)
+
+	_, err := service.SendMessage(t.Context(), "token", "четыре", 1)
+	if !errors.Is(err, chaterrors.ErrInvalidMessageLength) {
+		t.Fatalf("SendMessage() error = %v, want ErrInvalidMessageLength", err)
 	}
 }

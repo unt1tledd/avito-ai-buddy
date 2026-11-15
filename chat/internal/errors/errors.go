@@ -10,6 +10,7 @@ var (
 )
 
 var (
+	ErrInvalidMessageLength = errors.New("invalid message length")
 	ErrGetConversation      = errors.New("get chat conversation")
 	ErrListMessages         = errors.New("list conversation messages")
 	ErrGetUserContext       = errors.New("get user context")

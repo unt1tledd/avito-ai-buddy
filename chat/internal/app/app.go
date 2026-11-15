@@ -231,10 +231,15 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 			},
 		}, aiadapter.Options{
 			BaseURL: cfg.Clients.AIBaseURL, AnswerPath: cfg.Clients.AIAnswerPath,
-			ServiceToken: cfg.Clients.AIServiceToken,
+			ServiceToken:       cfg.Clients.AIServiceToken,
+			MaxMessageLength:   cfg.Clients.AIMaxMessageLength,
+			MaxHistorySources:  cfg.Clients.AIMaxHistorySources,
+			HistoryBudgetBytes: cfg.Clients.AIHistoryBudgetBytes,
 		}),
 		authClient,
 		tx,
+		cfg.Clients.AIMaxMessageLength,
+		cfg.Clients.AIMaxHistoryMessages,
 	)
 	chatController := chatapi.NewServer(messages, logger)
 	actionController := actionapi.NewServer(action.NewService(actions, outboxRepository, authClient, tx), logger)

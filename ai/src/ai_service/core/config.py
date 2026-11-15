@@ -5,13 +5,16 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .text_preparation import CONTEXT_PROMPT, CONTEXT_PROMPT_VERSION, TEXT_PREPARATION_VERSION
 
 
 DEFAULT_KNOWLEDGE_MIN_SIMILARITY = 0.3
+# Chat's HTTP client waits 30 seconds. Include body reception and leave room
+# for the response even when an older deployment still configures 60 seconds.
+MAX_CHAT_TIMEOUT_SECONDS = 25
 EMBEDDING_DIMENSIONS = 1536
 SILICONFLOW_DIMENSIONS = 1024
 SILICONFLOW_QWEN_MODELS = {
@@ -48,9 +51,13 @@ class Settings(BaseModel):
     llm_api_key: str = ""
     llm_model: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
+    llm_timeout_seconds: float = Field(default=15, gt=0, le=60)
+    llm_fallback_reserve_seconds: float = Field(default=5, ge=0, le=10)
+    llm_circuit_failure_threshold: int = Field(default=3, ge=1, le=100)
+    llm_circuit_reset_seconds: float = Field(default=30, gt=0, le=300)
     knowledge_db_dsn: str = ""
     knowledge_processing_approved: bool = False
-    chat_timeout_seconds: float = Field(default=60, gt=0, le=60)
+    chat_timeout_seconds: float = Field(default=25, gt=0, le=60)
     knowledge_min_similarity: float = DEFAULT_KNOWLEDGE_MIN_SIMILARITY
     embedding_model: str = "text-embedding-3-small"
     embedding_base_url: str = ""
@@ -58,6 +65,9 @@ class Settings(BaseModel):
     embedding_dimensions: int | None = None
     embedding_provider: str = Field(default="", pattern=r"^[a-z0-9/_-]{0,100}$")
     embedding_index_version: str = Field(default="1", pattern=r"^[A-Za-z0-9._-]{1,64}$")
+    search_embedding_timeout_seconds: float = Field(default=8, gt=0, le=60)
+    embedding_circuit_failure_threshold: int = Field(default=3, ge=1, le=100)
+    embedding_circuit_reset_seconds: float = Field(default=30, gt=0, le=300)
     retrieval_mode: Literal["vector", "hybrid"] = "hybrid"
     search_candidates: int = Field(default=10, ge=1, le=100)
     search_top_k: int = Field(default=3, ge=1, le=3)
@@ -73,6 +83,15 @@ class Settings(BaseModel):
     context_min_interval_seconds: float = Field(default=0, ge=0, le=60)
     context_cache_path: str = ".data/context-cache.sqlite3"
     import_timeout_seconds: float = Field(default=900, gt=0, le=7200)
+
+    @field_validator("embedding_dimensions", mode="before")
+    @classmethod
+    def empty_dimensions_are_automatic(cls, value: object) -> object:
+        return None if value == "" else value
+
+    @property
+    def effective_chat_timeout_seconds(self) -> float:
+        return min(self.chat_timeout_seconds, MAX_CHAT_TIMEOUT_SECONDS)
 
     @classmethod
     def from_env(cls) -> "Settings":
