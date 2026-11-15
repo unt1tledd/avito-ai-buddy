@@ -74,7 +74,7 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
             yield
 
     app = FastAPI(title="AI-buddy internal API", version="1.0.0", lifespan=lifespan)
-    app.add_middleware(RequestBoundary, chat_timeout=settings.chat_timeout_seconds)
+    app.add_middleware(RequestBoundary, chat_timeout=settings.effective_chat_timeout_seconds)
     app.include_router(create_router(settings.service_token))
 
     @app.exception_handler(RequestValidationError)

@@ -13,6 +13,7 @@ from ..core.diagnostics import UpstreamError
 from ..core.text_preparation import CONTEXT_PROMPT, MAX_GENERATED_CONTEXT
 from ..repositories.queries import CONTEXT_CACHE_CREATE_SQL, CONTEXT_CACHE_GET_SQL, CONTEXT_CACHE_PUT_SQL
 from ..schemas.contracts import DocumentChunk
+from .import_retry import retry_import_request
 
 
 class ContextCache:
@@ -79,7 +80,6 @@ async def _contextualize(chunks: list[DocumentChunk], model: LanguageModel, sett
 
     with ContextCache(settings.context_cache_path) as cache:
         async def generate(key, payload, targets):
-            nonlocal next_start
             cached = cache.get(key)
             if cached is not None:
                 stats["cache_hits"] += len(targets)
@@ -87,20 +87,25 @@ async def _contextualize(chunks: list[DocumentChunk], model: LanguageModel, sett
                     chunk.generated_context = cached
                 return
             async with semaphore:
-                async with start_lock:
-                    loop = asyncio.get_running_loop()
-                    await asyncio.sleep(max(0, next_start - loop.time()))
-                    next_start = loop.time() + settings.context_min_interval_seconds
-                try:
-                    async with asyncio.timeout(settings.context_timeout_seconds):
-                        response = await model.respond(
-                            instructions=CONTEXT_PROMPT,
-                            messages=[{"role": "user", "content": payload}], tools=[],
-                        )
-                except TimeoutError as error:
-                    raise ModelError(
-                        "Contextualization timed out; the index was not changed.", code="context_timeout", reason="timeout",
-                    ) from error
+                async def request_context():
+                    nonlocal next_start
+                    # Retries obey the same pacing and concurrency as first attempts.
+                    async with start_lock:
+                        loop = asyncio.get_running_loop()
+                        await asyncio.sleep(max(0, next_start - loop.time()))
+                        next_start = loop.time() + settings.context_min_interval_seconds
+                    try:
+                        async with asyncio.timeout(settings.context_timeout_seconds):
+                            return await model.respond(
+                                instructions=CONTEXT_PROMPT,
+                                messages=[{"role": "user", "content": payload}], tools=[],
+                            )
+                    except TimeoutError as error:
+                        raise ModelError(
+                            "Contextualization timed out; the index was not changed.", code="context_timeout", reason="timeout",
+                        ) from error
+
+                response = await retry_import_request(request_context)
                 context = response.text
                 if response.calls or response.refused or response.status != "completed" or not context or len(context) > MAX_GENERATED_CONTEXT:
                     raise ModelError("Invalid chunk context; the index was not changed.", reason="invalid_context")

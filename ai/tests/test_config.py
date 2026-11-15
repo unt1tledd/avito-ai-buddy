@@ -37,11 +37,13 @@ def test_programmatic_settings_do_not_read_environment(monkeypatch):
 
 def test_two_model_rounds_share_bounded_configurable_deadline(monkeypatch):
     monkeypatch.setattr(os, "environ", {})
-    assert Settings.from_env().chat_timeout_seconds == 60
+    assert Settings.from_env().chat_timeout_seconds == 25
     monkeypatch.setenv("CHAT_TIMEOUT_SECONDS", "20")
     assert Settings.from_env().chat_timeout_seconds == 20
+    assert Settings.from_env().effective_chat_timeout_seconds == 20
     monkeypatch.setenv("CHAT_TIMEOUT_SECONDS", "60")
     assert Settings.from_env().chat_timeout_seconds == 60
+    assert Settings.from_env().effective_chat_timeout_seconds == 25
     monkeypatch.setenv("CHAT_TIMEOUT_SECONDS", "61")
     with pytest.raises(ValidationError):
         Settings.from_env()
