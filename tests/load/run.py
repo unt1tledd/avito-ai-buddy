@@ -21,22 +21,36 @@ DOCKER = (["sudo"] if os.getenv("DOCKER_USE_SUDO") == "1" else []) + ["docker"]
 COMPOSE = DOCKER + ["compose", "-f", str(ROOT / "docker-compose.yml")]
 MOCK = COMPOSE + ["-f", str(HERE / "compose.mock.yml")]
 GRAFANA = os.getenv("GRAFANA_URL", "http://127.0.0.1:3000").rstrip("/")
-KINDS = (
-    "history",
-    "pagination",
-    "ai",
-    "context",
-    "mixed",
-    "mock",
-    "faults",
-    "task",
-    "recovery",
-    "soak",
-)
+
+SCENARIOS = {
+    "history": "Читает историю под нагрузкой и проверяет содержимое.",
+    "pagination": "Читает несколько страниц истории и проверяет порядок и отсутствие дублей.",
+    "ai": "Отправляет обычные вопросы, перефразировки и вопросы с опечатками.",
+    "context": "Задаёт уточняющий вопрос, который зависит от предыдущих сообщений.",
+    "mixed": "Читает историю параллельно с запросами к AI.",
+    "mock": "Подаёт смешанную нагрузку с управляемыми задержками провайдера.",
+    "faults": "Проверяет работу Chat и AI при сбоях заглушки провайдера.",
+    "task": "Подтверждает заявку, принимает решение и ждёт уведомление в Chat.",
+    "recovery": "Копит заявки при выключенном Task и проверяет обработку после старта.",
+    "soak": "Проверяет устойчивость под продолжительной смешанной нагрузкой.",
+}
 
 
 def command(args, **kwargs):
     return subprocess.run(args, cwd=ROOT, text=True, check=True, **kwargs)
+
+
+def stack_command(log_path, description, args):
+    print(f"  {description}", flush=True)
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write(f"\n=== {description} ===\n")
+        log.flush()
+        try:
+            command(args, stdout=log, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError(
+                f"{description}: код {error.returncode}. Журнал: {log_path}"
+            ) from error
 
 
 def sql(db, statement):
@@ -205,6 +219,7 @@ def compact_metrics(path, seconds):
     trends, completed, failures, outcomes, dropped = {}, {}, {}, {}, 0
     if not path.is_file():
         return
+
     with path.open() as stream:
         for line in stream:
             try:
@@ -213,10 +228,12 @@ def compact_metrics(path, seconds):
                 continue
             if item.get("type") != "Point":
                 continue
+
             data = item["data"]
             tags, value = data.get("tags") or {}, data["value"]
             scenario = tags.get("scenario", "-")
             metric = item["metric"]
+
             if metric == "step_duration_ms":
                 key = (scenario, tags.get("step", "-"), tags.get("kind", "-"))
                 trends.setdefault(key, []).append(value)
@@ -229,11 +246,13 @@ def compact_metrics(path, seconds):
                 outcomes[key] = outcomes.get(key, 0) + value
             elif metric == "dropped_iterations":
                 dropped += value
+
     lines = ["Сценарий | Завершено | Ошибки проверок | Завершено / плановую секунду"]
     for name, count in sorted(completed.items()):
         lines.append(
             f"{name} | {count:.0f} | {failures.get(name, 0):.0f} | {count / seconds:.2f}"
         )
+
     lines.extend(
         [
             f"Пропущено итераций: {dropped:.0f}",
@@ -249,26 +268,37 @@ def compact_metrics(path, seconds):
         lines.append(
             " | ".join((*key, str(len(values)), *(f"{p:.1f}" for p in percentiles)))
         )
+
     lines.extend(["", "Сценарий | Класс | Результат | Количество"])
     for key, count in sorted(outcomes.items()):
         lines.append(" | ".join((*key, str(int(count)))))
+
     report = "\n".join(lines) + "\n"
     (path.parent / "summary.txt").write_text(report, encoding="utf-8")
-    print(report, flush=True)
+
+    for name, count in sorted(completed.items()):
+        print(
+            f"  {name}: завершено {count:.0f}, ошибок {failures.get(name, 0):.0f}",
+            flush=True,
+        )
+    print(f"  Пропущено итераций: {dropped:.0f}", flush=True)
 
 
 def run_k6(mode, prefix, stage, config):
     stage.mkdir()
     config_path = stage / "fixtures.json"
     start = int(time.time() * 1000)
-    print(f"\n{mode} — Grafana: {dashboard_link(prefix, start)}", flush=True)
+    print(f"  Запуск k6 ({mode})", flush=True)
+
     status = 1
     stats = None
+
     try:
         with os.fdopen(
             os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w"
         ) as stream:
             json.dump(config | {"prefix": prefix, "mode": mode}, stream)
+
         if mode == "soak":
             from threading import Event, Thread
 
@@ -291,6 +321,7 @@ def run_k6(mode, prefix, stage, config):
 
             stats = Thread(target=record_stats, daemon=True)
             stats.start()
+
         with (stage / "k6.log").open("w") as stream:
             status = subprocess.run(
                 [
@@ -314,6 +345,7 @@ def run_k6(mode, prefix, stage, config):
         if stats is not None:
             stop_stats.set()
             stats.join(timeout=11)
+
     end = int(time.time() * 1000)
     link = dashboard_link(prefix, start, end)
     report_index(
@@ -334,15 +366,12 @@ def run_k6(mode, prefix, stage, config):
         ],
     )
     compact_metrics(stage / "metrics.json", config["seconds"])
-    print(
-        f"Дашборд: {link}\nОтчёт: {stage / 'index.html'}\nk6: код {status}, журнал {stage / 'k6.log'}",
-        flush=True,
-    )
-    if status and (stage / "k6.log").exists():
-        print(
-            "".join((stage / "k6.log").read_text().splitlines(keepends=True)[-8:]),
-            flush=True,
-        )
+
+    if status:
+        print(f"  k6: FAIL (код {status}). Журнал: {stage / 'k6.log'}", flush=True)
+    else:
+        print("  k6: PASS", flush=True)
+
     return status, link
 
 
@@ -388,6 +417,7 @@ def check_task_rows(users, expected):
         if rows:
             raise RuntimeError("Task already has rows for the queued fixtures")
         return
+
     actual = sorted(tuple(row) for row in rows)
     wanted = sorted(
         (
@@ -418,10 +448,20 @@ def ready():
         time.sleep(2)
 
 
-def mock_start():
-    command(MOCK + ["up", "-d", "--wait", "load-db", "load-provider"])
-    command(MOCK + ["--profile", "tools", "run", "--rm", "--no-deps", "ai-migrate"])
-    command(
+def mock_start(log_path):
+    stack_command(
+        log_path,
+        "Запуск тестовой БД и заглушки",
+        MOCK + ["up", "-d", "--wait", "load-db", "load-provider"],
+    )
+    stack_command(
+        log_path,
+        "Миграции тестовой БД AI",
+        MOCK + ["--profile", "tools", "run", "--rm", "--no-deps", "ai-migrate"],
+    )
+    stack_command(
+        log_path,
+        "Импорт тестового корпуса",
         MOCK
         + [
             "run",
@@ -432,10 +472,15 @@ def mock_start():
             "-m",
             "ai_service.rag.import_documents",
             "/load-documents.json",
-        ]
+        ],
     )
-    command(MOCK + ["up", "-d", "--no-deps", "ai"])
+    stack_command(
+        log_path,
+        "Запуск AI с заглушкой",
+        MOCK + ["up", "-d", "--no-deps", "ai"],
+    )
     ready()
+
     actual = command(
         MOCK + ["exec", "-T", "ai", "printenv", "LLM_BASE_URL", "EMBEDDING_BASE_URL"],
         capture_output=True,
@@ -445,11 +490,19 @@ def mock_start():
     print("AI uses load-provider for LLM and embeddings.", flush=True)
 
 
-def mock_stop():
+def mock_stop(log_path):
     try:
-        command(COMPOSE + ["up", "-d", "--no-deps", "ai"])
+        stack_command(
+            log_path,
+            "Возврат обычной конфигурации AI",
+            COMPOSE + ["up", "-d", "--no-deps", "ai"],
+        )
     finally:
-        command(MOCK + ["stop", "load-provider", "load-db"])
+        stack_command(
+            log_path,
+            "Остановка заглушки и тестовой БД",
+            MOCK + ["stop", "load-provider", "load-db"],
+        )
 
 
 def settings(mode, rate, seconds, team, prefix, history_rps):
@@ -462,16 +515,13 @@ def settings(mode, rate, seconds, team, prefix, history_rps):
         seed(groups["history"], size)
 
     amount = math.ceil(rate * seconds / 60)
-
     if mode in ("ai", "context", "mixed", "mock", "faults", "soak"):
         if mode == "soak":
             # Reserve a slot for every local VU ID, including the history pool.
             amount = 60 + max(12, math.ceil(rate * 90 / 60) + 4)
-
         groups["question"] = fixtures(prefix, "question", amount, 101, team)
         probes = 3 if mode in ("ai", "mixed") else 1
         groups["probe"] = fixtures(prefix, "probe", probes, 101 + amount, team)
-
         if mode == "context":
             seed_context(groups["question"] + groups["probe"])
 
@@ -495,7 +545,8 @@ def settings(mode, rate, seconds, team, prefix, history_rps):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("test", choices=(*KINDS, "all"))
+    parser.add_argument("test", nargs="?", choices=(*SCENARIOS, "all"))
+    parser.add_argument("--list", action="store_true", help="List load scenarios")
     parser.add_argument(
         "--offline",
         action="store_true",
@@ -504,6 +555,11 @@ def main():
     parser.add_argument("--rates", help="Comma-separated target rates for one test")
     parser.add_argument("--seconds", type=int, help="Seconds per stage for one test")
     parser.add_argument(
+        "--soak-seconds",
+        type=int,
+        help="Override soak duration in the full suite",
+    )
+    parser.add_argument(
         "--history-rps",
         type=int,
         default=100,
@@ -511,14 +567,27 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.list:
+        print("all: Все нагрузочные сценарии.")
+        for name, description in SCENARIOS.items():
+            print(f"{name}: {description}")
+        return 0
+
+    if args.test is None:
+        parser.error("Select a test or use --list")
+    if args.soak_seconds is not None:
+        if args.test != "all" or not 1 <= args.soak_seconds <= 3600:
+            parser.error(
+                "--soak-seconds requires all and a duration between 1 and 3600"
+            )
     if not 1 <= args.history_rps <= 200:
         parser.error("--history-rps must be between 1 and 200")
     if shutil.which("k6") is None:
         parser.error("k6 was not found in PATH")
 
-    tests = list(KINDS) if args.test == "all" else [args.test]
-
+    tests = list(SCENARIOS) if args.test == "all" else [args.test]
     team = os.getenv("LOAD_TEAM_ID", "")
+
     if any(test not in ("history", "pagination") for test in tests):
         if not (team.isascii() and team.isdecimal() and 0 < int(team) < 2**63):
             parser.error("LOAD_TEAM_ID must identify an existing test team")
@@ -543,13 +612,12 @@ def main():
         "faults": [(60, 180)],
         "task": [(30, 120), (60, 120), (120, 120)],
         "recovery": [(60, 60)],
-        "soak": [(60, 1800)],
+        "soak": [(60, args.soak_seconds or 1800)],
     }
 
     if args.rates or args.seconds is not None:
         if args.test in ("all", "recovery"):
             parser.error("Rate overrides apply to individual tests except recovery")
-
         rates = (
             [int(value) for value in args.rates.split(",")]
             if args.rates
@@ -559,7 +627,6 @@ def main():
             args.seconds is not None and not 1 <= args.seconds <= 3600
         ):
             parser.error("Use rates from 1 to 200 and durations from 1 to 3600 seconds")
-
         seconds = args.seconds or profiles[args.test][0][1]
         if args.test in ("ai", "context", "mixed", "mock", "faults", "task") and any(
             math.ceil(rate * seconds / 60) > 500 for rate in rates
@@ -567,35 +634,38 @@ def main():
             parser.error(
                 "This profile needs more than 500 single-use test accounts per stage"
             )
-
         profiles[args.test] = [(rate, seconds) for rate in rates]
 
     suite = secrets.token_hex(6)
     directory = Path.home() / "k6-reports" / f"chat-suite-{suite}"
     directory.mkdir(parents=True, mode=0o700)
+    setup_log = directory / "setup.log"
     begin = int(time.time() * 1000)
-    print(
-        f"Дашборд набора: {dashboard_link(suite, begin)}\nОтчёты: {directory}",
-        flush=True,
-    )
+
+    print(f"Отчёты: {directory}", flush=True)
 
     rows, failed = [], []
     stage_number = 0
-
     for test in tests:
+        print(f"\n=== {test} ===\n{SCENARIOS[test]}", flush=True)
+        failure_count = len(failed)
         with_mock = test in ("ai", "context", "mixed", "mock", "faults", "soak")
+
         try:
             if with_mock:
-                mock_start()
+                mock_start(setup_log)
 
             for rate, seconds in profiles[test]:
                 stage_number += 1
                 prefix = suite + f"{stage_number:04x}"
                 stage = directory / f"{stage_number:02}-{test}-{rate}"
-                print(
-                    f"Подготовка {test}, нагрузка {rate}, длительность {seconds} с",
-                    flush=True,
+                unit = (
+                    "запросов/с"
+                    if test in ("history", "pagination")
+                    else "итераций/мин"
                 )
+                print(f"Ступень: {rate} {unit}, {seconds} с", flush=True)
+
                 config = settings(test, rate, seconds, team, prefix, args.history_rps)
                 before = dlq_offsets() if test in ("task", "recovery") else {}
 
@@ -610,14 +680,19 @@ def main():
                     config["taskAfter"] = after_id
 
                 if test == "recovery":
-                    command(COMPOSE + ["stop", "task"])
+                    stack_command(
+                        setup_log, "Остановка Task", COMPOSE + ["stop", "task"]
+                    )
                     try:
                         status, link = run_k6("queue", prefix, stage, config)
                         rows.append(("recovery / queue", link))
                         check_task_rows(config["users"]["task"], False)
                     finally:
-                        command(COMPOSE + ["up", "-d", "--no-deps", "--wait", "task"])
-
+                        stack_command(
+                            setup_log,
+                            "Возврат Task",
+                            COMPOSE + ["up", "-d", "--no-deps", "--wait", "task"],
+                        )
                     stage_number += 1
                     drain_prefix = suite + f"{stage_number:04x}"
                     drain_status, link = run_k6(
@@ -638,7 +713,6 @@ def main():
                 rows.append((f"{test} / {rate} — k6 {status}", link))
                 if status:
                     raise RuntimeError(f"k6 returned {status}")
-
                 if test in ("task", "recovery"):
                     check_task_rows(config["users"]["task"], True)
                     if dlq_offsets() != before:
@@ -656,10 +730,13 @@ def main():
         finally:
             if with_mock:
                 try:
-                    mock_stop()
-                except (OSError, subprocess.CalledProcessError) as error:
+                    mock_stop(setup_log)
+                except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
                     failed.append(f"{test}: restore AI")
                     print(f"Restore AI failed: {error}", file=sys.stderr)
+
+        result = "PASS" if len(failed) == failure_count else "FAIL"
+        print(f"Итог {test}: {result}", flush=True)
 
     end = int(time.time() * 1000)
     suite_link = dashboard_link(suite, begin, end)
@@ -670,7 +747,8 @@ def main():
             (item.name, f"{item.name}/index.html")
             for item in sorted(directory.iterdir())
             if (item / "index.html").exists()
-        ],
+        ]
+        + ([("Журнал подготовки", "setup.log")] if setup_log.exists() else []),
     )
     print(f"Дашборд набора: {suite_link}\nОглавление: {directory / 'index.html'}")
     print(
