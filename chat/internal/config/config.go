@@ -12,12 +12,16 @@ import (
 // from the environment.
 type Config struct {
 	Clients struct {
-		UserGRPCAddr       string        `env:"USER_GRPC_ADDR" envDefault:"user:50051"`
-		OnboardingGRPCAddr string        `env:"ONBOARDING_GRPC_ADDR" envDefault:"onboarding:50051"`
-		AIBaseURL          string        `env:"AI_BASE_URL" envDefault:"http://ai:8080"`
-		AIAnswerPath       string        `env:"AI_ANSWER_PATH" envDefault:"/api/v1/answer"`
-		AIServiceToken     string        `env:"AI_SERVICE_TOKEN"`
-		AITimeout          time.Duration `env:"AI_TIMEOUT" envDefault:"30s"`
+		UserGRPCAddr         string        `env:"USER_GRPC_ADDR" envDefault:"user:50051"`
+		OnboardingGRPCAddr   string        `env:"ONBOARDING_GRPC_ADDR" envDefault:"onboarding:50051"`
+		AIBaseURL            string        `env:"AI_BASE_URL" envDefault:"http://ai:8080"`
+		AIAnswerPath         string        `env:"AI_ANSWER_PATH" envDefault:"/api/v1/answer"`
+		AIServiceToken       string        `env:"AI_SERVICE_TOKEN"`
+		AITimeout            time.Duration `env:"AI_TIMEOUT" envDefault:"30s"`
+		AIMaxMessageLength   int           `env:"CHAT_AI_MAX_MESSAGE_LENGTH" envDefault:"4000"`
+		AIMaxHistoryMessages int32         `env:"CHAT_AI_MAX_HISTORY_MESSAGES" envDefault:"30"`
+		AIMaxHistorySources  int           `env:"CHAT_AI_MAX_HISTORY_SOURCES" envDefault:"6"`
+		AIHistoryBudgetBytes int           `env:"CHAT_AI_HISTORY_BUDGET_BYTES" envDefault:"131072"`
 	}
 
 	Auth struct {
@@ -82,6 +86,19 @@ func New() (*Config, error) {
 	}
 	if cfg.Clients.AITimeout <= 0 {
 		return nil, errors.New("AI_TIMEOUT must be positive")
+	}
+	// Keep Chat settings within the limits of the receiving AI service.
+	if cfg.Clients.AIMaxMessageLength < 1 || cfg.Clients.AIMaxMessageLength > 4000 {
+		return nil, errors.New("CHAT_AI_MAX_MESSAGE_LENGTH must be between 1 and 4000")
+	}
+	if cfg.Clients.AIMaxHistoryMessages < 1 || cfg.Clients.AIMaxHistoryMessages > 30 {
+		return nil, errors.New("CHAT_AI_MAX_HISTORY_MESSAGES must be between 1 and 30")
+	}
+	if cfg.Clients.AIMaxHistorySources < 1 || cfg.Clients.AIMaxHistorySources > 6 {
+		return nil, errors.New("CHAT_AI_MAX_HISTORY_SOURCES must be between 1 and 6")
+	}
+	if cfg.Clients.AIHistoryBudgetBytes < 1 || cfg.Clients.AIHistoryBudgetBytes > 131072 {
+		return nil, errors.New("CHAT_AI_HISTORY_BUDGET_BYTES must be between 1 and 131072")
 	}
 	if cfg.App.HistoryPageSize <= 0 {
 		return nil, errors.New("CHAT_HISTORY_PAGE_SIZE must be positive")

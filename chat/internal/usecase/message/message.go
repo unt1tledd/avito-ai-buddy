@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
@@ -50,14 +52,16 @@ type aiClient interface {
 }
 
 type chatService struct {
-	tx            port.Transactor
-	auth          port.TokenValidator
-	conversations conversationService
-	messagesRepo  messageRepository
-	actionsRepo   actionRepository
-	user          userClient
-	onboarding    onboardingClient
-	ai            aiClient
+	tx                 port.Transactor
+	auth               port.TokenValidator
+	conversations      conversationService
+	messagesRepo       messageRepository
+	actionsRepo        actionRepository
+	user               userClient
+	onboarding         onboardingClient
+	ai                 aiClient
+	maxMessageLength   int
+	maxHistoryMessages int32
 }
 
 // NewService builds the message usecase: it needs the conversation and
@@ -72,16 +76,20 @@ func NewService(
 	ai aiClient,
 	auth port.TokenValidator,
 	tx port.Transactor,
+	maxMessageLength int,
+	maxHistoryMessages int32,
 ) *chatService {
 	return &chatService{
-		tx:            tx,
-		auth:          auth,
-		conversations: conversations,
-		messagesRepo:  messagesRepo,
-		actionsRepo:   actionsRepo,
-		user:          user,
-		onboarding:    onboarding,
-		ai:            ai,
+		tx:                 tx,
+		auth:               auth,
+		conversations:      conversations,
+		messagesRepo:       messagesRepo,
+		actionsRepo:        actionsRepo,
+		user:               user,
+		onboarding:         onboarding,
+		ai:                 ai,
+		maxMessageLength:   maxMessageLength,
+		maxHistoryMessages: maxHistoryMessages,
 	}
 }
 
@@ -92,6 +100,11 @@ func (s *chatService) SendMessage(ctx context.Context, token, text string, idemp
 	userID, err := s.auth.ValidateToken(ctx, token)
 	if err != nil {
 		return entity.Message{}, err
+	}
+
+	length := utf8.RuneCountInString(strings.TrimSpace(text))
+	if length == 0 || length > s.maxMessageLength {
+		return entity.Message{}, fmt.Errorf("%w: expected 1 to %d characters", chaterrors.ErrInvalidMessageLength, s.maxMessageLength)
 	}
 
 	conversation, err := s.conversations.GetOrCreate(ctx, userID)
@@ -143,7 +156,7 @@ func (s *chatService) SendMessage(ctx context.Context, token, text string, idemp
 }
 
 func (s *chatService) answerQuestion(ctx context.Context, userID int64, token string, question entity.Message, claimUntil time.Time) (entity.Message, error) {
-	history, _, err := s.messagesRepo.ListByConversation(ctx, question.ConversationID, 0, strconv.FormatInt(question.ID, 10))
+	history, _, err := s.messagesRepo.ListByConversation(ctx, question.ConversationID, s.maxHistoryMessages, strconv.FormatInt(question.ID, 10))
 	if err != nil {
 		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrListMessages, err)
 	}

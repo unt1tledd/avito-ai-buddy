@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -17,32 +18,35 @@ import (
 	"avito-ai-buddy/pkg/observability"
 )
 
-const (
-	maxHistoryMessages = 12
-	maxMessageLength   = 4000
-	maxHistorySources  = 6
-)
-
 var historySourceID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 type Options struct {
-	BaseURL      string
-	AnswerPath   string
-	ServiceToken string
+	BaseURL            string
+	AnswerPath         string
+	ServiceToken       string
+	MaxMessageLength   int
+	MaxHistorySources  int
+	HistoryBudgetBytes int
 }
 
 // Client asks the AI service for an answer over HTTP.
 type Client struct {
-	client       *http.Client
-	url          string
-	serviceToken string
+	client             *http.Client
+	url                string
+	serviceToken       string
+	maxMessageLength   int
+	maxHistorySources  int
+	historyBudgetBytes int
 }
 
 func NewClient(client *http.Client, options Options) *Client {
 	return &Client{
-		client:       client,
-		url:          strings.TrimRight(options.BaseURL, "/") + "/" + strings.TrimLeft(options.AnswerPath, "/"),
-		serviceToken: options.ServiceToken,
+		client:             client,
+		url:                strings.TrimRight(options.BaseURL, "/") + "/" + strings.TrimLeft(options.AnswerPath, "/"),
+		serviceToken:       options.ServiceToken,
+		maxMessageLength:   options.MaxMessageLength,
+		maxHistorySources:  options.MaxHistorySources,
+		historyBudgetBytes: options.HistoryBudgetBytes,
 	}
 }
 
@@ -50,10 +54,10 @@ func (c *Client) GetAnswer(ctx context.Context, request entity.AnswerRequest) (e
 	if strings.TrimSpace(c.serviceToken) == "" {
 		return entity.Answer{}, errors.New("AI_SERVICE_TOKEN is required to call AI")
 	}
-	if message := strings.TrimSpace(request.Message); message == "" || utf8.RuneCountInString(message) > maxMessageLength {
-		return entity.Answer{}, fmt.Errorf("AI question must contain 1 to %d characters", maxMessageLength)
+	if message := strings.TrimSpace(request.Message); message == "" || utf8.RuneCountInString(message) > c.maxMessageLength {
+		return entity.Answer{}, fmt.Errorf("AI question must contain 1 to %d characters", c.maxMessageLength)
 	}
-	body, err := json.Marshal(requestPayload(request))
+	body, err := json.Marshal(c.requestPayload(request))
 	if err != nil {
 		return entity.Answer{}, fmt.Errorf("encode AI request: %w", err)
 	}
@@ -87,7 +91,7 @@ func (c *Client) GetAnswer(ctx context.Context, request entity.AnswerRequest) (e
 	return responseAnswer(payload), nil
 }
 
-func requestPayload(request entity.AnswerRequest) port.AIAnswerRequest {
+func (c *Client) requestPayload(request entity.AnswerRequest) port.AIAnswerRequest {
 	plans := make([]port.AIOnboardingPlan, 0, len(request.OnboardingPlans))
 	for _, item := range request.OnboardingPlans {
 		track := port.AIOnboardingPlan{ID: item.ID, Title: item.Title}
@@ -105,37 +109,45 @@ func requestPayload(request entity.AnswerRequest) port.AIAnswerRequest {
 			UserID: request.User.UserID, Role: request.User.Role, Team: request.User.TeamID,
 			ActualEndDate: request.User.ActualEndDate,
 		},
-		History:         recentHistory(request.History),
+		History:         c.recentHistory(request.History),
 		OnboardingPlans: plans,
 	}
 }
 
-func recentHistory(messages []entity.Message) []port.AIHistoryTurn {
-	if len(messages) > maxHistoryMessages {
-		messages = messages[len(messages)-maxHistoryMessages:]
-	}
+func (c *Client) recentHistory(messages []entity.Message) []port.AIHistoryTurn {
 	history := make([]port.AIHistoryTurn, 0, len(messages))
-	for _, message := range messages {
+	used := 2 // JSON array brackets.
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
 		if message.Role != entity.MessageRoleUser && message.Role != entity.MessageRoleAssistant {
 			continue
 		}
 		content := strings.TrimSpace(message.Text)
-		if content == "" || utf8.RuneCountInString(content) > maxMessageLength {
+		if content == "" {
 			continue
 		}
 		turn := port.AIHistoryTurn{Role: message.Role, Content: content}
 		if message.Role == entity.MessageRoleAssistant {
-			turn.SourceIDs = sourceIDsForHistory(message.Sources)
+			turn.SourceIDs = c.sourceIDsForHistory(message.Sources)
+		}
+		encoded, _ := json.Marshal(turn) // This payload contains only strings and a slice of strings.
+		if len(history) != 0 {
+			used++ // JSON array separator.
+		}
+		used += len(encoded)
+		if used > c.historyBudgetBytes {
+			break
 		}
 		history = append(history, turn)
 	}
+	slices.Reverse(history)
 	return history
 }
 
 // Follow the AI history contract. Leave malformed legacy metadata unset so AI
 // can apply its source-free history rules without rejecting the whole request.
-func sourceIDsForHistory(sources []entity.Source) []string {
-	if len(sources) == 0 || len(sources) > maxHistorySources {
+func (c *Client) sourceIDsForHistory(sources []entity.Source) []string {
+	if len(sources) == 0 || len(sources) > c.maxHistorySources {
 		return nil
 	}
 	ids := make([]string, 0, len(sources))
