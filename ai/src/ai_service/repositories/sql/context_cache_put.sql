@@ -1,1 +1,0 @@
-INSERT OR REPLACE INTO contexts VALUES (?, ?)

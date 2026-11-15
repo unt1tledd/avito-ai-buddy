@@ -4,11 +4,37 @@ Runtime values remain separate psycopg parameters. Search modes share the same
 ACL and BM25 definitions; lexical recovery never selects the embedding column.
 """
 
+import re
 from importlib.resources import files
 
 
+def _parse_queries(text: str) -> dict[str, str]:
+    """Split bundled SQL at named sections without changing statement contents."""
+    parts = re.split(r"^-- name: ([a-z][a-z0-9_]*)\r?\n", text, flags=re.MULTILINE)
+    if parts[0].strip() or len(parts) == 1:
+        raise ValueError("SQL resources must start with a named query section.")
+    names, statements = parts[1::2], parts[2::2]
+    if len(set(names)) != len(names) or any(not statement.strip() for statement in statements):
+        raise ValueError("SQL section names must be unique and statements must be nonempty.")
+    return dict(zip(names, statements, strict=True))
+
+
+def _load_queries() -> dict[str, str]:
+    directory = files("ai_service.repositories").joinpath("sql")
+    queries: dict[str, str] = {}
+    for group in ("search", "access", "import", "readiness", "context_cache"):
+        sections = _parse_queries(directory.joinpath(f"{group}.sql").read_text(encoding="utf-8"))
+        if queries.keys() & sections.keys():
+            raise ValueError("SQL section names must be unique across resource files.")
+        queries.update(sections)
+    return queries
+
+
+_QUERIES = _load_queries()
+
+
 def _load_sql(name: str, **fragments: str) -> str:
-    text = files("ai_service.repositories").joinpath("sql").joinpath(f"{name}.sql").read_text(encoding="utf-8")
+    text = _QUERIES[name]
     return text.format_map(fragments) if fragments else text
 
 
