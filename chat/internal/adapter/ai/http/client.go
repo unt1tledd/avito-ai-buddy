@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -18,7 +19,10 @@ import (
 const (
 	maxHistoryMessages = 12
 	maxMessageLength   = 4000
+	maxHistorySources  = 6
 )
+
+var historySourceID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 type answerRequest struct {
 	Message         string        `json:"message"`
@@ -35,8 +39,9 @@ type actor struct {
 }
 
 type historyTurn struct {
-	Role    entity.MessageRole `json:"role"`
-	Content string             `json:"content"`
+	Role      entity.MessageRole `json:"role"`
+	Content   string             `json:"content"`
+	SourceIDs []string           `json:"source_ids,omitempty"`
 }
 
 type plan struct {
@@ -168,9 +173,29 @@ func recentHistory(messages []entity.Message) []historyTurn {
 		if content == "" || utf8.RuneCountInString(content) > maxMessageLength {
 			continue
 		}
-		history = append(history, historyTurn{Role: message.Role, Content: content})
+		turn := historyTurn{Role: message.Role, Content: content}
+		if message.Role == entity.MessageRoleAssistant {
+			turn.SourceIDs = sourceIDsForHistory(message.Sources)
+		}
+		history = append(history, turn)
 	}
 	return history
+}
+
+// Follow the AI history contract. Leave malformed legacy metadata unset so AI
+// can apply its source-free history rules without rejecting the whole request.
+func sourceIDsForHistory(sources []entity.Source) []string {
+	if len(sources) == 0 || len(sources) > maxHistorySources {
+		return nil
+	}
+	ids := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if !historySourceID.MatchString(source.DocumentID) {
+			return nil
+		}
+		ids = append(ids, source.DocumentID)
+	}
+	return ids
 }
 
 func (payload answerResponse) toAnswer() entity.Answer {
