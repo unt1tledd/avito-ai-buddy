@@ -69,7 +69,10 @@ let token = '';
 let refreshPending: Promise<void> | null = null;
 let sessionVersion = 0;
 let signedOut = (() => { try { return localStorage.getItem('buddy-signed-out') === 'true'; } catch { return false; } })();
-export function logout(): void {
+export async function logout(): Promise<void> {
+  // Finish any token rotation before revoking its resulting session.
+  if(refreshPending)await refreshPending.catch(()=>{});
+  await request('/v1/auth/logout', {method:'POST'}, false);
   signedOut = true;
   sessionVersion++;
   token = '';
@@ -263,4 +266,31 @@ export async function fetchConversationProposals(conversations:Conversation[]):P
   const final=(status:string)=>['approved','rejected'].includes(status);
   items.sort((a,b)=>Number(final(a.proposal.status))-Number(final(b.proposal.status)) || (Date.parse(b.timestamp)||0)-(Date.parse(a.timestamp)||0));
   return {items,failed};
+}
+
+
+export function friendlyError(error:unknown):string {
+  if(error instanceof ApiError) {
+    if(error.status===401)return 'Сессия истекла. Войди в аккаунт снова.';
+    if(error.status===403)return 'Нет доступа к этому действию.';
+    if(error.status>=500)return 'Сервис временно недоступен. Попробуй ещё раз чуть позже.';
+  }
+  if(error instanceof Error && error.name==='AbortError')return 'Не удалось дождаться ответа. Попробуй ещё раз.';
+  if(error instanceof TypeError || error instanceof Error && /load failed|failed to fetch|network|send message failed/i.test(error.message))return 'Не удалось получить ответ. Проверь соединение и попробуй ещё раз.';
+  return 'Не удалось выполнить действие. Попробуй ещё раз.';
+}
+export async function fetchUserRequests(userId:string):Promise<ConversationProposal[]> {
+  const items:ConversationProposal[]=[];
+  let after='0';
+  const statuses:Record<string,string>={ACCESS_REQUEST_STATUS_PENDING:'pending_approval',ACCESS_REQUEST_STATUS_APPROVED:'approved',ACCESS_REQUEST_STATUS_REJECTED:'rejected','1':'pending_approval','2':'approved','3':'rejected'};
+  for(;;) {
+    const page=await request(`/v1/tasks/${encodeURIComponent(userId)}?limit=100&after_id=${after}`);
+    if(!Array.isArray(page))throw new Error('Invalid tasks response');
+    for(const task of page)items.push({conversationId:'',timestamp:task.createdAt || '',proposal:{proposal_id:String(task.proposalId),title:'Заявка на доступ',role_label:'',resource_id:task.resourceId,resource_label:task.resourceId,access_level:task.accessLevel,status:statuses[String(task.status)] || String(task.status || 'unknown'),tracker_issue_key:task.externalRequestId || String(task.taskId)}});
+    if(page.length<100)break;
+    const next=String(page[page.length-1].taskId);
+    if(!/^\d+$/.test(next) || BigInt(next)<=BigInt(after))throw new Error('Invalid tasks pagination');
+    after=next;
+  }
+  return items.sort((a,b)=>(Date.parse(b.timestamp)||0)-(Date.parse(a.timestamp)||0));
 }

@@ -499,3 +499,86 @@ test('roadmap refresh failure retains loaded steps and reports stale data',()=>{
   assert.match(html,/Доступ Git/);assert.match(html,/Показаны последние загруженные данные/);
   assert.match(html,/role="alert"/);
 });
+
+test('user tasks use the dedicated endpoint and map protobuf decision statuses',async()=>{
+  const paths=[];
+  globalThis.fetch=async(path)=>{paths.push(path);return Response.json([
+    {taskId:'9007199254740993',proposalId:'p1',resourceId:'Git',accessLevel:'Developer',status:'ACCESS_REQUEST_STATUS_APPROVED',createdAt:'2026-11-15T12:00:00Z',externalRequestId:'TASK-1'},
+    {taskId:'2',proposalId:'p2',resourceId:'VPN',status:'ACCESS_REQUEST_STATUS_PENDING'},
+    {taskId:'3',proposalId:'p3',resourceId:'Docs',status:3},
+    {taskId:'4',proposalId:'p4',status:'NEW_STATUS'},
+  ]);};
+  const items=await api.fetchUserRequests('42');
+  assert.deepEqual(paths,['/v1/tasks/42?limit=100&after_id=0']);
+  assert.deepEqual(items.map(item=>item.proposal.status),['approved','pending_approval','rejected','NEW_STATUS']);
+  assert.equal(items[0].proposal.tracker_issue_key,'TASK-1');
+  assert.ok(items.every(item=>!item.conversationId));
+});
+
+test('user tasks paginate with lossless int64 cursors and reject broken responses',async()=>{
+  const paths=[];
+  globalThis.fetch=async(path)=>{paths.push(path);return Response.json(paths.length===1?Array.from({length:100},(_,i)=>({taskId:i===99?'9007199254740993':String(i+1),proposalId:String(i),status:1})):[]);};
+  assert.equal((await api.fetchUserRequests('42')).length,100);
+  assert.match(paths[1],/after_id=9007199254740993$/);
+  globalThis.fetch=async()=>Response.json({tasks:[]});
+  await assert.rejects(api.fetchUserRequests('42'),/Invalid tasks response/);
+  globalThis.fetch=async()=>Response.json(Array.from({length:100},()=>({taskId:'0'})));
+  await assert.rejects(api.fetchUserRequests('42'),/pagination/);
+  globalThis.fetch=async()=>Response.json({}, {status:503});
+  await assert.rejects(api.fetchUserRequests('42'),err=>err.status===503);
+});
+
+test('logout revokes the server session before marking the browser signed out',async()=>{
+  const isolated=load('lib/api.ts');
+  let calls=0;
+  globalThis.fetch=async(path,init)=>{
+    calls++;assert.equal(path,'/v1/auth/logout');assert.equal(init.method,'POST');
+    assert.equal(init.credentials,'same-origin');
+    assert.equal(storage.get('buddy-signed-out'),undefined);
+    return new Response(null,{status:204});
+  };
+  await isolated.logout();assert.equal(calls,1);assert.equal(storage.get('buddy-signed-out'),'true');
+  await assert.rejects(isolated.refreshSession(),/Войди/);
+  assert.equal(calls,1);
+});
+
+test('failed logout does not pretend that the server session was revoked',async()=>{
+  const isolated=load('lib/api.ts');
+  globalThis.fetch=async()=>Response.json({}, {status:503});
+  await assert.rejects(isolated.logout(),err=>err.status===503);
+  assert.equal(storage.get('buddy-signed-out'),undefined);
+  globalThis.fetch=async()=>Response.json({access_token:'still-valid'});
+  await isolated.refreshSession();
+});
+
+test('server history replaces only the optimistic user copy, preserving real repeated messages',()=>{
+  const local={id:'local-123',sender:'user',text:'Вопрос',timestamp:'2026-11-15T12:00:00Z'};
+  const server={...local,id:'saved',timestamp:'2026-11-15T12:00:01Z'};
+  const error={id:'error-123',sender:'assistant',text:'Ошибка',error:true};
+  const merged=mergeChatMessages([local,error],[server]);
+  assert.deepEqual(merged.filter(m=>m.sender==='user').map(m=>m.id),['saved']);
+  assert.ok(merged.some(m=>m.error));
+  const repeated=mergeChatMessages([server],[{...server,id:'saved-again'}]);
+  assert.equal(repeated.length,2);
+  const old={...server,id:'old',timestamp:'2026-11-14T12:00:00Z'};
+  assert.equal(mergeChatMessages([local],[old]).length,2);
+});
+
+test('network errors are readable and do not expose raw server errors',()=>{
+  assert.match(api.friendlyError(new TypeError('Load failed')),/Проверь соединение/);
+  assert.match(api.friendlyError(new api.ApiError(503,'database password and internal stack')),/временно недоступен/);
+  assert.match(api.friendlyError(new api.ApiError(401,'Unauthorized')),/Сессия истекла/);
+  assert.match(api.friendlyError(new DOMException('Aborted','AbortError')),/дождаться ответа/);
+  assert.doesNotMatch(api.friendlyError(new Error('internal stack')),/internal stack/);
+});
+
+test('logout confirmation and copy controls have accessible labels',()=>{
+  const {LogoutDialog}=load('pages/LogoutDialog.tsx',{'../lib/api':api});
+  const {MessageCopyButton}=load('pages/MessageCopyButton.tsx');
+  const html=renderToStaticMarkup(React.createElement(LogoutDialog,{onClose(){},async onLogout(){}}));
+  assert.match(html,/Выйти из аккаунта\?/);assert.match(html,/Остаться/);
+  assert.doesNotMatch(html,/всех устройствах/);
+  const copy=renderToStaticMarkup(React.createElement(MessageCopyButton,{text:'Привет'}));
+  assert.match(copy,/aria-label="Копировать сообщение"/);
+  assert.match(copy,/type="button"/);
+});

@@ -1605,3 +1605,19 @@ a.message-source-card:hover { background: var(--bg-hover); border-color: var(--a
 .dialog-refresh:disabled { opacity: .7; }
 @keyframes dialog-refresh-spin { to { transform: rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { .dialog-refresh-mark.is-loading { animation: none; } }
+.chat-feed-column article { position: relative; }
+.message-copy { position: absolute; top: 7px; right: 7px; width: 27px; height: 27px; display: grid; place-items: center; border: 0; border-radius: 7px; background: var(--bg-surface); color: var(--text-secondary); opacity: 0; transition: opacity .15s ease; }
+.message-copy svg { width: 16px; height: 16px; }
+.message-copy-feedback { position: absolute; right: 0; bottom: 32px; background: var(--bg-surface); white-space: nowrap; font-size: 12px; border-radius: 6px; }
+.message-copy-feedback:not(:empty) { padding: 5px 8px; }
+.chat-feed-column article:hover .message-copy,.chat-feed-column article:focus-within .message-copy { opacity: 1; }
+.chat-feed-column article:has(.message-copy) { padding-right: 40px; }
+.chat-error-banner { display: flex; align-items: center; gap: 16px; justify-content: space-between; border: 1px solid var(--workspace-line); border-radius: 14px; padding: 16px; background: var(--bg-surface); color: var(--text-primary); }
+.chat-error-banner > span { display: flex; flex-direction: column; gap: 5px; }
+.chat-error-banner > span > span { color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
+.chat-retry { margin-top: 14px; }
+.assistant-msg-card--send-error { border: 1px solid var(--workspace-line); }
+.logout-dialog { width: min(440px,calc(100vw - 32px)); }
+.logout-dialog p { color: var(--text-secondary); line-height: 1.6; }
+.logout-confirm { color: #d33b4e; }
+@media(hover:none) { .message-copy { opacity: 1; } }
