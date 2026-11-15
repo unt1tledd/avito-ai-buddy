@@ -114,11 +114,13 @@ jobs:
           for module in auth user chat onboarding task pkg; do
             profile="$RUNNER_TEMP/go-coverprofiles/$module.out"
             test -s "$profile"
+            printf '\n=== Convert Go coverage: %s ===\n' "$module"
 
             (
               cd "$module"
-              GOWORK=off go run github.com/boumenot/gocover-cobertura@v1.5.0 \
-                -by-files -ignore-gen-files -ignore-non-code-lines < "$profile"
+              GOWORK="$GITHUB_WORKSPACE/go.work" \
+                go run github.com/boumenot/gocover-cobertura@v1.5.0 \
+                  -by-files -ignore-gen-files -ignore-non-code-lines < "$profile"
             ) > "$RUNNER_TEMP/go-coverage/$module.xml"
           done
 
