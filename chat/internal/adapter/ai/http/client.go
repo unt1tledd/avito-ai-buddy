@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"avito-ai-buddy/chat/internal/entity"
+	"avito-ai-buddy/chat/internal/port"
 	"avito-ai-buddy/pkg/observability"
 )
 
@@ -23,57 +24,6 @@ const (
 )
 
 var historySourceID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
-
-type answerRequest struct {
-	Message         string        `json:"message"`
-	Actor           actor         `json:"actor"`
-	History         []historyTurn `json:"history,omitempty"`
-	OnboardingPlans []plan        `json:"onboarding_plans"`
-}
-
-type actor struct {
-	UserID        string `json:"user_id"`
-	Role          string `json:"role"`
-	Team          string `json:"team"`
-	ActualEndDate string `json:"actual_end_date,omitempty"`
-}
-
-type historyTurn struct {
-	Role      entity.MessageRole `json:"role"`
-	Content   string             `json:"content"`
-	SourceIDs []string           `json:"source_ids,omitempty"`
-}
-
-type plan struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	CurrentStep *step  `json:"current_step"`
-}
-
-type step struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	ResourceID string `json:"resource_id,omitempty"`
-	ActionType string `json:"action_type,omitempty"`
-}
-
-type answerResponse struct {
-	Answer   string    `json:"answer"`
-	Sources  []source  `json:"sources"`
-	Proposal *proposal `json:"proposal"`
-}
-
-type source struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	URL   string `json:"url"`
-}
-
-type proposal struct {
-	ResourceID    string `json:"resource_id"`
-	ResourceLabel string `json:"resource_label"`
-	AccessLevel   string `json:"access_level"`
-}
 
 type Options struct {
 	BaseURL      string
@@ -127,31 +77,31 @@ func (c *Client) GetAnswer(ctx context.Context, request entity.AnswerRequest) (e
 		return entity.Answer{}, fmt.Errorf("AI answer endpoint returned HTTP %d", resp.StatusCode)
 	}
 
-	var payload answerResponse
+	var payload port.AIAnswerResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
 		return entity.Answer{}, fmt.Errorf("decode AI response: %w", err)
 	}
 	if strings.TrimSpace(payload.Answer) == "" {
 		return entity.Answer{}, errors.New("AI response contains no answer")
 	}
-	return payload.toAnswer(), nil
+	return responseAnswer(payload), nil
 }
 
-func requestPayload(request entity.AnswerRequest) answerRequest {
-	plans := make([]plan, 0, len(request.OnboardingPlans))
+func requestPayload(request entity.AnswerRequest) port.AIAnswerRequest {
+	plans := make([]port.AIOnboardingPlan, 0, len(request.OnboardingPlans))
 	for _, item := range request.OnboardingPlans {
-		track := plan{ID: item.ID, Title: item.Title}
+		track := port.AIOnboardingPlan{ID: item.ID, Title: item.Title}
 		if current := item.CurrentStep; current != nil {
-			track.CurrentStep = &step{
+			track.CurrentStep = &port.AIOnboardingStep{
 				ID: current.ID, Title: current.Title,
 				ResourceID: current.ResourceID, ActionType: current.ActionType,
 			}
 		}
 		plans = append(plans, track)
 	}
-	return answerRequest{
+	return port.AIAnswerRequest{
 		Message: request.Message,
-		Actor: actor{
+		Actor: port.AIActor{
 			UserID: request.User.UserID, Role: request.User.Role, Team: request.User.TeamID,
 			ActualEndDate: request.User.ActualEndDate,
 		},
@@ -160,11 +110,11 @@ func requestPayload(request entity.AnswerRequest) answerRequest {
 	}
 }
 
-func recentHistory(messages []entity.Message) []historyTurn {
+func recentHistory(messages []entity.Message) []port.AIHistoryTurn {
 	if len(messages) > maxHistoryMessages {
 		messages = messages[len(messages)-maxHistoryMessages:]
 	}
-	history := make([]historyTurn, 0, len(messages))
+	history := make([]port.AIHistoryTurn, 0, len(messages))
 	for _, message := range messages {
 		if message.Role != entity.MessageRoleUser && message.Role != entity.MessageRoleAssistant {
 			continue
@@ -173,7 +123,7 @@ func recentHistory(messages []entity.Message) []historyTurn {
 		if content == "" || utf8.RuneCountInString(content) > maxMessageLength {
 			continue
 		}
-		turn := historyTurn{Role: message.Role, Content: content}
+		turn := port.AIHistoryTurn{Role: message.Role, Content: content}
 		if message.Role == entity.MessageRoleAssistant {
 			turn.SourceIDs = sourceIDsForHistory(message.Sources)
 		}
@@ -198,7 +148,7 @@ func sourceIDsForHistory(sources []entity.Source) []string {
 	return ids
 }
 
-func (payload answerResponse) toAnswer() entity.Answer {
+func responseAnswer(payload port.AIAnswerResponse) entity.Answer {
 	answer := entity.Answer{Text: payload.Answer}
 	for _, source := range payload.Sources {
 		answer.Sources = append(answer.Sources, entity.Source{DocumentID: source.ID, Title: source.Title, URL: source.URL})

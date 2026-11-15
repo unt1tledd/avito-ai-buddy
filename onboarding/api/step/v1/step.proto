@@ -77,4 +77,6 @@ message Step {
   string status = 6;
   // Set when resource_id points to a resource that requires an access request.
   string action_type = 7;
+  // Track this step belongs to, such as common or backend.
+  string track = 8;
 }

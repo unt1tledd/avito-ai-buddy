@@ -22,10 +22,12 @@ func TestPlanController(t *testing.T) {
 	ctx := context.Background()
 	const userID int64 = 42
 	stored := entity.Plan{ID: 7, UserID: userID, Track: "qa", Steps: []entity.Step{
-		{ID: "intro", Title: "Meet the team", Status: entity.StepCompleted},
+		{ID: "intro", Title: "Meet the team", Status: entity.StepCompleted, Track: "common"},
+		{ID: "qa-tools", Title: "Set up tools", Status: entity.StepPending, Track: "qa"},
 	}}
 	expected := &pb.GetPlanResponse{Id: 7, UserId: userID, Track: "qa", Steps: []*steppb.Step{
-		{Id: "intro", Title: "Meet the team", Status: "completed"},
+		{Id: "intro", Title: "Meet the team", Status: "completed", Track: "common"},
+		{Id: "qa-tools", Title: "Set up tools", Status: "pending", Track: "qa"},
 	}}
 
 	for _, tc := range []struct {
@@ -90,7 +92,7 @@ func TestGetPlanContext(t *testing.T) {
 			DisplayName: "Общая адаптация",
 			CurrentStep: &entity.Step{
 				ID: "common-06", Title: "Запросить доступ",
-				ResourceID: "cluster-space", Status: entity.StepPending,
+				ResourceID: "cluster-space", Status: entity.StepPending, Track: "common",
 			},
 		},
 		{Track: "backend", DisplayName: "Backend"},
@@ -101,7 +103,7 @@ func TestGetPlanContext(t *testing.T) {
 			DisplayName: "Общая адаптация",
 			CurrentStep: &steppb.Step{
 				Id: "common-06", Title: "Запросить доступ", Status: "pending",
-				ResourceId: "cluster-space", ActionType: "access_request",
+				ResourceId: "cluster-space", ActionType: "access_request", Track: "common",
 			},
 		},
 		{Track: "backend", DisplayName: "Backend"},
