@@ -5,17 +5,20 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from ai_service.agents.agent import NO_KNOWLEDGE
 from ai_service.clients.embeddings import Embeddings
 from ai_service.clients.llm import ModelError
 from ai_service.core.config import Settings
+from ai_service.core.diagnostics import FailureKind
 from ai_service.main import create_app
 from ai_service.rag.history import prepare_history
 from ai_service.schemas.clarifications import RESOURCE_CLARIFICATION
 from ai_service.schemas.contracts import AccessPolicy, Actor, Message, SearchHit, SearchResult
 from ai_service.schemas.support import (
     EMPATHY_PREFIXES, EMPATHY_VARIANTS, SOURCE_FREE_TEXTS, TEMPLATE_KINDS, TEMPLATE_VARIANTS, TEMPLATES,
+    SupportCatalogue,
 )
 from test_chat import ACTOR, AUTH, ONBOARDING_TRACKS, ScriptedModel, ask, call, mock_search_results, settings  # noqa: F401
 from test_history import Access
@@ -95,6 +98,31 @@ def test_catalogue_texts_are_short_closed_and_not_citations():
         assert 1 <= sum(text.count(mark) for mark in ".!?") <= 3
         assert len(text) < 400
         assert "[source:" not in text
+
+
+@pytest.mark.parametrize(("section", "key", "replacement"), [
+    ("templates", "greeting", None),
+    ("templates", "unknown", ["Unknown template"]),
+    ("templates", "greeting", []),
+    ("templates", "greeting", [""]),
+    ("templates", "greeting", [" "]),
+    ("templates", "greeting", [" Text with padding "]),
+    ("templates", "greeting", [123]),
+    ("templates", "greeting", ["Repeated", "Repeated"]),
+    ("templates", "greeting", ["Untrusted [source:invented]"]),
+    ("templates", "immediate_safety", ["First", "Second"]),
+    ("empathy", "difficulty", None),
+    ("empathy", "unknown", ["Unknown prefix"]),
+    ("empathy", "worry", []),
+])
+def test_invalid_catalogue_is_rejected_before_serving_requests(section, key, replacement):
+    payload = {"templates": dict(TEMPLATE_VARIANTS), "empathy": dict(EMPATHY_VARIANTS)}
+    if replacement is None:
+        del payload[section][key]
+    else:
+        payload[section][key] = replacement
+    with pytest.raises(ValidationError):
+        SupportCatalogue.model_validate_json(json.dumps(payload))
 
 
 @pytest.mark.parametrize("prefix", [text for variants in EMPATHY_VARIANTS.values() for text in variants])
@@ -339,8 +367,8 @@ def test_safety_prefilter_does_not_itself_classify_negation(settings):
 
 
 @pytest.mark.parametrize("model_output", [
-    ModelError("Provider failed", reason="http_400"),
-    ModelError("Transport failed", reason="transport"),
+    ModelError("Provider failed", status_code=400, reason="http_400"),
+    ModelError("Transport failed", kind=FailureKind.TRANSPORT, reason="transport"),
     [{"type": "message", "content": [{"type": "refusal", "refusal": "Provider refused"}]}],
     output(kind="invented", answer="Неподтверждённое утверждение"),
 ])
@@ -355,7 +383,7 @@ def test_potential_danger_uses_fixed_safety_fallback_on_model_failure(settings, 
 
 def test_safety_fallback_never_recasts_work_after_search(settings):
     model = ScriptedModel(call("find_instruction", query="опасный шаг VPN"),
-                          ModelError("Provider failed", reason="http_400"))
+                          ModelError("Provider failed", status_code=400, reason="http_400"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, "Опасно ли настраивать VPN?")
     assert response.status_code == 502
@@ -374,7 +402,7 @@ def test_safety_prefilter_cannot_bypass_track_ambiguity_for_work_tools(settings,
 
 
 def test_ordinary_emotion_does_not_turn_model_failure_into_unverified_response(settings):
-    model = ScriptedModel(ModelError("Provider failed", reason="http_400"))
+    model = ScriptedModel(ModelError("Provider failed", status_code=400, reason="http_400"))
     with TestClient(create_app(settings, model=model)) as client:
         assert ask(client, "Мне грустно").status_code == 502
 

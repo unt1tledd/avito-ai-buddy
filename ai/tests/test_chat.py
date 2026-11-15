@@ -375,7 +375,7 @@ def test_embedding_outage_distinguishes_empty_lexical_results_from_database_fail
         response = ask(client, QUESTION)
     if database_failure:
         assert response.status_code == 502
-        assert response.json() == {'detail': 'Database unavailable'}
+        assert response.json() == {'detail': 'Не удалось выполнить поиск в базе знаний.'}
     else:
         assert response.status_code == 200
         assert response.json() == {'answer': NO_KNOWLEDGE, 'sources': []}
@@ -438,7 +438,7 @@ def test_model_failure_returns_gateway_error(settings):
     with TestClient(create_app(settings, model=ScriptedModel(ModelError("Тайм-аут")))) as client:
         response = ask(client, "Привет")
     assert response.status_code == 502
-    assert response.json()["detail"] == "Тайм-аут"
+    assert response.json()["detail"] == "Модель временно недоступна."
 
 
 def test_invalid_llm_response_returns_gateway_error(settings, use_mock_http):
@@ -614,7 +614,7 @@ def test_rag_after_empty_tool_search(settings, monkeypatch, outcome):
         assert response.json()["sources"][0]["id"] == "visible"
     else:
         assert response.status_code == 502
-        assert {"search-error": "Поиск", "bad-citation": "источник", "refusal": "отказалась"}[outcome] in response.json()["detail"]
+        assert {"search-error": "поиск", "bad-citation": "источник", "refusal": "отказалась"}[outcome] in response.json()["detail"]
 
 
 @pytest.mark.parametrize(("question", "query"), [

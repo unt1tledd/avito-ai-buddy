@@ -2,11 +2,15 @@ import httpx
 from pydantic import BaseModel, FiniteFloat, ValidationError
 
 from ..core.config import EmbeddingProfile
-from ..core.diagnostics import UpstreamError, http_failure, operation
+from ..core.diagnostics import UpstreamError, operation
 
 
 class EmbeddingError(UpstreamError):
-    pass
+    domain = "embeddings"
+
+    def __init__(self, message: str, *, expected_dimensions: int | None = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.expected_dimensions = expected_dimensions
 
 
 class EmbeddingItem(BaseModel):
@@ -56,21 +60,21 @@ class Embeddings:
             parsed = EmbeddingResponse.model_validate_json(response.content)
             items = parsed.data
         except httpx.HTTPError as error:
-            raise EmbeddingError("Не удалось получить эмбеддинги.", reason=http_failure(error)) from error
+            raise EmbeddingError.from_http_error(error, "Failed to obtain embeddings.") from error
         except ValidationError as error:
-            raise EmbeddingError("Не удалось получить эмбеддинги.", reason="invalid_response") from error
+            raise EmbeddingError("Failed to obtain embeddings.", reason="invalid_response") from error
 
         items.sort(key=lambda item: item.index)
         vectors = [item.embedding for item in items]
         if not vectors or [item.index for item in items] != list(range(len(texts))):
-            raise EmbeddingError("Сервис эмбеддингов вернул некорректные векторы.", reason="invalid_indexes")
+            raise EmbeddingError("Embedding service returned invalid vectors.", reason="invalid_indexes")
         if any(len(vector) != self.config.dimensions for vector in vectors):
             raise EmbeddingError(
-                f"Сервис эмбеддингов должен возвращать векторы размерности {self.config.dimensions}.",
-                reason="invalid_dimensions",
+                f"Embedding service must return {self.config.dimensions}-dimensional vectors.",
+                reason="invalid_dimensions", expected_dimensions=self.config.dimensions,
             )
         if any(not any(vector) for vector in vectors):
-            raise EmbeddingError("Сервис эмбеддингов вернул некорректные векторы.", reason="zero_vector")
+            raise EmbeddingError("Embedding service returned invalid vectors.", reason="zero_vector")
         self.calls += 1
         usage = parsed.usage or {}
         tokens = usage.get("prompt_tokens", usage.get("total_tokens"))

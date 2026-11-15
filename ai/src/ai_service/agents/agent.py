@@ -107,20 +107,23 @@ class Turn:
 
     def response(self, response: ModelResponse) -> ChatResponse:
         if response.refused:
-            raise ModelError("Модель отказалась отвечать на запрос.", reason="refusal")
+            raise ModelError("Model refused to answer the request.", reason="refusal")
         if not response.text:
-            raise ModelError("Модель не вернула ответ.", reason="empty_answer")
+            raise ModelError("Model returned an empty answer.", reason="empty_answer")
         try:
             final = FINAL_OUTPUT.validate_json(response.text)
         except ValidationError as error:
-            raise ModelError("Модель вернула некорректный формат итогового ответа.", reason="invalid_answer") from error
+            raise ModelError("Model returned an invalid final answer format.", reason="invalid_answer") from error
         if isinstance(final, TemplateAnswer):
             # A failed/empty search must never be recast as emotional support.
             if self.tools_called or self.searched:
-                raise ModelError("Шаблонный ответ недопустим после вызова инструмента.", reason="invalid_route")
+                raise ModelError("Template replies are not allowed after a tool call.", reason="invalid_route")
             return ChatResponse(answer=template_text(final.template_id, self.history), sources=[])
         if final.empathy_id is not None and final.kind == "clarification":
-            raise ModelError("Уточнение должно совпадать с разрешённым вопросом.", reason="invalid_answer")
+            raise ModelError(
+                "Clarification must match an allowed question.",
+                code="invalid_clarification", reason="invalid_answer",
+            )
         result = self._work_response(final)
         if final.empathy_id is not None and result.answer not in CLARIFICATION_QUESTIONS:
             result = result.model_copy(update={
@@ -130,9 +133,9 @@ class Turn:
 
     def _work_response(self, final: FinalAnswer) -> ChatResponse:
         if final.proposal is not None and final.kind != "grounded_answer":
-            raise ModelError("Предложение заявки допустимо только с подтверждённым ответом.", reason="invalid_proposal")
+            raise ModelError("Access proposals require a grounded answer.", reason="invalid_proposal")
         if not self.searched and final.kind != "clarification":
-            raise ModelError("Модель завершила ответ без поиска по базе знаний.", reason="search_required")
+            raise ModelError("Model completed an answer without a knowledge search.", reason="search_required")
         if not self.sources:
             if self.search_error is not None:
                 raise self.search_error
@@ -147,9 +150,9 @@ class Turn:
         answer = final.answer
         references = SOURCE_REFERENCE.findall(answer)
         if len(references) != answer.count("[source:") or any(ref not in self.sources for ref in references):
-            raise ModelError("Модель сослалась на недоступный источник.", reason="invalid_citation")
+            raise ModelError("Model cited an unavailable source.", reason="invalid_citation")
         if not references:
-            raise ModelError("Ответ модели не содержит подтверждающих источников.", reason="missing_citation")
+            raise ModelError("Model answer has no supporting citations.", reason="missing_citation")
         sources = [self.sources[ref] for ref in dict.fromkeys(references)]
         proposal = None
         if final.proposal is not None:
@@ -165,7 +168,7 @@ class Turn:
         if len(sources) > MAX_RESPONSE_SOURCES or json_size([
             source.model_dump(mode="json") for source in sources
         ]) > MAX_SOURCE_BYTES:
-            raise ModelError("Модель превысила лимит источников ответа.", reason="source_limit")
+            raise ModelError("Model exceeded the response source limit.", reason="source_limit")
         return ChatResponse(answer=answer, sources=sources, proposal=proposal)
 
 
@@ -224,7 +227,7 @@ class Agent:
         while True:
             tools = [FIND_INSTRUCTION_TOOL] if remaining else []
             if json_size([self.prompt, messages, tools]) > MAX_CONTEXT_BYTES:
-                raise ModelError("Превышен бюджет контекста модели.", reason="context_limit")
+                raise ModelError("Model context budget exceeded.", reason="context_limit")
             try:
                 response = await self.model.respond(
                     instructions=self.prompt, messages=messages, tools=tools,
@@ -252,10 +255,10 @@ class Agent:
                 # searching an arbitrary track when the model chooses work.
                 return ChatResponse(answer=ONBOARDING_TRACK_CLARIFICATION, sources=[])
             if not remaining:
-                raise ModelError("Модель не завершила обработку запроса.", reason="unexpected_call")
+                raise ModelError("Model did not complete the request.", reason="unexpected_call")
             call_ids = {call.call_id for call in calls}
             if len(call_ids) != len(calls) or call_ids & seen_call_ids:
-                raise ModelError("Модель вернула повторяющиеся идентификаторы вызовов инструментов.", reason="duplicate_call_id")
+                raise ModelError("Model returned duplicate tool call IDs.", reason="duplicate_call_id")
             seen_call_ids.update(call_ids)
             turn.tools_called = True
             items = [item.model_dump(mode="json", exclude_unset=True) for item in response.output]
@@ -267,7 +270,7 @@ class Agent:
                 for index, call in enumerate(calls)
             ]
             if json_size([self.prompt, messages + outputs, next_tools]) > MAX_CONTEXT_BYTES:
-                raise ModelError("Превышен бюджет контекста модели.", reason="context_limit")
+                raise ModelError("Model context budget exceeded.", reason="context_limit")
             for index, call in enumerate(calls):
                 if remaining:
                     remaining -= 1
@@ -301,7 +304,7 @@ class Agent:
             deadline=deadline - self.fallback_reserve if deadline is not None else None,
         )
         if repaired.calls:
-            raise ModelError("Модель вызвала инструмент при исправлении ответа.", reason="unexpected_call")
+            raise ModelError("Model called a tool during citation repair.", code="repair_tool_call", reason="unexpected_call")
         return turn.response(repaired)
 
     async def _search(self, query: str, actor: Actor, turn: Turn) -> SearchResult:
@@ -324,7 +327,7 @@ class Agent:
         try:
             arguments = FindInstructionArguments.model_validate_json(call.arguments)
         except ValidationError as error:
-            raise ModelError("Модель вернула некорректные аргументы инструмента.", reason="invalid_tool_args") from error
+            raise ModelError("Model returned invalid tool arguments.", reason="invalid_tool_args") from error
         try:
             return await self._search(arguments.query, actor, turn)
         except (KnowledgeError, EmbeddingError) as error:

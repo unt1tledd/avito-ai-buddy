@@ -1,7 +1,9 @@
 import asyncio
+from http import HTTPStatus
 
 from ..core.circuit_breaker import CircuitBreaker
 from ..core.config import Settings
+from ..core.diagnostics import FailureKind
 from .llm import LanguageModel, ModelError, ModelResponse
 
 
@@ -10,9 +12,11 @@ class ModelUnavailable(ModelError):
 
 
 def is_unavailable(error: ModelError) -> bool:
-    return error.reason in {"transport", "timeout", "http_408", "http_429", "http_402"} or (
-        error.reason.startswith("http_") and error.reason[5:].isdigit()
-        and 500 <= int(error.reason[5:]) < 600
+    return error.kind in {FailureKind.TRANSPORT, FailureKind.TIMEOUT} or (
+        error.kind == FailureKind.HTTP and error.status_code is not None and (
+            error.status_code in {HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.PAYMENT_REQUIRED}
+            or 500 <= error.status_code < 600
+        )
     )
 
 
@@ -29,20 +33,23 @@ class ResilientModel:
         if deadline is not None:
             timeout = min(timeout, deadline - asyncio.get_running_loop().time())
         if timeout <= 0:
-            raise ModelUnavailable("Исчерпано время ожидания модели.", reason="model_budget_exhausted")
+            raise ModelUnavailable("Model time budget exhausted.", reason="model_budget_exhausted")
         generation = self.circuit.acquire()
         if generation is None:
-            raise ModelUnavailable("Модель временно недоступна.", reason="circuit_open")
+            raise ModelUnavailable("Model circuit is open.", reason="circuit_open")
         try:
             async with asyncio.timeout(timeout):
                 result = await self.model.respond(instructions=instructions, messages=messages, tools=tools)
         except TimeoutError as error:
             self.circuit.failed(generation)
-            raise ModelUnavailable("Истекло время ожидания модели.", reason="timeout") from error
+            raise ModelUnavailable("Model request timed out.", reason="timeout", kind=FailureKind.TIMEOUT) from error
         except ModelError as error:
             if is_unavailable(error):
                 self.circuit.failed(generation)
-                raise ModelUnavailable("Модель временно недоступна.", reason=error.reason) from error
+                raise ModelUnavailable(
+                    "Model is temporarily unavailable.", reason=error.reason,
+                    kind=error.kind, status_code=error.status_code,
+                ) from error
             # A refusal or invalid output proves reachability, without authorizing fallback.
             self.circuit.succeeded(generation)
             raise

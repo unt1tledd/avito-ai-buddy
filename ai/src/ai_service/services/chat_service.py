@@ -80,7 +80,7 @@ class ChatService:
                 if snapshot is not None:
                     return snapshot
                 if self.agent is None:
-                    raise ChatUnavailable("Чат с базой знаний недоступен.")
+                    raise ChatUnavailable("Knowledge chat is unavailable.")
                 profile = Actor(user_id=actor.user_id, team=actor.team, role=actor.role)
                 try:
                     return await self.agent.answer(

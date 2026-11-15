@@ -7,11 +7,12 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from ai_service.api.errors import public_error_message
 from ai_service.clients.embeddings import Embeddings
 from ai_service.clients.llm import ModelError, ModelResponse
 from ai_service.clients.resilient_llm import ModelUnavailable, ResilientModel
 from ai_service.core.config import Settings, resolve_embedding_profile
-from ai_service.core.diagnostics import logger
+from ai_service.core.diagnostics import FailureKind, logger
 from ai_service.main import create_app
 from ai_service.repositories.knowledge import KnowledgeError, KnowledgeRepository
 from ai_service.schemas.citations import SOURCE_REFERENCE
@@ -26,8 +27,12 @@ HIT = SearchHit(id='lexical-guide', title='Инструкция', text='Наст
 
 
 @pytest.mark.parametrize('after_search', [False, True])
-@pytest.mark.parametrize('reason', ['http_503', 'http_500', 'http_429', 'http_402', 'transport', 'timeout'])
-def test_model_outage_uses_original_question_and_never_generates_proposal(settings, monkeypatch, reason, after_search):
+@pytest.mark.parametrize(('reason', 'kind', 'status_code'), [
+    ('http_503', FailureKind.HTTP, 503), ('http_500', FailureKind.HTTP, 500),
+    ('http_429', FailureKind.HTTP, 429), ('http_402', FailureKind.HTTP, 402),
+    ('transport', FailureKind.TRANSPORT, None), ('timeout', FailureKind.TIMEOUT, None),
+])
+def test_model_outage_uses_original_question_and_never_generates_proposal(settings, monkeypatch, reason, kind, status_code, after_search):
     searches, embeddings = [], []
 
     async def lexical(self, query, profile, actor):
@@ -41,7 +46,7 @@ def test_model_outage_uses_original_question_and_never_generates_proposal(settin
 
     monkeypatch.setattr(KnowledgeRepository, 'search_lexical', lexical)
     monkeypatch.setattr(Embeddings, 'embed', embed)
-    error = ModelError('sensitive provider body', reason=reason)
+    error = ModelError('sensitive provider body', reason=reason, kind=kind, status_code=status_code)
     model = searched_model(error, query='rewritten question') if after_search else ScriptedModel(error)
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
@@ -58,16 +63,19 @@ def test_model_outage_uses_original_question_and_never_generates_proposal(settin
     assert len(model.requests) == (2 if after_search else 1)
 
 
-@pytest.mark.parametrize('reason', ['invalid_response', 'invalid_answer', 'invalid_citation', 'refusal', 'http_400', 'http_401', 'failed'])
-def test_validation_and_non_availability_errors_do_not_enter_fallback(settings, monkeypatch, reason):
+@pytest.mark.parametrize(('reason', 'status_code'), [
+    ('invalid_response', None), ('invalid_answer', None), ('invalid_citation', None),
+    ('refusal', None), ('http_400', 400), ('http_401', 401), ('failed', None),
+])
+def test_validation_and_non_availability_errors_do_not_enter_fallback(settings, monkeypatch, reason, status_code):
     async def unexpected(*args, **kwargs):
         pytest.fail('Invalid response/refusal entered lexical recovery')
 
     monkeypatch.setattr(KnowledgeRepository, 'search_lexical', unexpected)
-    with TestClient(create_app(settings, model=ScriptedModel(ModelError('Model rejected', reason=reason)))) as client:
+    with TestClient(create_app(settings, model=ScriptedModel(ModelError('Model rejected', reason=reason, status_code=status_code)))) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 502
-    assert response.json() == {'detail': 'Model rejected'}
+    assert response.json() == {'detail': public_error_message(ModelError('ignored', reason=reason))}
 
 
 @pytest.mark.parametrize('failure', [False, True])
@@ -78,11 +86,11 @@ def test_empty_fallback_and_database_failure_remain_distinct(settings, monkeypat
         return SearchResult(hits=[])
 
     monkeypatch.setattr(KnowledgeRepository, 'search_lexical', lexical)
-    with TestClient(create_app(settings, model=ScriptedModel(ModelError('Down', reason='http_503')))) as client:
+    with TestClient(create_app(settings, model=ScriptedModel(ModelError('Down', status_code=503, reason='http_503')))) as client:
         response = ask(client, QUESTION)
     assert response.status_code == (502 if failure else 200)
     if failure:
-        assert response.json() == {'detail': 'Database unavailable'}
+        assert response.json() == {'detail': 'Не удалось выполнить поиск в базе знаний.'}
     else:
         assert response.json()['sources'] == []
         assert response.json()['answer'].startswith(LEXICAL_FALLBACK_NOTICE)
@@ -121,7 +129,7 @@ def test_overall_deadline_still_cancels_slow_lexical_fallback(settings, monkeypa
 
     monkeypatch.setattr(KnowledgeRepository, 'search_lexical', lexical)
     configured = settings.model_copy(update={'chat_timeout_seconds': .03})
-    with TestClient(create_app(configured, model=ScriptedModel(ModelError('Down', reason='http_503')))) as client:
+    with TestClient(create_app(configured, model=ScriptedModel(ModelError('Down', status_code=503, reason='http_503')))) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 504
     assert cancelled == [True]
@@ -135,7 +143,7 @@ def test_safety_route_is_preserved_during_model_outage(settings, monkeypatch, af
         pytest.fail('Potential danger reached lexical recovery')
 
     monkeypatch.setattr(KnowledgeRepository, 'search_lexical', unexpected)
-    error = ModelError('Down', reason='http_503')
+    error = ModelError('Down', status_code=503, reason='http_503')
     model = searched_model(error) if after_search else ScriptedModel(error)
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, 'Я сейчас хочу причинить себе вред')
@@ -170,7 +178,7 @@ def test_outage_during_citation_repair_discards_unverified_answer(settings, monk
         return SearchResult(hits=[HIT])
 
     monkeypatch.setattr(KnowledgeRepository, 'search_lexical', lexical)
-    model = searched_model(answer('Invented unsupported answer'), ModelError('Down', reason='http_503'))
+    model = searched_model(answer('Invented unsupported answer'), ModelError('Down', status_code=503, reason='http_503'))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 200
@@ -196,7 +204,7 @@ def test_repeated_outage_opens_circuit_and_skips_model(settings, monkeypatch, ca
         return SearchResult(hits=[HIT])
 
     monkeypatch.setattr(KnowledgeRepository, 'search_lexical', lexical)
-    model = ScriptedModel(*(ModelError('sensitive provider error', reason='http_503') for _ in range(3)))
+    model = ScriptedModel(*(ModelError('sensitive provider error', status_code=503, reason='http_503') for _ in range(3)))
     with caplog.at_level(logging.WARNING, logger=logger.name), TestClient(create_app(settings, model=model)) as client:
         for _ in range(5):
             assert ask(client, QUESTION).status_code == 200
@@ -221,7 +229,7 @@ def test_model_circuit_recovery_has_one_probe_and_ignores_stale_completions():
                 entered.set()
                 await release.wait()
                 return response
-            raise ModelError('unavailable', reason='http_503')
+            raise ModelError('unavailable', status_code=503, reason='http_503')
 
         raw.respond.side_effect = respond
         slow = asyncio.create_task(model.respond(instructions='slow', messages=[], tools=[]))
@@ -230,7 +238,7 @@ def test_model_circuit_recovery_has_one_probe_and_ignores_stale_completions():
             await model.respond(instructions='fail', messages=[], tools=[])
         release.set()
         await slow
-        with pytest.raises(ModelUnavailable, match='недоступна') as error:
+        with pytest.raises(ModelUnavailable, match='circuit is open') as error:
             await model.respond(instructions='open', messages=[], tools=[])
         assert error.value.reason == 'circuit_open'
         now[0] = 31
@@ -254,7 +262,7 @@ def test_model_circuit_recovery_has_one_probe_and_ignores_stale_completions():
 def test_cancelled_model_probe_allows_another_probe_without_counting_failure():
     async def run():
         now = [0.]
-        raw = SimpleNamespace(respond=AsyncMock(side_effect=ModelError('Down', reason='http_503')))
+        raw = SimpleNamespace(respond=AsyncMock(side_effect=ModelError('Down', status_code=503, reason='http_503')))
         model = ResilientModel(raw, Settings(llm_circuit_failure_threshold=1))
         model.circuit.clock = lambda: now[0]
         with pytest.raises(ModelUnavailable):
