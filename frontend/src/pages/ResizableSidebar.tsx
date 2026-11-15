@@ -9,6 +9,8 @@ export function ResizableSidebar({panel, children}: {
   children: React.ReactNode;
 }) {
   const shell = useRef<HTMLDivElement>(null);
+  const lastContent = useRef(children);
+  if (panel) lastContent.current = children;
   const drag = useRef<{pointer:number; startX:number; startWidth:number} | null>(null);
   const [dragging,setDragging] = useState(false);
   const [maxWidth,setMaxWidth] = useState(640);
@@ -39,7 +41,7 @@ export function ResizableSidebar({panel, children}: {
   return <div ref={shell}
     className={`drawer-shell resizable-sidebar${panel?` drawer-shell--open-${panel}`:''}${dragging?' resizable-sidebar--dragging':''}`}
     style={{'--sidebar-width':`${displayedWidth}px`} as React.CSSProperties}>
-    {children}
+    <div className="sidebar-content" aria-hidden={!panel}>{panel ? children : lastContent.current}</div>
     {panel && <div className="sidebar-resize-handle" role="separator" tabIndex={0}
       aria-label="Ширина левой панели" aria-orientation="vertical"
       aria-valuemin={MIN_WIDTH} aria-valuemax={maxWidth} aria-valuenow={displayedWidth}

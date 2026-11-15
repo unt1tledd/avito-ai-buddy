@@ -65,6 +65,15 @@ export interface HistoryItem {
 
 let token = '';
 let refreshPending: Promise<void> | null = null;
+let sessionVersion = 0;
+let signedOut = (() => { try { return localStorage.getItem('buddy-signed-out') === 'true'; } catch { return false; } })();
+export function logout(): void {
+  signedOut = true;
+  sessionVersion++;
+  token = '';
+  refreshPending = null;
+  try { localStorage.setItem('buddy-signed-out', 'true'); } catch { /* Storage is optional. */ }
+}
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -74,8 +83,11 @@ async function decode(res: Response) {
   return data;
 }
 export async function refreshSession(): Promise<void> {
+  if (signedOut) throw new Error('Войди в аккаунт');
+  const version = sessionVersion;
   if (!refreshPending) refreshPending = fetch('/v1/auth/refresh', {method:'POST', credentials:'same-origin'})
-    .then(decode).then(data => { token = data.access_token; }).finally(() => { refreshPending = null; });
+    .then(decode).then(data => { if(version === sessionVersion && !signedOut) token = data.access_token; })
+    .finally(() => { if(version === sessionVersion) refreshPending = null; });
   return refreshPending;
 }
 export async function request(path: string, init: RequestInit = {}, retry = true): Promise<any> {
@@ -92,6 +104,10 @@ export async function request(path: string, init: RequestInit = {}, retry = true
 }
 export async function login(email: string, password: string): Promise<string> {
   const data = await request('/v1/auth/login', {method:'POST', body:JSON.stringify({email,password})}, false);
+  sessionVersion++;
+  refreshPending = null;
+  signedOut = false;
+  try { localStorage.removeItem('buddy-signed-out'); } catch { /* Storage is optional. */ }
   token = data.access_token;
   return currentUser();
 }
@@ -150,8 +166,29 @@ export const statusLabel = (status:string) => ({draft:'Готова к отпр�
   pending:'Заявка отправлена · ожидает решения',pending_approval:'Заявка отправлена · ожидает решения',approved:'Доступ одобрен',
   rejected:'Заявка отклонена',failed:'Не удалось отправить'}[status] || status);
 
-export interface Conversation {id:string;title:string;createdAt:string}
-export async function listConversations():Promise<Conversation[]> { return (await request('/v1/chat/conversations')).conversations || []; }
+export interface Conversation {id:string;title:string;createdAt:string;lastActivityAt?:string}
+export function recentConversations(items:Conversation[]):Conversation[] {
+  const timestamp=(value:string)=>Date.parse(value)||0;
+  return [...items].sort((a,b)=>timestamp(b.lastActivityAt || b.createdAt)-timestamp(a.lastActivityAt || a.createdAt)
+    || timestamp(b.createdAt)-timestamp(a.createdAt) || b.id.localeCompare(a.id,undefined,{numeric:true}));
+}
+export async function listConversations():Promise<Conversation[]> {
+  const items:Conversation[]=(await request('/v1/chat/conversations')).conversations || [];
+  // The list contract exposes creation time only. Read one latest message
+  // per conversation, with bounded concurrency, until it exposes activity.
+  let cursor=0;
+  await Promise.all(Array.from({length:Math.min(4,items.length)},async()=>{
+    while(cursor<items.length) {
+      const item=items[cursor++];
+      try {
+        const data=await request('/v1/chat/messages?pageSize=1',{headers:{'X-Conversation-Id':item.id}});
+        const latest=data.messages?.[0]?.createdAt;
+        if(latest)item.lastActivityAt=latest;
+      } catch { /* An unavailable history must not hide the conversation list. */ }
+    }
+  }));
+  return recentConversations(items);
+}
 export async function createConversation():Promise<Conversation> { return request('/v1/chat/conversations',{method:'POST'}); }
 export async function deleteConversation(id?:string):Promise<void> { await request('/v1/chat/conversations'+(id?`/${encodeURIComponent(id)}`:''),{method:'DELETE'}); }
 
