@@ -190,6 +190,7 @@ services:
       AI_SERVICE_TOKEN: "${AI_SERVICE_TOKEN:-}"
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_TASK_COMMANDS_TOPIC: "task.access_requests.create"
+      CHAT_PROPOSAL_TTL: "${CHAT_PROPOSAL_TTL:-24h}"
     depends_on:
       db:
         condition: service_healthy

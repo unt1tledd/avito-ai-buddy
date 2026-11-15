@@ -15,8 +15,6 @@ import (
 	"avito-ai-buddy/chat/internal/port"
 )
 
-const proposalTTL = 24 * time.Hour
-
 type repository interface {
 	GetByID(ctx context.Context, userID, proposalID int64) (*entity.Action, error)
 	SaveAccessRequest(ctx context.Context, proposalID int64, request entity.AccessRequest) error
@@ -33,12 +31,14 @@ type actionService struct {
 	actions repository
 	outbox  outboxRepository
 	tx      port.Transactor
+	ttl     time.Duration
 }
 
 // NewService builds the action usecase: it needs the proposal repository,
-// the outbox repository, the auth token validator and a transaction manager.
-func NewService(actions repository, outbox outboxRepository, auth port.TokenValidator, tx port.Transactor) *actionService {
-	return &actionService{actions: actions, outbox: outbox, auth: auth, tx: tx}
+// the outbox repository, the auth token validator, a transaction manager and
+// the proposal lifetime configured for the service.
+func NewService(actions repository, outbox outboxRepository, auth port.TokenValidator, tx port.Transactor, ttl time.Duration) *actionService {
+	return &actionService{actions: actions, outbox: outbox, auth: auth, tx: tx, ttl: ttl}
 }
 
 // ConfirmProposal enqueues an access request for the proposal. The request is
@@ -65,7 +65,7 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 		if proposal == nil {
 			return xerrors.ErrProposalNotFound
 		}
-		expiresAt := proposal.CreatedAt.Add(proposalTTL)
+		expiresAt := proposal.CreatedAt.Add(s.ttl)
 
 		if proposal.AccessRequest != nil {
 			request = *proposal.AccessRequest

@@ -59,6 +59,10 @@ type Config struct {
 	App struct {
 		HistoryPageSize int32 `env:"CHAT_HISTORY_PAGE_SIZE" envDefault:"30"`
 	}
+
+	Proposal struct {
+		TTL time.Duration `env:"CHAT_PROPOSAL_TTL" envDefault:"24h"`
+	}
 }
 
 type KafkaConfig struct {
@@ -103,6 +107,9 @@ func New() (*Config, error) {
 	}
 	if cfg.App.HistoryPageSize <= 0 {
 		return nil, errors.New("CHAT_HISTORY_PAGE_SIZE must be positive")
+	}
+	if cfg.Proposal.TTL <= 0 {
+		return nil, errors.New("CHAT_PROPOSAL_TTL must be positive")
 	}
 	if cfg.Outbox.BatchSize <= 0 {
 		return nil, errors.New("CHAT_OUTBOX_BATCH_SIZE must be positive")

@@ -13,6 +13,8 @@ import (
 	"avito-ai-buddy/chat/internal/port"
 )
 
+const testProposalTTL = 24 * time.Hour
+
 type validatorFunc func(context.Context, string) (int64, error)
 
 func (f validatorFunc) ValidateToken(ctx context.Context, token string) (int64, error) {
@@ -132,7 +134,7 @@ func TestConfirmProposalEnqueuesAccessRequest(t *testing.T) {
 				return err
 			})
 
-			got, err := NewService(actions, outbox, auth, tx).ConfirmProposal(ctx, "session", " 42 ")
+			got, err := NewService(actions, outbox, auth, tx, testProposalTTL).ConfirmProposal(ctx, "session", " 42 ")
 			want, wantErr := pending, tc.saveErr
 			if wantErr == nil {
 				wantErr = tc.outboxErr
@@ -155,7 +157,7 @@ func TestConfirmProposalEnqueuesAccessRequest(t *testing.T) {
 func TestConfirmProposalDoesNotEnqueueAgain(t *testing.T) {
 	approved := entity.AccessRequest{TaskID: "task-1", Status: "approved"}
 	pending := entity.AccessRequest{Status: "pending_dispatch"}
-	expired := time.Now().Add(-proposalTTL - time.Minute)
+	expired := time.Now().Add(-testProposalTTL - time.Minute)
 	for _, tc := range []struct {
 		name     string
 		proposal *entity.Action
@@ -223,7 +225,7 @@ func TestConfirmProposalDoesNotEnqueueAgain(t *testing.T) {
 				return fn(ctx)
 			})
 
-			got, err := NewService(actions, outbox, auth, tx).ConfirmProposal(ctx, "session", "42")
+			got, err := NewService(actions, outbox, auth, tx, testProposalTTL).ConfirmProposal(ctx, "session", "42")
 			if got != tc.want || !errors.Is(err, tc.wantErr) {
 				t.Fatalf("ConfirmProposal() = %+v, %v, want %+v, %v", got, err, tc.want, tc.wantErr)
 			}
@@ -264,7 +266,7 @@ func TestConfirmProposalRequeuesFailedDispatch(t *testing.T) {
 	auth := validatorFunc(func(context.Context, string) (int64, error) { return 7, nil })
 	tx := transactorFunc(func(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) })
 
-	got, err := NewService(actions, outbox, auth, tx).ConfirmProposal(ctx, "session", "42")
+	got, err := NewService(actions, outbox, auth, tx, testProposalTTL).ConfirmProposal(ctx, "session", "42")
 	want := entity.AccessRequest{TaskID: "task-1", Status: "pending_dispatch"}
 	if err != nil || got != want {
 		t.Fatalf("ConfirmProposal() = %+v, %v, want %+v, nil", got, err, want)

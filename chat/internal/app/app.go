@@ -41,6 +41,7 @@ import (
 	"avito-ai-buddy/pkg/transactor"
 
 	"avito-ai-buddy/pkg/observability"
+
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -242,7 +243,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 		cfg.Clients.AIMaxHistoryMessages,
 	)
 	chatController := chatapi.NewServer(messages, logger)
-	actionController := actionapi.NewServer(action.NewService(actions, outboxRepository, authClient, tx), logger)
+	actionController := actionapi.NewServer(action.NewService(actions, outboxRepository, authClient, tx, cfg.Proposal.TTL), logger)
 
 	server := grpc.NewServer(grpc.ChainUnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
 		log := logger.Info
