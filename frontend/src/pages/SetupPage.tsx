@@ -19,7 +19,6 @@ export function SetupPage({userId,onDone}:{userId:string;onDone:()=>void}) {
       <label>Первый день стажировки<input name="start_date" type="date" required/></label>
       <label>Плановая дата окончания<input name="end_date" type="date" required/></label>
     </div>
-    <p className="profile-form-hint">Укажи согласованные команду и сроки. Если пока их не знаешь, уточни у бадди.</p>
     {error&&<p role="alert">{error}</p>}<button disabled={busy}>{busy?'Сохраняем…':'Сохранить профиль'}</button>
   </form>;
 }

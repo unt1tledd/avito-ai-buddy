@@ -65,6 +65,15 @@ export interface HistoryItem {
 
 let token = '';
 let refreshPending: Promise<void> | null = null;
+let sessionVersion = 0;
+let signedOut = (() => { try { return localStorage.getItem('buddy-signed-out') === 'true'; } catch { return false; } })();
+export function logout(): void {
+  signedOut = true;
+  sessionVersion++;
+  token = '';
+  refreshPending = null;
+  try { localStorage.setItem('buddy-signed-out', 'true'); } catch { /* Storage is optional. */ }
+}
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -74,8 +83,11 @@ async function decode(res: Response) {
   return data;
 }
 export async function refreshSession(): Promise<void> {
+  if (signedOut) throw new Error('Войди в аккаунт');
+  const version = sessionVersion;
   if (!refreshPending) refreshPending = fetch('/v1/auth/refresh', {method:'POST', credentials:'same-origin'})
-    .then(decode).then(data => { token = data.access_token; }).finally(() => { refreshPending = null; });
+    .then(decode).then(data => { if(version === sessionVersion && !signedOut) token = data.access_token; })
+    .finally(() => { if(version === sessionVersion) refreshPending = null; });
   return refreshPending;
 }
 export async function request(path: string, init: RequestInit = {}, retry = true): Promise<any> {
@@ -92,6 +104,10 @@ export async function request(path: string, init: RequestInit = {}, retry = true
 }
 export async function login(email: string, password: string): Promise<string> {
   const data = await request('/v1/auth/login', {method:'POST', body:JSON.stringify({email,password})}, false);
+  sessionVersion++;
+  refreshPending = null;
+  signedOut = false;
+  try { localStorage.removeItem('buddy-signed-out'); } catch { /* Storage is optional. */ }
   token = data.access_token;
   return currentUser();
 }

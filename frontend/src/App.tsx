@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { ChatPage } from './pages/ChatPage';
+import { AuthForm } from './pages/AuthForm';
 import { SetupPage } from './pages/SetupPage';
-import { currentUser, refreshSession, login, request, ApiError } from './lib/api';
+import { currentUser, refreshSession, login, logout, request, ApiError } from './lib/api';
 export default function App() {
   const [user, setUser] = useState('');
   const [metadata,setMetadata] = useState<any>(null);
@@ -15,13 +16,12 @@ export default function App() {
   };
   useEffect(()=>{if(user)void checkProfile(user);},[user]);
   const [checking, setChecking] = useState(true);
-  const [register,setRegister] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [dark, setDark] = useState(false);
-  useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
+  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark');
+  useEffect(() => {
+    const theme = dark ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('buddy-theme', theme); } catch { /* Theme switching also works without storage. */ }
+  }, [dark]);
   useEffect(() => { let active = true;
     refreshSession().then(currentUser).then(id => { if(active) setUser(id); })
       .catch(() => {}).finally(() => { if(active) setChecking(false); });
@@ -64,14 +64,13 @@ export default function App() {
         </button>
       </header>
 
-    {checking ? <p role="status">Проверяем сессию…</p> : user ? (profile==='ready'?<ChatPage key={user} userId={user} profile={{name:[metadata?.intern?.first_name,metadata?.intern?.last_name].filter(Boolean).join(' '),email:localStorage.getItem(`buddy-email-${user}`)||'',team:metadata?.team?.name,track:metadata?.track}}/>:profile==='missing'?<SetupPage userId={user} onDone={()=>void checkProfile(user)}/>:profile==='error'?<div role="alert">{profileError}<button onClick={()=>void checkProfile(user)}>Повторить загрузку профиля</button></div>:<p role="status">Загружаем профиль…</p>) :
-      <form className="login-card" onSubmit={async e => { e.preventDefault(); setBusy(true); setError('');
-        try { if(register) await request('/v1/auth/register',{method:'POST',body:JSON.stringify({email,password})},false);const id=await login(email,password);localStorage.setItem(`buddy-email-${id}`,email);setUser(id); } catch(e) { setError(e instanceof Error ? e.message : 'Не удалось войти'); }
-        finally { setBusy(false); } }}>
-        <h1>{register?'Регистрация':'Вход в AI-buddy'}</h1><p>Используй учётную запись, подготовленную командой.</p>
-        <label>Почта<input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required/></label>
-        <label>Пароль<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>
-        {error && <p role="alert">{error}</p>}<button disabled={busy}>{busy?'Подождите…':register?'Зарегистрироваться':'Войти'}</button><button type="button" onClick={()=>{setRegister(!register);setError('');}}>{register?'Уже есть аккаунт? Войти':'Создать аккаунт'}</button>
-      </form>}
+    {checking ? <p role="status">Проверяем сессию…</p> : user ? (profile==='ready'?<ChatPage key={user} userId={user} onLogout={()=>{logout();setUser('');setMetadata(null);setProfile('loading');setProfileError('');}} profile={{name:[metadata?.intern?.first_name,metadata?.intern?.last_name].filter(Boolean).join(' '),email:localStorage.getItem(`buddy-email-${user}`)||'',team:metadata?.team?.name,track:metadata?.track}}/>:profile==='missing'?<SetupPage userId={user} onDone={()=>void checkProfile(user)}/>:profile==='error'?<div role="alert">{profileError}<button onClick={()=>void checkProfile(user)}>Повторить загрузку профиля</button></div>:<p role="status">Загружаем профиль…</p>) :
+      <AuthForm onAuthenticate={async(email,password,register)=>{
+        if(register)await request('/v1/auth/register',{method:'POST',body:JSON.stringify({email,password})},false);
+        const id=await login(email,password);
+        try{localStorage.setItem(`buddy-email-${id}`,email);}catch{/* Login also works without browser storage. */}
+        setUser(id);
+      }}/>}
+
   </div>;
 }

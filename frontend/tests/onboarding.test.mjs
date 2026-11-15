@@ -121,3 +121,44 @@ test('history preserves server result messages and proposal dispatch status',asy
   assert.equal(result.messages[1].text,'Доступ подтверждён');
   assert.equal(result.messages[0].proposal.status,'pending_dispatch');
 });
+
+const { registrationError } = load('pages/AuthForm.tsx');
+test('registration rejects mismatched confirmation and preserves password whitespace',()=>{
+  assert.match(registrationError('password123','password124'),/не совпадают/);
+  assert.match(registrationError(' password123','password123'),/не совпадают/);
+  assert.equal(registrationError(' password123 ',' password123 '),'');
+});
+test('registration follows server character and UTF-8 byte length constraints',()=>{
+  assert.match(registrationError('1234567','1234567'),/8 символов/);
+  assert.equal(registrationError('12345678','12345678'),'');
+  assert.equal(registrationError('я'.repeat(36),'я'.repeat(36)),'');
+  assert.match(registrationError('я'.repeat(37),'я'.repeat(37)),/72 байта/);
+  assert.match(registrationError('😀'.repeat(7),'😀'.repeat(7)),/8 символов/);
+});
+
+const { shouldRefreshHistory, historyRefreshQueue } = load('lib/chatEvents.ts');
+test('live history ignores malformed, unknown and other-conversation events',()=>{
+  assert.equal(shouldRefreshHistory('not JSON','12'),false);
+  assert.equal(shouldRefreshHistory('null','12'),false);
+  assert.equal(shouldRefreshHistory(JSON.stringify({type:'ping'}),'12'),false);
+  const message=JSON.stringify({type:'message.created',message:{ConversationID:12}});
+  assert.equal(shouldRefreshHistory(message,'12'),true);
+  assert.equal(shouldRefreshHistory(message,'13'),false);
+  assert.equal(shouldRefreshHistory(message,''),false);
+  assert.equal(shouldRefreshHistory(JSON.stringify({type:'message.created'}),'12'),false);
+  for(const type of ['task.status_changed','access_request.failed'])
+    assert.equal(shouldRefreshHistory(JSON.stringify({type}),'12'),true);
+});
+test('live refresh coalesces bursts, serializes requests and cancels on unmount',async()=>{
+  let calls=0,finish;
+  const queue=historyRefreshQueue(()=>{calls++;return new Promise(resolve=>{finish=resolve;});},1);
+  const tick=()=>new Promise(resolve=>setTimeout(resolve,15));
+  queue.schedule();queue.schedule();queue.schedule();
+  await tick();assert.equal(calls,1);
+  queue.schedule();queue.schedule();
+  await tick();assert.equal(calls,1);
+  finish();await tick();assert.equal(calls,2);
+  queue.schedule();queue.stop();finish();
+  await tick();assert.equal(calls,2);
+  queue.schedule();await tick();assert.equal(calls,2);
+});

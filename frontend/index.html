@@ -3,6 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <script>
+      // Apply the saved theme before styles and React load.
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem('buddy-theme') === 'dark' ? 'dark' : 'light';
+      } catch {
+        document.documentElement.dataset.theme = 'light';
+      }
+    </script>
+    <style>
+      html { background: #ECEDEB; color-scheme: light; }
+      html[data-theme='dark'] { background: #131314; color-scheme: dark; }
+    </style>
     <title>AI BUDDY — ИИ-наставник стажёра Авито</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
