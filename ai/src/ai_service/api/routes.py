@@ -12,6 +12,7 @@ from ..core.diagnostics import UpstreamError, logger, request_id
 from ..schemas.contracts import ChatResponse
 from ..services.chat_service import ChatService, ChatUnavailable, InvalidChat
 from .schemas import ChatRequest
+from .errors import public_error_message
 
 
 class Readiness(BaseModel):
@@ -117,13 +118,13 @@ def create_router(service_token: str) -> APIRouter:
             return work.result()
         except ChatUnavailable as error:
             logger.error("AI chat unavailable", extra={"reason": service.unavailable_reason})
-            raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(error)) from error
+            raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail="Чат с базой знаний недоступен.") from error
         except InvalidChat as error:
             raise RequestValidationError([
                 {"type": error.kind, "loc": ("body", *error.field), "msg": str(error), "input": None}
             ]) from error
         except UpstreamError as error:
-            raise HTTPException(status_code=HTTPStatus.BAD_GATEWAY, detail=str(error)) from error
+            raise HTTPException(status_code=HTTPStatus.BAD_GATEWAY, detail=public_error_message(error)) from error
         except TimeoutError as error:
             raise HTTPException(status_code=HTTPStatus.GATEWAY_TIMEOUT, detail="Истекло время ответа AI.") from error
         finally:

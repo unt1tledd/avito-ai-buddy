@@ -52,6 +52,53 @@ def test_programmatic_settings_reject_unknown_fields():
         Settings(knowledge_min_similiarity=0.2)
 
 
+def test_embedding_resilience_settings_load_from_environment_without_changing_index(monkeypatch):
+    monkeypatch.setattr(os, 'environ', {
+        'SEARCH_EMBEDDING_TIMEOUT_SECONDS': '1.5',
+        'EMBEDDING_CIRCUIT_FAILURE_THRESHOLD': '5',
+        'EMBEDDING_CIRCUIT_RESET_SECONDS': '45',
+        'EMBEDDING_API_KEY': 'test-key',
+    })
+    configured = Settings.from_env()
+    assert configured.search_embedding_timeout_seconds == 1.5
+    assert configured.embedding_circuit_failure_threshold == 5
+    assert configured.embedding_circuit_reset_seconds == 45
+    assert resolve_embedding_profile(configured).index_id == resolve_embedding_profile(Settings(embedding_api_key='test-key')).index_id
+
+
+@pytest.mark.parametrize('field,value', [
+    ('search_embedding_timeout_seconds', 0), ('search_embedding_timeout_seconds', 61),
+    ('embedding_circuit_failure_threshold', 0), ('embedding_circuit_failure_threshold', 101),
+    ('embedding_circuit_reset_seconds', 0), ('embedding_circuit_reset_seconds', 301),
+])
+def test_embedding_resilience_settings_are_bounded(field, value):
+    with pytest.raises(ValidationError):
+        Settings(**{field: value})
+
+
+def test_llm_resilience_settings_do_not_change_embedding_profile(monkeypatch):
+    monkeypatch.setattr(os, 'environ', {
+        'LLM_TIMEOUT_SECONDS': '12', 'LLM_FALLBACK_RESERVE_SECONDS': '4',
+        'LLM_CIRCUIT_FAILURE_THRESHOLD': '5', 'LLM_CIRCUIT_RESET_SECONDS': '45',
+        'EMBEDDING_API_KEY': 'test',
+    })
+    settings = Settings.from_env()
+    assert (settings.llm_timeout_seconds, settings.llm_fallback_reserve_seconds,
+            settings.llm_circuit_failure_threshold, settings.llm_circuit_reset_seconds) == (12, 4, 5, 45)
+    assert resolve_embedding_profile(settings).index_id == resolve_embedding_profile(Settings(embedding_api_key='test')).index_id
+
+
+@pytest.mark.parametrize('field,value', [
+    ('llm_timeout_seconds', 0), ('llm_timeout_seconds', 61),
+    ('llm_fallback_reserve_seconds', -1), ('llm_fallback_reserve_seconds', 11),
+    ('llm_circuit_failure_threshold', 0), ('llm_circuit_failure_threshold', 101),
+    ('llm_circuit_reset_seconds', 0), ('llm_circuit_reset_seconds', 301),
+])
+def test_llm_resilience_settings_are_bounded(field, value):
+    with pytest.raises(ValidationError):
+        Settings(**{field: value})
+
+
 def test_legacy_service_environment_does_not_configure_ai(monkeypatch):
     monkeypatch.setattr(os, "environ", {
         "AI_MODE": "demo",

@@ -28,7 +28,7 @@ async def import_documents(source: Path, settings: Settings) -> dict:
         async with asyncio.timeout(settings.import_timeout_seconds):
             return await _import_documents(source, settings)
     except TimeoutError as error:
-        raise ModelError("Истекло время импорта; индекс не изменён.", reason="timeout") from error
+        raise ModelError("Import timed out; the index was not changed.", code="import_timeout", reason="timeout") from error
 
 
 async def _import_documents(source: Path, settings: Settings) -> dict:

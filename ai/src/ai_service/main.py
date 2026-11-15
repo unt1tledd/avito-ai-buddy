@@ -65,9 +65,10 @@ def create_app(settings: Settings | None = None, *, model: LanguageModel | None 
                     KnowledgeRepository(settings.knowledge_db_dsn, pool, settings),
                     embeddings,
                     settings.knowledge_min_similarity,
+                    settings=settings,
                 )
                 prompt = files("ai_service.agents").joinpath("prompts", "system.txt").read_text(encoding="utf-8")
-                agent = Agent(language_model, retriever, prompt)
+                agent = Agent(language_model, retriever, prompt, settings=settings)
 
             app.state.chat_service = ChatService(agent, reason)
             yield

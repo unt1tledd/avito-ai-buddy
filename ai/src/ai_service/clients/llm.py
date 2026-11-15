@@ -4,14 +4,14 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..core.config import validate_base_url, validate_bearer_token
-from ..core.diagnostics import UpstreamError, http_failure, operation
+from ..core.diagnostics import UpstreamError, operation
 
 
 MAX_MODEL_OUTPUT_TOKENS = 1500
 
 
 class ModelError(UpstreamError):
-    pass
+    domain = "model"
 
 
 class ResponseItem(BaseModel):
@@ -95,7 +95,7 @@ class ResponsesModel:
         validate_base_url("LLM_BASE_URL", base_url)
         validate_bearer_token("LLM_API_KEY", api_key)
         self.http = http
-        self.url = f"{base_url.rstrip('/')}/responses"
+        self.url = f"{base_url.rstrip("/")}/responses"
         self.api_key = api_key
         self.model = model
 
@@ -122,21 +122,21 @@ class ResponsesModel:
             )
             response.raise_for_status()
         except httpx.HTTPError as error:
-            raise ModelError("Модель временно недоступна.", reason=http_failure(error)) from error
+            raise ModelError.from_http_error(error, "Model is temporarily unavailable.") from error
         try:
             result = ModelResponse.model_validate_json(response.content)
         except ValidationError as error:
-            raise ModelError("Модель вернула ответ в неизвестном формате.", reason="invalid_response") from error
+            raise ModelError("Model returned an unknown response format.", reason="invalid_response") from error
         if result.status == "incomplete" or any(
             isinstance(item, (OutputMessage, FunctionCall)) and item.status != "completed"
             for item in result.output
         ):
-            raise ModelError("Модель вернула неполный ответ.", reason="incomplete")
+            raise ModelError("Model returned an incomplete response.", reason="incomplete")
         if result.status != "completed":
-            raise ModelError("Модель не завершила обработку запроса.", reason="bad_status")
+            raise ModelError("Model did not complete the request.", reason="bad_status")
         if result.refused:
-            raise ModelError("Модель отказалась отвечать на запрос.", reason="refusal")
+            raise ModelError("Model refused to answer the request.", reason="refusal")
         call_ids = [call.call_id for call in result.calls]
         if len(set(call_ids)) != len(call_ids):
-            raise ModelError("Модель вернула повторяющиеся идентификаторы вызовов инструментов.", reason="duplicate_call_id")
+            raise ModelError("Model returned duplicate tool call IDs.", reason="duplicate_call_id")
         return result

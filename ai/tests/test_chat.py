@@ -333,22 +333,60 @@ def test_knowledge_failure_after_planning_returns_gateway_error(settings, monkey
     assert len(model.requests) == 2
 
 
-def test_embedding_failure_after_planning_returns_gateway_error(settings, monkeypatch):
+def test_embedding_failure_after_planning_uses_lexical_sources(settings, monkeypatch):
     async def embed(self, texts):
         raise EmbeddingError("Не удалось получить эмбеддинги.")
 
     monkeypatch.setattr(Embeddings, "embed", embed)
-    model = searched_model(answer("Нет данных.", kind="no_knowledge"))
+    async def lexical(self, query, profile, actor):
+        assert query == QUESTION
+        assert actor.model_dump() == ACTOR
+        assert len(profile) == 64
+        return SearchResult(hits=[SearchHit(id="lexical", title="Инструкция", text="Настройте окружение.")])
+
+    monkeypatch.setattr(KnowledgeRepository, "search_lexical", lexical)
+    model = searched_model(answer("Настройте окружение. [source:lexical]"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
-    assert response.status_code == 502
-    assert response.json()["detail"] == "Не удалось получить эмбеддинги."
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "Настройте окружение. [source:lexical]",
+        "sources": [{"id": "lexical", "title": "Инструкция", "text": "Настройте окружение.", "url": None}],
+    }
     assert len(model.requests) == 2
 
 
-def test_wrong_embedding_dimension_returns_gateway_error_before_search(monkeypatch, use_mock_http):
-    async def unexpected_connect(*args, **kwargs):
-        pytest.fail("Search attempted with an incompatible embedding")
+@pytest.mark.parametrize('database_failure', [False, True])
+def test_embedding_outage_distinguishes_empty_lexical_results_from_database_failure(settings, monkeypatch, database_failure):
+    from ai_service.repositories.knowledge import KnowledgeError
+
+    async def embed(self, texts):
+        raise EmbeddingError('Embedding unavailable', reason='http_503')
+
+    async def lexical(self, query, profile, actor):
+        if database_failure:
+            raise KnowledgeError('Database unavailable', reason='connection')
+        return SearchResult(hits=[])
+
+    monkeypatch.setattr(Embeddings, 'embed', embed)
+    monkeypatch.setattr(KnowledgeRepository, 'search_lexical', lexical)
+    model = searched_model(answer('Нет данных.', kind='no_knowledge'))
+    with TestClient(create_app(settings, model=model)) as client:
+        response = ask(client, QUESTION)
+    if database_failure:
+        assert response.status_code == 502
+        assert response.json() == {'detail': 'Не удалось выполнить поиск в базе знаний.'}
+    else:
+        assert response.status_code == 200
+        assert response.json() == {'answer': NO_KNOWLEDGE, 'sources': []}
+
+
+def test_wrong_embedding_dimension_falls_back_without_using_vector(monkeypatch, use_mock_http):
+    async def unexpected_search(*args, **kwargs):
+        pytest.fail("Vector search attempted with an incompatible embedding")
+
+    async def lexical(self, query, profile, actor):
+        return SearchResult(hits=[])
 
     settings = Settings(
         service_token="chat-test-token", knowledge_processing_approved=True,
@@ -356,13 +394,14 @@ def test_wrong_embedding_dimension_returns_gateway_error_before_search(monkeypat
         knowledge_db_dsn="postgresql://knowledge.test/knowledge"
     )
     use_mock_http(lambda request: httpx.Response(200, json={"data": [{"index": 0, "embedding": [1, 0]}]}))
-    monkeypatch.setattr(psycopg.AsyncConnection, "connect", unexpected_connect)
+    monkeypatch.setattr(KnowledgeRepository, "search", unexpected_search)
+    monkeypatch.setattr(KnowledgeRepository, "search_lexical", lexical)
     model = searched_model(answer("Нет данных.", kind="no_knowledge"))
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
 
-    assert response.status_code == 502
-    assert "размерности 1536" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json() == {"answer": NO_KNOWLEDGE, "sources": []}
     assert len(model.requests) == 2
 
 
@@ -399,7 +438,7 @@ def test_model_failure_returns_gateway_error(settings):
     with TestClient(create_app(settings, model=ScriptedModel(ModelError("Тайм-аут")))) as client:
         response = ask(client, "Привет")
     assert response.status_code == 502
-    assert response.json()["detail"] == "Тайм-аут"
+    assert response.json()["detail"] == "Модель временно недоступна."
 
 
 def test_invalid_llm_response_returns_gateway_error(settings, use_mock_http):
@@ -575,7 +614,7 @@ def test_rag_after_empty_tool_search(settings, monkeypatch, outcome):
         assert response.json()["sources"][0]["id"] == "visible"
     else:
         assert response.status_code == 502
-        assert {"search-error": "Поиск", "bad-citation": "источник", "refusal": "отказалась"}[outcome] in response.json()["detail"]
+        assert {"search-error": "поиск", "bad-citation": "источник", "refusal": "отказалась"}[outcome] in response.json()["detail"]
 
 
 @pytest.mark.parametrize(("question", "query"), [
@@ -731,7 +770,9 @@ def test_chat_deadline_cancels_model(settings, caplog):
                 cancellations.append("cancelled")
                 raise
 
-    with TestClient(create_app(settings.model_copy(update={"chat_timeout_seconds": 0.05}), model=SlowModel())) as client:
+    with TestClient(create_app(settings.model_copy(update={
+        "chat_timeout_seconds": 0.05, "llm_fallback_reserve_seconds": 0,
+    }), model=SlowModel())) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 504
     assert cancellations == ["cancelled"]
@@ -1143,7 +1184,7 @@ def test_citation_repair_is_cancelled_by_original_deadline(settings, monkeypatch
                 cancelled.append(True)
 
     model = SlowRepair()
-    settings = settings.model_copy(update={"chat_timeout_seconds": 0.05})
+    settings = settings.model_copy(update={"chat_timeout_seconds": 0.05, "llm_fallback_reserve_seconds": 0})
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, QUESTION)
     assert response.status_code == 504

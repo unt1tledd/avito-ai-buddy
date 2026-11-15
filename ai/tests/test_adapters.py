@@ -112,18 +112,18 @@ def test_llm_request(status, response_fields):
 
 
 @pytest.mark.parametrize(("payload", "error"), [
-    ({"output": [{"type": "message", "content": [{"type": "output_text"}]}]}, "неизвестном формате"),
-    ({"output": [{"type": "message", "content": [{"type": "output_text", "text": 5}]}]}, "неизвестном формате"),
-    ({"status": "incomplete", "output": []}, "неполный ответ"),
-    ({"status": "failed", "output": []}, "не завершила"),
-    ({"output": [{"type": "message", "content": [{"type": "refusal", "refusal": "No"}]}]}, "отказалась"),
+    ({"output": [{"type": "message", "content": [{"type": "output_text"}]}]}, "unknown response format"),
+    ({"output": [{"type": "message", "content": [{"type": "output_text", "text": 5}]}]}, "unknown response format"),
+    ({"status": "incomplete", "output": []}, "incomplete response"),
+    ({"status": "failed", "output": []}, "did not complete"),
+    ({"output": [{"type": "message", "content": [{"type": "refusal", "refusal": "No"}]}]}, "refused"),
     ({"output": [{
         "type": "message", "status": "incomplete", "content": [{"type": "output_text", "text": "Часть ответа"}],
-    }]}, "неполный ответ"),
+    }]}, "incomplete response"),
     ({"output": [{
         "type": "function_call", "status": "in_progress", "call_id": "call-id", "name": "find_instruction",
         "arguments": '{"query":"окружение"}',
-    }]}, "неполный ответ"),
+    }]}, "incomplete response"),
 ])
 def test_llm_rejects_invalid_or_unsuccessful_responses(payload, error):
     async def run():
@@ -137,10 +137,10 @@ def test_llm_rejects_invalid_or_unsuccessful_responses(payload, error):
 
 
 @pytest.mark.parametrize(("call_ids", "error"), [
-    ([{}], "неизвестном формате"),
-    ([{"call_id": " "}], "неизвестном формате"),
-    ([{"call_id": 5}], "неизвестном формате"),
-    ([{"call_id": "repeated"}] * 2, "повторяющиеся идентификаторы"),
+    ([{}], "unknown response format"),
+    ([{"call_id": " "}], "unknown response format"),
+    ([{"call_id": 5}], "unknown response format"),
+    ([{"call_id": "repeated"}] * 2, "duplicate tool call IDs"),
 ])
 def test_llm_requires_usable_tool_call_ids(call_ids, error):
     payload = {"output": [
