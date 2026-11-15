@@ -581,4 +581,73 @@ test('logout confirmation and copy controls have accessible labels',()=>{
   const copy=renderToStaticMarkup(React.createElement(MessageCopyButton,{text:'Привет'}));
   assert.match(copy,/aria-label="Копировать сообщение"/);
   assert.match(copy,/type="button"/);
+  assert.match(copy,/role="tooltip"/);
+  assert.match(copy,/aria-describedby=/);
+  assert.doesNotMatch(copy,/title=/);
+  assert.match(html,/Переписки и прогресс адаптации сохранятся<\/p>/);
+});
+
+
+test('unassigned roadmap dialog has a single footer action to check assignment',()=>{
+  const {RoadmapSummaryDialog}=load('pages/RoadmapSummaryDialog.tsx');
+  const html=renderToStaticMarkup(React.createElement(RoadmapSummaryDialog,{data:unassigned,loading:false,error:false,onRetry(){},onClose(){},onOpen(){}}));
+  const footer=html.match(/<footer[^>]*>(.*?)<\/footer>/s)[1];
+  assert.equal((footer.match(/<button/g)||[]).length,1);
+  assert.match(footer,/Проверить назначение/);
+  assert.doesNotMatch(html,/Открыть весь Roadmap/);
+});
+
+test('sidebar remembers collapsed and expanded state separately for each account',()=>{
+  const preferences=load('lib/uiPreferences.ts');
+  assert.equal(preferences.readMenuOpen('first',true),true);
+  assert.equal(preferences.readMenuOpen('first',false),false);
+  preferences.saveMenuOpen('first',false);
+  preferences.saveMenuOpen('second',true);
+  // Re-load the module as a page reload would, keeping browser storage.
+  const restored=load('lib/uiPreferences.ts');
+  assert.equal(restored.readMenuOpen('first',true),false);
+  assert.equal(restored.readMenuOpen('second',false),true);
+  localStorage.setItem('buddy-menu-open-first','invalid');
+  assert.equal(restored.readMenuOpen('first',true),true);
+});
+
+test('profile help and logout confirmation survive reload and stay closed after dismissal',()=>{
+  const descriptor=Object.getOwnPropertyDescriptor(globalThis,'sessionStorage');
+  const session=new Map();
+  Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:key=>session.get(key)??null,setItem:(key,value)=>session.set(key,value),removeItem:key=>session.delete(key)}});
+  try {
+    const preferences=load('lib/uiPreferences.ts');
+    for(const dialog of ['help','logout']) {
+      preferences.saveProfileDialog('first',dialog);
+      const restored=load('lib/uiPreferences.ts');
+      assert.equal(restored.readProfileDialog('first'),dialog);
+      assert.equal(restored.readProfileDialog('second'),'');
+      restored.saveProfileDialog('first','');
+      assert.equal(load('lib/uiPreferences.ts').readProfileDialog('first'),'');
+      assert.equal(session.has('buddy-profile-dialog-first'),false);
+    }
+    session.set('buddy-profile-dialog-first','unexpected');
+    assert.equal(preferences.readProfileDialog('first'),'');
+  } finally {
+    if(descriptor)Object.defineProperty(globalThis,'sessionStorage',descriptor);else delete globalThis.sessionStorage;
+  }
+});
+
+test('UI preferences tolerate blocked browser storage',()=>{
+  const local=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  const session=Object.getOwnPropertyDescriptor(globalThis,'sessionStorage');
+  const denied={configurable:true,get(){throw new Error('Storage denied');}};
+  Object.defineProperty(globalThis,'localStorage',denied);
+  Object.defineProperty(globalThis,'sessionStorage',denied);
+  try {
+    const preferences=load('lib/uiPreferences.ts');
+    assert.equal(preferences.readMenuOpen('first',false),false);
+    assert.equal(preferences.readProfileDialog('first'),'');
+    assert.doesNotThrow(()=>preferences.saveMenuOpen('first',true));
+    assert.doesNotThrow(()=>preferences.saveProfileDialog('first','help'));
+    assert.doesNotThrow(()=>preferences.saveProfileDialog('first',''));
+  } finally {
+    if(local)Object.defineProperty(globalThis,'localStorage',local);else delete globalThis.localStorage;
+    if(session)Object.defineProperty(globalThis,'sessionStorage',session);else delete globalThis.sessionStorage;
+  }
 });

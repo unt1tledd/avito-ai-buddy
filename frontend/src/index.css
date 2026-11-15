@@ -1605,13 +1605,26 @@ a.message-source-card:hover { background: var(--bg-hover); border-color: var(--a
 .dialog-refresh:disabled { opacity: .7; }
 @keyframes dialog-refresh-spin { to { transform: rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { .dialog-refresh-mark.is-loading { animation: none; } }
-.chat-feed-column article { position: relative; }
-.message-copy { position: absolute; top: 7px; right: 7px; width: 27px; height: 27px; display: grid; place-items: center; border: 0; border-radius: 7px; background: var(--bg-surface); color: var(--text-secondary); opacity: 0; transition: opacity .15s ease; }
-.message-copy svg { width: 16px; height: 16px; }
-.message-copy-feedback { position: absolute; right: 0; bottom: 32px; background: var(--bg-surface); white-space: nowrap; font-size: 12px; border-radius: 6px; }
-.message-copy-feedback:not(:empty) { padding: 5px 8px; }
-.chat-feed-column article:hover .message-copy,.chat-feed-column article:focus-within .message-copy { opacity: 1; }
-.chat-feed-column article:has(.message-copy) { padding-right: 40px; }
+/* Copy actions live below the bubble and reserve space before hover. */
+.chat-message { position: relative; width: fit-content; max-width: 100%; flex-shrink: 0; padding-bottom: 30px; }
+.chat-message--user { align-self: flex-end; max-width: 75%; }
+.chat-message--assistant { align-self: flex-start; }
+.chat-message--rich { width: 100%; }
+.chat-message > .user-msg-bubble,.chat-message > .assistant-msg-card { width: auto; max-width: 100%; padding: 12px 16px; }
+.message-actions { position: absolute; bottom: 0; left: 4px; height: 28px; display: flex; align-items: center; opacity: 0; transition: opacity 150ms ease; }
+.chat-message--user .message-actions { left: auto; right: 4px; }
+.chat-message:hover .message-actions,.chat-message:focus-within .message-actions { opacity: 1; }
+.message-copy { position: relative; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); transition: background-color 150ms ease, color 150ms ease, transform 150ms ease; }
+.message-copy:hover { background: var(--bg-hover); color: var(--text-primary); }
+.message-copy:active { transform: scale(.92); }
+.message-copy:focus-visible { outline: 2px solid var(--avito-purple); outline-offset: 2px; }
+.message-copy svg { width: 17px; height: 17px; }
+.message-copy-tooltip { position: absolute; top: 50%; left: calc(100% + 8px); padding: 6px 9px; border: 1px solid var(--workspace-line); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); white-space: nowrap; font-size: 12px; font-weight: 400; line-height: 1.4; box-shadow: 0 3px 12px #0001; pointer-events: none; opacity: 0; transform: translate(-4px,-50%); transition: opacity 140ms ease, transform 140ms ease; z-index: 2; }
+.chat-message--user .message-copy-tooltip { left: auto; right: calc(100% + 8px); transform: translate(4px,-50%); }
+.message-copy:hover .message-copy-tooltip,.message-copy:focus-visible .message-copy-tooltip,.message-copy.has-feedback .message-copy-tooltip { opacity: 1; transform: translate(0,-50%); }
+.message-copy-status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media(hover:none) { .message-actions { opacity: 1; } }
+@media(prefers-reduced-motion:reduce) { .message-actions,.message-copy,.message-copy-tooltip { transition: none; } }
 .chat-error-banner { display: flex; align-items: center; gap: 16px; justify-content: space-between; border: 1px solid var(--workspace-line); border-radius: 14px; padding: 16px; background: var(--bg-surface); color: var(--text-primary); }
 .chat-error-banner > span { display: flex; flex-direction: column; gap: 5px; }
 .chat-error-banner > span > span { color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
@@ -1620,4 +1633,9 @@ a.message-source-card:hover { background: var(--bg-hover); border-color: var(--a
 .logout-dialog { width: min(440px,calc(100vw - 32px)); }
 .logout-dialog p { color: var(--text-secondary); line-height: 1.6; }
 .logout-confirm { color: #d33b4e; }
-@media(hover:none) { .message-copy { opacity: 1; } }
+
+
+.dialog-refresh { position: relative; padding-inline: 32px; justify-content: center; }
+.dialog-refresh .dialog-refresh-mark { position: absolute; left: 11px; top: calc(50% - 7px); }
+
+.logout-dialog .requests-footer { justify-content: space-between; }

@@ -8,6 +8,7 @@ import { AppBrand, ThemeToggle } from './AppChrome';
 import { HomePage } from './HomePage';
 import { RoadmapPage } from './OnboardingPage';
 import { historyRefreshQueue, shouldRefreshHistory, mergeChatMessages, reconcileProposal } from '../lib/chatEvents';
+import { ProfileDialog, readMenuOpen, saveMenuOpen, readProfileDialog, saveProfileDialog } from '../lib/uiPreferences';
 type Screen = 'home' | 'roadmap' | 'chat' | 'profile';
 type IconName = Screen | 'panel' | 'chevron' | 'plus' | 'help' | 'logout' | 'close' | 'sun' | 'moon' | 'trash';
 function Icon({name}: {name: IconName}) {
@@ -32,7 +33,8 @@ const screenTitles: Record<Screen, string> = {home:'Главная', roadmap:'Ro
 
 const errorText = friendlyError;
 export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:string;onLogout:()=>Promise<void>;dark:boolean;onToggleTheme:()=>void;profile:{name:string;email:string;team?:string;track?:string}}) {
-  const [logoutOpen,setLogoutOpen]=useState(false);
+  const [profileDialog,setProfileDialog]=useState<ProfileDialog>(()=>readProfileDialog(userId));
+  const changeProfileDialog=(dialog:ProfileDialog)=>{saveProfileDialog(userId,dialog);setProfileDialog(dialog);};
   const [messages,setMessages] = useState<ChatMessage[]>([]);
   const [input,setInput] = useState('');
   const [error,setError] = useState('');
@@ -49,7 +51,8 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     return 'home';
   });
   const [roadmapVersion,setRoadmapVersion]=useState(0);
-  const [menuOpen,setMenuOpen] = useState(()=>!window.matchMedia('(max-width: 760px)').matches);
+  const [menuOpen,setMenuOpen] = useState(()=>readMenuOpen(userId,!window.matchMedia('(max-width: 760px)').matches));
+  useEffect(()=>{saveMenuOpen(userId,menuOpen);},[userId,menuOpen]);
   const toggleMenu=()=>setMenuOpen(open=>!open);
   const [historyOpen,setHistoryOpen] = useState(()=>{
     try { return localStorage.getItem(`buddy-history-open-${userId}`)==='true'; } catch { return false; }
@@ -92,6 +95,11 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
   useEffect(()=>{drag.current=null;setDragging(false);},[menuOpen]);
   const finishResize=()=>{drag.current=null;setDragging(false);};
   const helpDialog = useRef<HTMLDialogElement>(null);
+  useEffect(()=>{
+    const dialog=helpDialog.current;
+    if(profileDialog==='help'){if(dialog && !dialog.open)dialog.showModal();}
+    else if(dialog?.open)dialog.close();
+  },[profileDialog]);
   const initials = profile.name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('') || 'Я';
   const navigate=(nextScreen:Screen)=>{
     setScreen(nextScreen);
@@ -293,27 +301,26 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
         navigate('roadmap');
       }}/>}
       {screen==='roadmap' && <main className="buddy-page roadmap-page"><RoadmapPage userId={userId} chatBusy={busy || restoring} refreshVersion={roadmapVersion} onSelectStepQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}}/></main>}
-      {screen==='profile' && <main className="buddy-page buddy-profile"><div className="buddy-profile-card"><span className="buddy-avatar buddy-avatar--large">{initials}</span><h2>{profile.name || 'Стажёр'}</h2><p className="buddy-profile-caption">Твой профиль стажировки</p><dl className="buddy-profile-details"><div><dt>Почта</dt><dd>{profile.email || 'Войди повторно, чтобы отобразить почту'}</dd></div><div><dt>Команда</dt><dd>{profile.team || 'Не указана'}</dd></div><div><dt>Направление</dt><dd>{profile.track || 'Не указано'}</dd></div></dl></div><footer className="buddy-profile-actions"><button className="buddy-action-button buddy-logout" onClick={()=>setLogoutOpen(true)}><Icon name="logout"/>Выйти из аккаунта</button><button className="buddy-action-button" onClick={()=>helpDialog.current?.showModal()}><Icon name="help"/>Помощь</button></footer></main>}
+      {screen==='profile' && <main className="buddy-page buddy-profile"><div className="buddy-profile-card"><span className="buddy-avatar buddy-avatar--large">{initials}</span><h2>{profile.name || 'Стажёр'}</h2><p className="buddy-profile-caption">Твой профиль стажировки</p><dl className="buddy-profile-details"><div><dt>Почта</dt><dd>{profile.email || 'Войди повторно, чтобы отобразить почту'}</dd></div><div><dt>Команда</dt><dd>{profile.team || 'Не указана'}</dd></div><div><dt>Направление</dt><dd>{profile.track || 'Не указано'}</dd></div></dl></div><footer className="buddy-profile-actions"><button className="buddy-action-button buddy-logout" onClick={()=>changeProfileDialog('logout')}><Icon name="logout"/>Выйти из аккаунта</button><button className="buddy-action-button" onClick={()=>changeProfileDialog('help')}><Icon name="help"/>Помощь</button></footer></main>}
       <main ref={main} hidden={screen!=='chat'} className="chat-main buddy-chat" aria-label="Переписка с AI-buddy">
       <div className="chat-scroll-area"><div className="chat-feed-column">
       {error && <div className="chat-error-banner" role="alert"><span><strong>Не удалось обновить чат</strong><span>{error}</span></span><button className="buddy-action-button" disabled={loading} onClick={()=>{void loadHistory();void loadChats();}}>Повторить</button></div>}
         {loading && <p>Загружаем историю…</p>}
         {next && <button disabled={busy} onClick={()=>void loadHistory(true,next)}>Загрузить предыдущие сообщения</button>}
-        {visibleMessages.map(m=><article key={m.id} className={m.sender==='user'?'user-msg-bubble':`assistant-msg-card${m.error?' assistant-msg-card--send-error':''}`}>
-          {!m.error && <MessageCopyButton text={m.text}/>}
+        {visibleMessages.map(m=><div key={m.id} className={`chat-message chat-message--${m.sender}${m.proposal || m.sources?.length?' chat-message--rich':''}`}><article className={m.sender==='user'?'user-msg-bubble':`assistant-msg-card${m.error?' assistant-msg-card--send-error':''}`}>
           <MessageText text={m.text} assistant={m.sender==='assistant'}/>
           {m.error && <button className="buddy-action-button chat-retry" disabled={busy} onClick={()=>void send(m.retry_text,m.idempotency_key,m.id)}>Повторить</button>}
           {!!m.sources?.length && <MessageSources sources={m.sources}/>}
           {m.proposal && <AccessProposalCard proposal={m.proposal} sending={pending.includes(m.proposal.proposal_id)} error={proposalErrors[m.proposal.proposal_id]} onConfirm={()=>void confirm(m.proposal!.proposal_id)} onRefresh={()=>void loadHistory()}/>}
-        </article>)}{busy && <p role="status">Готовим ответ…</p>}<div ref={end}/>
+        </article>{!m.error && <div className="message-actions"><MessageCopyButton text={m.text}/></div>}</div>)}{busy && <p role="status">Готовим ответ…</p>}<div ref={end}/>
       </div></div><div ref={composer} className="chat-composer">{!suggestionsDismissed && !messages.length && !loading && <div className="suggestion-list">{['Как настроить рабочее окружение?','Как оформить отгул?','Какие правила работы с персональными данными?'].map(q=><button key={q} className="suggestion-pill" disabled={busy || restoring} onClick={()=>void send(q)}>{q}</button>)}</div>}<form className="chat-input-bar" onClick={()=>textarea.current?.focus()} onSubmit={e=>{e.preventDefault();void send();}}>
         <textarea ref={textarea} rows={1} aria-label="Вопрос помощнику" placeholder="Введите вопрос" title="Enter — отправить, Shift + Enter — новая строка" disabled={restoring} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send();}}}/>
 
       </form></div></main>
     </div>
-    {logoutOpen && <LogoutDialog onClose={()=>setLogoutOpen(false)} onLogout={onLogout}/>}
-    <dialog ref={helpDialog} className="buddy-help-dialog" aria-labelledby="buddy-help-title" onClick={e=>{if(e.target===e.currentTarget)helpDialog.current?.close();}}>
-      <div className="buddy-help-content"><button className="buddy-icon-button buddy-help-close" autoFocus aria-label="Закрыть помощь" onClick={()=>helpDialog.current?.close()}><Icon name="close"/></button><span className="buddy-state-icon"><Icon name="help"/></span><h2 id="buddy-help-title">Тут пока что пусто,<br/>мы закрыты</h2><button className="buddy-action-button" onClick={()=>helpDialog.current?.close()}>Понятно</button></div>
+    {profileDialog==='logout' && <LogoutDialog onClose={()=>changeProfileDialog('')} onLogout={async()=>{await onLogout();saveProfileDialog(userId,'');}}/>}
+    <dialog ref={helpDialog} className="buddy-help-dialog" aria-labelledby="buddy-help-title" onCancel={e=>{e.preventDefault();changeProfileDialog('');}} onClick={e=>{if(e.target===e.currentTarget)changeProfileDialog('');}}>
+      <div className="buddy-help-content"><button className="buddy-icon-button buddy-help-close" autoFocus aria-label="Закрыть помощь" onClick={()=>changeProfileDialog('')}><Icon name="close"/></button><span className="buddy-state-icon"><Icon name="help"/></span><h2 id="buddy-help-title">Тут пока что пусто,<br/>мы закрыты</h2><button className="buddy-action-button" onClick={()=>changeProfileDialog('')}>Понятно</button></div>
     </dialog>
   </div>;
 }
