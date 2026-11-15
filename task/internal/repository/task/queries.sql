@@ -13,6 +13,12 @@ WHERE team_id = sqlc.arg(team_id) AND status = 'pending' AND id > sqlc.arg(after
 ORDER BY id
 LIMIT sqlc.arg(page_size);
 
+-- name: GetUserTasks :many
+SELECT * FROM task.access_request
+WHERE user_id = sqlc.arg(user_id) AND id > sqlc.arg(after_id)
+ORDER BY id
+LIMIT sqlc.arg(page_size);
+
 -- name: GetByTeam :one
 SELECT * FROM task.access_request WHERE id = $1 AND team_id = $2;
 

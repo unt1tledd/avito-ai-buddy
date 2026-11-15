@@ -29,6 +29,10 @@ func (r repositoryStub) ListPending(_ context.Context, teamID, afterID int64, li
 	return r.list(teamID, afterID, limit)
 }
 
+func (r repositoryStub) GetUserTasks(_ context.Context, userID, afterID int64, limit int32) ([]entity.AccessRequest, error) {
+	return r.list(userID, afterID, limit)
+}
+
 func (r repositoryStub) Decide(_ context.Context, decision entity.Decision) (entity.AccessRequest, error) {
 	return r.decide(decision)
 }

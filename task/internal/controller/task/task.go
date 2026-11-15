@@ -19,33 +19,37 @@ import (
 
 type service interface {
 	ListPending(context.Context, int64, int64, int32) ([]entity.AccessRequest, error)
+	GetUserTasks(context.Context, int64, int64, int32) ([]entity.AccessRequest, error)
 	Decide(context.Context, entity.Decision) (entity.AccessRequest, error)
+}
+
+type tokenValidator interface {
+	ValidateToken(context.Context, string) (int64, error)
 }
 
 type Controller struct {
 	taskv1.UnimplementedTaskServiceServer
 
-	tasks        service
-	logger       *slog.Logger
-	trackerToken string
+	tasks           service
+	logger          *slog.Logger
+	trackerToken    string
+	auth            tokenValidator
+	defaultPageSize int32
 }
 
-func NewController(tasks service, logger *slog.Logger, trackerToken string) *Controller {
-	return &Controller{tasks: tasks, logger: logger, trackerToken: trackerToken}
+func NewController(tasks service, logger *slog.Logger, trackerToken string, auth tokenValidator, defaultPageSize int32) *Controller {
+	return &Controller{tasks: tasks, logger: logger, trackerToken: trackerToken, auth: auth, defaultPageSize: defaultPageSize}
 }
 
 func (c *Controller) ListPending(ctx context.Context, req *taskv1.ListPendingRequest) (*taskv1.ListPendingResponse, error) {
 	if err := c.authorize(ctx); err != nil {
 		return nil, err
 	}
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request is required")
-	}
 	if err := req.Validate(); err != nil {
 		c.logger.Warn("task request validation failed", "rpc", "ListPending", "error", err)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	limit := int32(50)
+	limit := c.defaultPageSize
 	if req.Limit != nil {
 		limit = req.GetLimit()
 	}
@@ -60,12 +64,46 @@ func (c *Controller) ListPending(ctx context.Context, req *taskv1.ListPendingReq
 	return response, nil
 }
 
+func (c *Controller) GetUserTasks(ctx context.Context, req *taskv1.GetUserTasksRequest) (*taskv1.GetUserTasksResponse, error) {
+	if err := req.Validate(); err != nil {
+		c.logger.Warn("task request validation failed", "rpc", "GetUserTasks", "error", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	values := metadata.ValueFromIncomingContext(ctx, "authorization")
+	if len(values) != 1 {
+		return nil, status.Error(codes.Unauthenticated, "user access token required")
+	}
+	scheme, token, ok := strings.Cut(values[0], " ")
+	token = strings.TrimSpace(token)
+	if !ok || !strings.EqualFold(scheme, "Bearer") || token == "" ||
+		subtle.ConstantTimeCompare([]byte(token), []byte(c.trackerToken)) == 1 {
+		return nil, status.Error(codes.Unauthenticated, "user access token required")
+	}
+	userID, err := c.auth.ValidateToken(ctx, token)
+	if err != nil {
+		return nil, c.rpcError(err)
+	}
+	if userID != req.GetUserId() {
+		return nil, status.Error(codes.PermissionDenied, "task list belongs to another user")
+	}
+	limit := c.defaultPageSize
+	if req.Limit != nil {
+		limit = req.GetLimit()
+	}
+	requests, err := c.tasks.GetUserTasks(ctx, userID, req.GetAfterId(), limit)
+	if err != nil {
+		return nil, c.rpcError(err)
+	}
+	response := &taskv1.GetUserTasksResponse{Tasks: make([]*taskv1.AccessRequest, 0, len(requests))}
+	for _, request := range requests {
+		response.Tasks = append(response.Tasks, toProto(request))
+	}
+	return response, nil
+}
+
 func (c *Controller) Decide(ctx context.Context, req *taskv1.DecideRequest) (*taskv1.AccessRequest, error) {
 	if err := c.authorize(ctx); err != nil {
 		return nil, err
-	}
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
 	if err := req.Validate(); err != nil {
 		c.logger.Warn("task request validation failed", "rpc", "Decide", "error", err)
@@ -96,6 +134,11 @@ func (c *Controller) authorize(ctx context.Context) error {
 
 func (c *Controller) rpcError(err error) error {
 	switch {
+	case errors.Is(err, taskerrors.ErrInvalidToken):
+		return status.Error(codes.Unauthenticated, taskerrors.ErrInvalidToken.Error())
+	case errors.Is(err, taskerrors.ErrAuthUnavailable):
+		c.logger.Error("task auth validation failed", "error", err)
+		return status.Error(codes.Unavailable, taskerrors.ErrAuthUnavailable.Error())
 	case errors.Is(err, taskerrors.ErrInvalidInput):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, taskerrors.ErrNotFound):

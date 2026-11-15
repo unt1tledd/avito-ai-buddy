@@ -14,6 +14,7 @@ type repository interface {
 	GetByProposal(context.Context, int64) (entity.AccessRequest, error)
 	Create(context.Context, entity.CreateRequest, int64) (entity.AccessRequest, error)
 	ListPending(context.Context, int64, int64, int32) ([]entity.AccessRequest, error)
+	GetUserTasks(context.Context, int64, int64, int32) ([]entity.AccessRequest, error)
 	Decide(context.Context, entity.Decision) (entity.AccessRequest, error)
 }
 
@@ -60,6 +61,13 @@ func (s *Service) ListPending(ctx context.Context, teamID, afterID int64, limit 
 		return nil, taskerrors.ErrInvalidInput
 	}
 	return s.repository.ListPending(ctx, teamID, afterID, limit)
+}
+
+func (s *Service) GetUserTasks(ctx context.Context, userID, afterID int64, limit int32) ([]entity.AccessRequest, error) {
+	if userID <= 0 || afterID < 0 || limit < 1 || limit > 100 {
+		return nil, taskerrors.ErrInvalidInput
+	}
+	return s.repository.GetUserTasks(ctx, userID, afterID, limit)
 }
 
 func (s *Service) Decide(ctx context.Context, decision entity.Decision) (entity.AccessRequest, error) {

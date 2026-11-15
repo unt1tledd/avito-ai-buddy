@@ -14,12 +14,13 @@ import (
 )
 
 type Client struct {
-	http    *http.Client
-	baseURL string
+	http             *http.Client
+	baseURL          string
+	maxResponseBytes int64
 }
 
-func NewClient(client *http.Client, baseURL string) *Client {
-	return &Client{http: client, baseURL: strings.TrimRight(baseURL, "/")}
+func NewClient(client *http.Client, baseURL string, maxResponseBytes int64) *Client {
+	return &Client{http: client, baseURL: strings.TrimRight(baseURL, "/"), maxResponseBytes: maxResponseBytes}
 }
 
 func (c *Client) GetTeamID(ctx context.Context, userID int64) (int64, error) {
@@ -44,7 +45,7 @@ func (c *Client) GetTeamID(ctx context.Context, userID int64) (int64, error) {
 			ID int64 `json:"team_id,string"`
 		} `json:"team"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&metadata); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, c.maxResponseBytes)).Decode(&metadata); err != nil {
 		return 0, fmt.Errorf("decode User metadata: %w", err)
 	}
 	if metadata.Team.ID <= 0 {
