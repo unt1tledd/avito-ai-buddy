@@ -123,9 +123,9 @@ class Message(Payload):
     ]
     source_ids: list[Identifier] = Field(
         default_factory=list, max_length=MAX_RESPONSE_SOURCES,
-        description="Source IDs stored with a past assistant reply. Source-free replies are excluded unless "
-        "their complete text matches a service-defined clarification question or conversational template; every listed source must "
-        "still be accessible to the current actor.",
+        description="Source IDs stored with a past assistant reply. Every listed source must still be accessible "
+        "to the current actor. Source-free replies without citation markers are retained only as untrusted "
+        "conversation context, not evidence of facts or access rights. Chat must preserve source metadata.",
     )
 
 

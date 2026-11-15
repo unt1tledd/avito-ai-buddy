@@ -1,3 +1,0 @@
-# Keys are track IDs from Onboarding. Values are additional names used in chat.
-backend = ["бекенд", "бэкенд", "backend"]
-common = ["общий", "общего трека", "общему треку", "общем треке", "общим треком", "базовый"]
