@@ -9,8 +9,11 @@ import (
 )
 
 type Querier interface {
+	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
+	DeleteRefreshToken(ctx context.Context, tokenHash []byte) error
 	GetUserByEmail(ctx context.Context, email string) (AuthUser, error)
+	RotateRefreshToken(ctx context.Context, arg RotateRefreshTokenParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

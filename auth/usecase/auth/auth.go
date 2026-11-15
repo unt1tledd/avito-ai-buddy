@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -35,6 +36,9 @@ var errMissingJWTSecret = errors.New("jwt secret is empty")
 type authRepository interface {
 	CreateUser(ctx context.Context, email string, passwordHash string) (user entity.User, err error)
 	GetUserByEmail(ctx context.Context, email string) (user entity.User, err error)
+	CreateRefreshToken(ctx context.Context, userID int64, tokenHash []byte, expiresAt time.Time) error
+	RotateRefreshToken(ctx context.Context, userID int64, oldHash, newHash []byte, expiresAt time.Time) (bool, error)
+	DeleteRefreshToken(ctx context.Context, tokenHash []byte) error
 }
 
 type authService struct {
@@ -98,7 +102,19 @@ func (s *authService) Login(ctx context.Context, email, password string) (string
 		return "", "", fmt.Errorf("compare password hash: %w", err)
 	}
 
-	return s.generateTokenPair(user.ID)
+	now := time.Now()
+	accessToken, refreshToken, err := s.generateTokenPair(user.ID, now)
+	if err != nil {
+		return "", "", err
+	}
+
+	tokenHash := sha256.Sum256([]byte(refreshToken))
+	expiresAt := jwt.NewNumericDate(now.Add(refreshTokenTTL)).Time
+	if err := s.authRepository.CreateRefreshToken(ctx, user.ID, tokenHash[:], expiresAt); err != nil {
+		return "", "", fmt.Errorf("store refresh token: %w", err)
+	}
+
+	return accessToken, refreshToken, nil
 }
 
 func (s *authService) ValidateToken(ctx context.Context, tokenString string) (bool, int64, error) {
@@ -116,7 +132,36 @@ func (s *authService) RefreshToken(ctx context.Context, refreshTokenString strin
 		return "", "", err
 	}
 
-	return s.generateTokenPair(userID)
+	now := time.Now()
+	accessToken, newRefreshToken, err := s.generateTokenPair(userID, now)
+	if err != nil {
+		return "", "", err
+	}
+
+	oldHash := sha256.Sum256([]byte(refreshTokenString))
+	newHash := sha256.Sum256([]byte(newRefreshToken))
+	expiresAt := jwt.NewNumericDate(now.Add(refreshTokenTTL)).Time
+	rotated, err := s.authRepository.RotateRefreshToken(ctx, userID, oldHash[:], newHash[:], expiresAt)
+	if err != nil {
+		return "", "", fmt.Errorf("rotate refresh token: %w", err)
+	}
+	if !rotated {
+		return "", "", entity.ErrInvalidToken
+	}
+
+	return accessToken, newRefreshToken, nil
+}
+
+func (s *authService) Logout(ctx context.Context, refreshToken string) error {
+	if refreshToken == "" {
+		return nil
+	}
+
+	tokenHash := sha256.Sum256([]byte(refreshToken))
+	if err := s.authRepository.DeleteRefreshToken(ctx, tokenHash[:]); err != nil {
+		return fmt.Errorf("delete refresh token: %w", err)
+	}
+	return nil
 }
 
 func (s *authService) parseToken(tokenString, tokenType string, ttl time.Duration) (int64, error) {
@@ -163,13 +208,13 @@ func validateRegisterInput(email, password string) error {
 	return nil
 }
 
-func (s *authService) generateTokenPair(userID int64) (string, string, error) {
-	accessToken, err := s.generateToken(userID, accessTokenType, accessTokenTTL)
+func (s *authService) generateTokenPair(userID int64, now time.Time) (string, string, error) {
+	accessToken, err := s.generateToken(userID, accessTokenType, accessTokenTTL, now)
 	if err != nil {
 		return "", "", fmt.Errorf("generate access token: %w", err)
 	}
 
-	refreshToken, err := s.generateToken(userID, refreshTokenType, refreshTokenTTL)
+	refreshToken, err := s.generateToken(userID, refreshTokenType, refreshTokenTTL, now)
 	if err != nil {
 		return "", "", fmt.Errorf("generate refresh token: %w", err)
 	}
@@ -177,12 +222,11 @@ func (s *authService) generateTokenPair(userID int64) (string, string, error) {
 	return accessToken, refreshToken, nil
 }
 
-func (s *authService) generateToken(userID int64, tokenType string, ttl time.Duration) (string, error) {
+func (s *authService) generateToken(userID int64, tokenType string, ttl time.Duration, now time.Time) (string, error) {
 	if len(s.jwtSecret) == 0 {
 		return "", errMissingJWTSecret
 	}
 
-	now := time.Now()
 	claims := CustomClaims{
 		UserID:    userID,
 		TokenType: tokenType,

@@ -27,15 +27,16 @@ func TestAuthLifecycle(t *testing.T) {
 	var refresh *http.Cookie
 	for _, c := range login.cookies {
 		require.True(t, c.HttpOnly)
-		if c.Name == "refresh_token" {
+		if c.Name == "refresh_token" && c.MaxAge > 0 {
 			refresh = c
 		}
 	}
 	require.NotNil(t, refresh)
-	require.Equal(t, "/v1/auth/refresh", refresh.Path)
+	require.Equal(t, "/v1/auth", refresh.Path)
 	s.call(t, "POST", s.auth+"/v1/auth/validate", refresh.Value, nil, 401)
 	s.call(t, "POST", s.auth+"/v1/auth/refresh", "", nil, 401, &http.Cookie{Name: "refresh_token", Value: token})
 	renewed := s.call(t, "POST", s.auth+"/v1/auth/refresh", "", nil, 200, refresh)
+	s.call(t, "POST", s.auth+"/v1/auth/refresh", "", nil, 401, refresh)
 	var result struct {
 		Token string `json:"access_token"`
 	}
@@ -44,6 +45,16 @@ func TestAuthLifecycle(t *testing.T) {
 	r = s.call(t, "POST", s.auth+"/v1/auth/validate", result.Token, nil, 200)
 	decode(t, r.body, &valid)
 	require.Equal(t, id, valid.ID)
+
+	var newRefresh *http.Cookie
+	for _, c := range renewed.cookies {
+		if c.Name == "refresh_token" && c.MaxAge > 0 {
+			newRefresh = c
+		}
+	}
+	require.NotNil(t, newRefresh)
+	s.call(t, "POST", s.auth+"/v1/auth/logout", "", nil, 204, newRefresh)
+	s.call(t, "POST", s.auth+"/v1/auth/refresh", "", nil, 401, newRefresh)
 }
 
 func TestAuthInvalidInput(t *testing.T) {

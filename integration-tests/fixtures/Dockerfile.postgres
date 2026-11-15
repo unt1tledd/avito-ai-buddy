@@ -1,6 +1,8 @@
 FROM postgres:16-bookworm
 COPY integration-tests/fixtures/init.sql /docker-entrypoint-initdb.d/01-init.sql
-COPY auth/migrations/000001_create_users.sql /tmp/auth.sql
-# Use the production migration, excluding its rollback section.
+COPY auth/migrations/*.sql /tmp/auth-migrations/
+# Apply the production migrations in order, excluding their rollback sections.
 RUN printf '\\connect auth_db\n' > /docker-entrypoint-initdb.d/02-auth.sql \
-    && awk '/^-- \+goose Down/ {exit} {print}' /tmp/auth.sql >> /docker-entrypoint-initdb.d/02-auth.sql
+    && for migration in /tmp/auth-migrations/*.sql; do \
+        awk '/^-- \+goose Down/ {exit} {print}' "$migration" >> /docker-entrypoint-initdb.d/02-auth.sql || exit 1; \
+    done

@@ -10,10 +10,11 @@
 package mocks
 
 import (
+	entity "avito-ai-buddy/auth/entity"
 	context "context"
 	reflect "reflect"
+	time "time"
 
-	entity "avito-ai-buddy/auth/entity"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,6 +42,20 @@ func (m *MockauthRepository) EXPECT() *MockauthRepositoryMockRecorder {
 	return m.recorder
 }
 
+// CreateRefreshToken mocks base method.
+func (m *MockauthRepository) CreateRefreshToken(ctx context.Context, userID int64, tokenHash []byte, expiresAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateRefreshToken", ctx, userID, tokenHash, expiresAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateRefreshToken indicates an expected call of CreateRefreshToken.
+func (mr *MockauthRepositoryMockRecorder) CreateRefreshToken(ctx, userID, tokenHash, expiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRefreshToken", reflect.TypeOf((*MockauthRepository)(nil).CreateRefreshToken), ctx, userID, tokenHash, expiresAt)
+}
+
 // CreateUser mocks base method.
 func (m *MockauthRepository) CreateUser(ctx context.Context, email, passwordHash string) (entity.User, error) {
 	m.ctrl.T.Helper()
@@ -56,6 +71,20 @@ func (mr *MockauthRepositoryMockRecorder) CreateUser(ctx, email, passwordHash an
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateUser", reflect.TypeOf((*MockauthRepository)(nil).CreateUser), ctx, email, passwordHash)
 }
 
+// DeleteRefreshToken mocks base method.
+func (m *MockauthRepository) DeleteRefreshToken(ctx context.Context, tokenHash []byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteRefreshToken", ctx, tokenHash)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteRefreshToken indicates an expected call of DeleteRefreshToken.
+func (mr *MockauthRepositoryMockRecorder) DeleteRefreshToken(ctx, tokenHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRefreshToken", reflect.TypeOf((*MockauthRepository)(nil).DeleteRefreshToken), ctx, tokenHash)
+}
+
 // GetUserByEmail mocks base method.
 func (m *MockauthRepository) GetUserByEmail(ctx context.Context, email string) (entity.User, error) {
 	m.ctrl.T.Helper()
@@ -69,4 +98,19 @@ func (m *MockauthRepository) GetUserByEmail(ctx context.Context, email string) (
 func (mr *MockauthRepositoryMockRecorder) GetUserByEmail(ctx, email any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserByEmail", reflect.TypeOf((*MockauthRepository)(nil).GetUserByEmail), ctx, email)
+}
+
+// RotateRefreshToken mocks base method.
+func (m *MockauthRepository) RotateRefreshToken(ctx context.Context, userID int64, oldHash, newHash []byte, expiresAt time.Time) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RotateRefreshToken", ctx, userID, oldHash, newHash, expiresAt)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RotateRefreshToken indicates an expected call of RotateRefreshToken.
+func (mr *MockauthRepositoryMockRecorder) RotateRefreshToken(ctx, userID, oldHash, newHash, expiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RotateRefreshToken", reflect.TypeOf((*MockauthRepository)(nil).RotateRefreshToken), ctx, userID, oldHash, newHash, expiresAt)
 }
