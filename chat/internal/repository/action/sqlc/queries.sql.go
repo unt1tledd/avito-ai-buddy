@@ -7,6 +7,8 @@ package action
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const applyTaskStatus = `-- name: ApplyTaskStatus :one
@@ -77,7 +79,7 @@ func (q *Queries) Create(ctx context.Context, arg CreateParams) (int64, error) {
 
 const getByID = `-- name: GetByID :one
 SELECT a.id, a.message_id, a.resource_id, a.resource_label, a.access_level,
-       a.task_id, a.external_request_id, a.status
+       a.task_id, a.external_request_id, a.status, m.created_at
 FROM chat.action a
 JOIN chat.message m ON m.id = a.message_id
 JOIN chat.conversation c ON c.id = m.conversation_id
@@ -90,9 +92,21 @@ type GetByIDParams struct {
 	UserID int64 `json:"user_id"`
 }
 
-func (q *Queries) GetByID(ctx context.Context, arg GetByIDParams) (ChatAction, error) {
+type GetByIDRow struct {
+	ID                int64              `json:"id"`
+	MessageID         int64              `json:"message_id"`
+	ResourceID        string             `json:"resource_id"`
+	ResourceLabel     string             `json:"resource_label"`
+	AccessLevel       string             `json:"access_level"`
+	TaskID            string             `json:"task_id"`
+	ExternalRequestID string             `json:"external_request_id"`
+	Status            string             `json:"status"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetByID(ctx context.Context, arg GetByIDParams) (GetByIDRow, error) {
 	row := q.db.QueryRow(ctx, getByID, arg.ID, arg.UserID)
-	var i ChatAction
+	var i GetByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.MessageID,
@@ -102,6 +116,7 @@ func (q *Queries) GetByID(ctx context.Context, arg GetByIDParams) (ChatAction, e
 		&i.TaskID,
 		&i.ExternalRequestID,
 		&i.Status,
+		&i.CreatedAt,
 	)
 	return i, err
 }

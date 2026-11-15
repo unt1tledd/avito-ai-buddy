@@ -49,7 +49,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	}
 
 	repository := taskrepo.NewPostgresRepository(db)
-	users := userhttp.NewClient(&http.Client{Timeout: cfg.UserTimeout}, cfg.UserBaseURL, cfg.UserMaxResponseBytes)
+	users := userhttp.NewClient(&http.Client{Timeout: cfg.UserTimeout}, cfg.UserBaseURL, cfg.UserMaxResponseBytes, cfg.UserServiceToken)
 	service := taskusecase.NewService(repository, users)
 	publisher := chatkafka.NewPublisher(cfg.Brokers(), cfg.TaskEventsTopic, cfg.KafkaWriter)
 	defer func() { _ = publisher.Close() }()

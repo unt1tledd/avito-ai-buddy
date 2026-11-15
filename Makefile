@@ -49,6 +49,8 @@ local-up-new: ## Поднять приложение и импортироват
 
 local-monitoring: ## Запустить Grafana, Loki, Alloy и Prometheus
 	$(LOCAL_DOCKER) compose --profile observability up -d loki alloy prometheus grafana
+	@addr=$$($(LOCAL_DOCKER) compose --profile observability port grafana 3000) && \
+		printf '\nGrafana: http://127.0.0.1:%s/\n' "$${addr##*:}"
 
 local-status: ## Показать контейнеры и готовность AI
 	$(LOCAL_DOCKER) compose --profile observability ps -a

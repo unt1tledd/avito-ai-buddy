@@ -15,12 +15,17 @@ import (
 
 // Client implements the user context port over the user service gRPC API.
 type Client struct {
-	client userv1.UserServiceClient
+	serviceToken string
+	client       userv1.UserServiceClient
 }
 
 // NewClient builds a client on top of an established gRPC connection.
-func NewClient(conn grpc.ClientConnInterface) *Client {
-	return &Client{client: userv1.NewUserServiceClient(conn)}
+func NewClient(conn grpc.ClientConnInterface, serviceTokens ...string) *Client {
+	var token string
+	if len(serviceTokens) > 0 {
+		token = serviceTokens[0]
+	}
+	return &Client{serviceToken: token, client: userv1.NewUserServiceClient(conn)}
 }
 
 // GetUserContext fetches the intern profile snippet needed by the AI service:
@@ -34,6 +39,7 @@ func (c *Client) GetUserContext(ctx context.Context, userID string) (entity.User
 	if id := observability.RequestID(ctx); id != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-request-id", id)
 	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.serviceToken)
 	metadata, err := c.client.GetMetadata(ctx, &userv1.GetMetadataRequest{UserId: id})
 	if err != nil {
 		return entity.UserContext{}, fmt.Errorf("get user metadata: %w", err)

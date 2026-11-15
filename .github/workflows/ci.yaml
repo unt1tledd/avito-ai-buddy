@@ -114,11 +114,13 @@ jobs:
           for module in auth user chat onboarding task pkg; do
             profile="$RUNNER_TEMP/go-coverprofiles/$module.out"
             test -s "$profile"
+            printf '\n=== Convert Go coverage: %s ===\n' "$module"
 
             (
               cd "$module"
-              GOWORK=off go run github.com/boumenot/gocover-cobertura@v1.5.0 \
-                -by-files -ignore-gen-files -ignore-non-code-lines < "$profile"
+              GOWORK="$GITHUB_WORKSPACE/go.work" \
+                go run github.com/boumenot/gocover-cobertura@v1.5.0 \
+                  -by-files -ignore-gen-files -ignore-non-code-lines < "$profile"
             ) > "$RUNNER_TEMP/go-coverage/$module.xml"
           done
 
@@ -172,6 +174,7 @@ jobs:
           POSTGRES_PASSWORD: ci-postgres
           AI_DB_PASSWORD: ci-ai
           USER_DB_PASSWORD: ci-user
+          USER_SERVICE_TOKEN: ci-user-service-token
           AUTH_DB_PASSWORD: ci-auth
           CHAT_DB_PASSWORD: ci-chat
           ONBOARDING_DB_PASSWORD: ci-onboarding

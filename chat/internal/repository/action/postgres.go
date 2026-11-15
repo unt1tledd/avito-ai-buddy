@@ -63,6 +63,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, userID int64, proposal
 		ResourceID:    row.ResourceID,
 		ResourceLabel: row.ResourceLabel,
 		AccessLevel:   row.AccessLevel,
+		CreatedAt:     row.CreatedAt.Time,
 	}
 	if row.Status != "" {
 		action.AccessRequest = &entity.AccessRequest{

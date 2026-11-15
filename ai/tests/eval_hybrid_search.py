@@ -24,7 +24,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from pydantic import TypeAdapter
 
-from ai_service.agents.agent import Agent, NO_KNOWLEDGE
+from ai_service.agents.agent import Agent
 from ai_service.clients.embeddings import Embeddings
 from ai_service.clients.llm import ResponsesModel
 from ai_service.core.config import Settings, resolve_embedding_profile
@@ -184,7 +184,7 @@ async def evaluate(args):
                                     reply = await agent.answer(case['question'], Actor.model_validate(case['actor']),
                                                                deadline=asyncio.get_running_loop().time()+config.chat_timeout_seconds)
                                 outcome = {'answer': reply.answer, 'source_ids': [s.id for s in reply.sources],
-                                           'correct_abstention': reply.answer == NO_KNOWLEDGE and not reply.sources}
+                                           'source_free_response': not reply.sources and reply.proposal is None}
                             except (UpstreamError, TimeoutError) as error:
                                 outcome = {'error': getattr(error, 'reason', 'timeout'), 'correct_abstention': False}
                             result['no_knowledge'].append({'id': case['id'], 'latency_ms': round((perf_counter()-started)*1000), **outcome})

@@ -5,7 +5,7 @@ RETURNING id;
 
 -- name: GetByID :one
 SELECT a.id, a.message_id, a.resource_id, a.resource_label, a.access_level,
-       a.task_id, a.external_request_id, a.status
+       a.task_id, a.external_request_id, a.status, m.created_at
 FROM chat.action a
 JOIN chat.message m ON m.id = a.message_id
 JOIN chat.conversation c ON c.id = m.conversation_id

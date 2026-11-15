@@ -11,7 +11,7 @@ import (
 type Querier interface {
 	ApplyTaskStatus(ctx context.Context, arg ApplyTaskStatusParams) (ApplyTaskStatusRow, error)
 	Create(ctx context.Context, arg CreateParams) (int64, error)
-	GetByID(ctx context.Context, arg GetByIDParams) (ChatAction, error)
+	GetByID(ctx context.Context, arg GetByIDParams) (GetByIDRow, error)
 	SaveAccessRequest(ctx context.Context, arg SaveAccessRequestParams) (int64, error)
 }
 

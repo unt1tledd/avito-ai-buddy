@@ -173,7 +173,7 @@ func profile(id int64) *userpb.CreateRequest {
 func (s *suite) intern(t *testing.T) (int64, string) {
 	t.Helper()
 	id, token, _ := s.account(t)
-	_, err := s.users.Create(rpcContext(t, ""), profile(id))
+	_, err := s.users.Create(rpcContext(t, token), profile(id))
 	require.NoError(t, err)
 	return id, token
 }

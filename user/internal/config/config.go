@@ -15,8 +15,10 @@ const (
 )
 
 type Config struct {
-	SeedDemo bool `env:"USER_SEED_DEMO"`
-	GRPC     struct {
+	AuthBaseURL      string `env:"AUTH_BASE_URL" envDefault:"http://auth:8080"`
+	UserServiceToken string `env:"USER_SERVICE_TOKEN"`
+	SeedDemo         bool   `env:"USER_SEED_DEMO"`
+	GRPC             struct {
 		Host        string `env:"GRPC_HOST" envDefault:"127.0.0.1"`
 		Port        string `env:"GRPC_PORT" envDefault:"9090"`
 		GatewayPort string `env:"GRPC_GATEWAY_PORT" envDefault:"8080"`
