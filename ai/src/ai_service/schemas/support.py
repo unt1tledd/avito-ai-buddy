@@ -5,9 +5,12 @@ text is interpolated into the catalogue, including the question-writing aid.
 """
 
 import re
+from collections.abc import Sequence
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
+
+from .contracts import Message
 
 
 TEMPLATES = {
@@ -49,12 +52,112 @@ TEMPLATE_KINDS = {
     "greeting": "social", "thanks": "social",
     "role_boundary": "off_topic", "immediate_safety": "immediate_danger",
 }
-SOURCE_FREE_TEXTS = frozenset(TEMPLATES.values())
+TEMPLATE_VARIANTS = {
+    "support_choices": (
+        TEMPLATES["support_choices"],
+        "Похоже, сейчас непросто. Можно сначала поговорить о том, что случилось, "
+        "или наметить небольшой следующий шаг. Что вам ближе: первое или второе?",
+        "Давайте без спешки. Можем сначала обсудить, что вас беспокоит, "
+        "или выбрать одно небольшое действие. С чего начнём: с первого или второго?",
+        "Можно двигаться в удобном вам темпе. Сначала разберём, что случилось, "
+        "или найдём маленький следующий шаг. Что сейчас полезнее: первое или второе?",
+    ),
+    "neutral_clarification": (
+        TEMPLATES["neutral_clarification"],
+        "Кажется, разговор вас задел. Можете рассказать, что произошло?",
+        "Давайте разберём саму ситуацию. Что в общении оказалось для вас неприятным?",
+        "Хочется лучше понять, что случилось. Как прошёл этот разговор?",
+    ),
+    "offer_question": (
+        TEMPLATES["offer_question"],
+        "Бывает непросто решиться на вопрос. Можно сначала набросать его в черновике. Помочь с формулировкой?",
+        "Можно начать с пары простых фраз. Хотите, вместе подготовим черновик вопроса?",
+        "Необязательно сразу подбирать идеальные слова. Попробуем сначала составить короткий вопрос?",
+    ),
+    "draft_question": (
+        TEMPLATES["draft_question"],
+        "Например: «Хочу уточнить, как двигаться дальше с задачей». Что именно нужно прояснить?",
+        "Вот начало: «Мне нужна небольшая подсказка по следующему шагу». О чём хотите спросить?",
+        "Можно написать: «Помогите, пожалуйста, разобраться со следующим действием по задаче». Что хочется уточнить?",
+    ),
+    "small_step": (
+        TEMPLATES["small_step"],
+        "Можно ненадолго остановиться и выбрать одну трудность, с которой начнём. Что сейчас мешает больше всего?",
+        "Давайте выберем что-то небольшое: сделать паузу и записать, где возникла трудность. На чём вы остановились?",
+        "Попробуйте пока выписать один момент, который не получается. С чем хотелось бы разобраться первым?",
+    ),
+    "explore_feeling": (
+        TEMPLATES["explore_feeling"],
+        "Можем спокойно это обсудить. После какого момента вы почувствовали себя так?",
+        "Расскажите чуть подробнее. Что произошло перед тем, как стало тяжело?",
+        "Давайте начнём с того, что случилось. Что вас больше всего задело?",
+    ),
+    "greeting": (
+        TEMPLATES["greeting"],
+        "Здравствуйте! Как идут дела со стажировкой?",
+        "Привет! Давайте разберёмся с вопросами по адаптации. Что сейчас занимает больше всего?",
+        "Рад помочь с адаптацией и рабочими вопросами. С чем нужна помощь?",
+    ),
+    "thanks": (
+        TEMPLATES["thanks"],
+        "Рад помочь! Если что-то ещё по стажировке будет непонятно, пишите.",
+        "Пожалуйста! Обращайтесь, если понадобится разобраться со следующим шагом.",
+        "Пожалуйста, удачи с задачами! Будут вопросы по адаптации — пишите.",
+    ),
+    "role_boundary": (
+        TEMPLATES["role_boundary"],
+        "С этим вряд ли помогу. А вот с вопросами по стажировке — да. Что сейчас нужно разобрать?",
+        "Моя специализация — адаптация и рабочие вопросы. Есть что-то по стажировке, с чем нужна помощь?",
+        "Давайте вернёмся к стажировке. Как у вас сейчас идут дела с задачами?",
+        "Я могу помочь с адаптацией и трудностями на стажировке. С чем из этого сейчас нужна помощь?",
+    ),
+    "immediate_safety": (TEMPLATES["immediate_safety"],),
+}
+SOURCE_FREE_TEXTS = frozenset(text for variants in TEMPLATE_VARIANTS.values() for text in variants)
 EMPATHY_PREFIXES = {
     "difficulty": "Похоже, это отняло немало сил. Давайте разберёмся по шагам.",
     "worry": "Похоже, это вас тревожит. Давайте разберёмся спокойно.",
 }
+EMPATHY_VARIANTS = {
+    "difficulty": (
+        EMPATHY_PREFIXES["difficulty"],
+        "Похоже, с этим пришлось повозиться. Давайте разберёмся по порядку.",
+        "Такие сложности могут утомлять. Попробуем пройти по шагам.",
+        "Понимаю, что хочется уже с этим разобраться. Начнём с ближайшего шага.",
+    ),
+    "worry": (
+        EMPATHY_PREFIXES["worry"],
+        "Понимаю ваше беспокойство. Давайте спокойно посмотрим, что можно сделать.",
+        "Похоже, эта ситуация вызывает волнение. Разберёмся по порядку.",
+        "Когда что-то непонятно, бывает тревожно. Давайте начнём с конкретных шагов.",
+    ),
+}
 EmpathyID = Literal["difficulty", "worry"]
+
+
+def _select_variant(variants: tuple[str, ...], history: Sequence[Message], *, prefix: bool = False) -> str:
+    """Prefer an unseen text, then the least recently used one in allowed history.
+
+    Ties keep catalogue order, preserving the original wording without history.
+    User messages never count as a service reply. Prefixes match only at the
+    start of a complete answer, separated from its working part by a blank line.
+    """
+    last_seen = dict.fromkeys(variants, -1)
+    for index, message in enumerate(history):
+        if message.role != "assistant":
+            continue
+        for text in variants:
+            if message.content == text or (prefix and message.content.startswith(text + "\n\n")):
+                last_seen[text] = index
+    return min(variants, key=last_seen.__getitem__)
+
+
+def template_text(template_id: str, history: Sequence[Message] = ()) -> str:
+    return _select_variant(TEMPLATE_VARIANTS[template_id], history)
+
+
+def empathy_prefix(empathy_id: EmpathyID, history: Sequence[Message] = ()) -> str:
+    return _select_variant(EMPATHY_VARIANTS[empathy_id], history, prefix=True)
 
 
 class TemplateAnswer(BaseModel):

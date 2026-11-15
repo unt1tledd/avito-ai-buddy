@@ -22,7 +22,10 @@ from ..schemas.clarifications import CLARIFICATION_QUESTIONS, ONBOARDING_TRACK_C
 from ..schemas.contracts import (
     AccessProposal, Actor, ChatResponse, MAX_RESPONSE_SOURCES, Message, OnboardingPlan, SearchHit, SearchResult, valid_utf8,
 )
-from ..schemas.support import EMPATHY_PREFIXES, TEMPLATES, EmpathyID, TemplateAnswer, needs_safety_routing
+from ..schemas.support import (
+    EMPATHY_VARIANTS, TEMPLATE_VARIANTS, TEMPLATES, EmpathyID, TemplateAnswer,
+    empathy_prefix, needs_safety_routing, template_text,
+)
 
 
 MAX_TOOL_CALLS = 3
@@ -115,12 +118,14 @@ class Turn:
             # A failed/empty search must never be recast as emotional support.
             if self.tools_called or self.searched:
                 raise ModelError("Шаблонный ответ недопустим после вызова инструмента.", reason="invalid_route")
-            return ChatResponse(answer=TEMPLATES[final.template_id], sources=[])
+            return ChatResponse(answer=template_text(final.template_id, self.history), sources=[])
         if final.empathy_id is not None and final.kind == "clarification":
             raise ModelError("Уточнение должно совпадать с разрешённым вопросом.", reason="invalid_answer")
         result = self._work_response(final)
         if final.empathy_id is not None and result.answer not in CLARIFICATION_QUESTIONS:
-            result = result.model_copy(update={"answer": EMPATHY_PREFIXES[final.empathy_id] + "\n\n" + result.answer})
+            result = result.model_copy(update={
+                "answer": empathy_prefix(final.empathy_id, self.history) + "\n\n" + result.answer,
+            })
         return result
 
     def _work_response(self, final: FinalAnswer) -> ChatResponse:
@@ -173,10 +178,13 @@ class Agent:
         self.prompt = (
             prompt + "\n\nРазрешённые вопросы для kind=clarification (выбери answer дословно):\n"
             + json.dumps(CLARIFICATION_QUESTIONS, ensure_ascii=False)
-            + "\n\nКаталог template_id для шаблонных ответов (текст подставит код):\n"
-            + json.dumps(TEMPLATES, ensure_ascii=False)
-            + "\nРазрешённые empathy_id для смешанного рабочего ответа:\n"
-            + json.dumps(EMPATHY_PREFIXES, ensure_ascii=False)
+            + "\n\nКаталог template_id и разрешённых вариантов ответа (вариант выберет и подставит код; "
+            "возвращай только kind и template_id). Все варианты одного шаблона имеют одинаковый смысл, "
+            "используй их в истории для понимания продолжений:\n"
+            + json.dumps(TEMPLATE_VARIANTS, ensure_ascii=False)
+            + "\nРазрешённые empathy_id и варианты вводной для смешанного рабочего ответа "
+            "(вариант выберет и подставит код):\n"
+            + json.dumps(EMPATHY_VARIANTS, ensure_ascii=False)
         )
 
     async def answer(
