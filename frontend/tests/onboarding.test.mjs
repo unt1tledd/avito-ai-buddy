@@ -18,14 +18,22 @@ function load(file, overrides = {}) {
   return module.exports;
 }
 const api = load('lib/api.ts');
-const { OnboardingPage } = load('pages/OnboardingPage.tsx', {'../lib/api': api});
+const { OnboardingPage, nextRoadmapStep } = load('pages/OnboardingPage.tsx', {'../lib/api': api});
 const { SetupPage } = load('pages/SetupPage.tsx', {'../lib/api': api});
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 const step = { id:'git',title:'Доступ к Git',description:'Запроси доступ',period:'1 неделя',resource_id:'repo/team',action_type:'access_request',status:'pending' };
+const unassigned = {assigned:false,steps:[],tracks:[],groupingAvailable:false};
 const render = props => renderToStaticMarkup(React.createElement(OnboardingPage, {
-  steps:[],isClosing:false,onClose(){},onToggleStep(){},onSelectStepQuestion(){},onRetry(){},...props,
+  data:unassigned,userId:'123',onToggleStep(){},onSelectStepQuestion(){},onRetry(){},...props,
 }));
+function withSelection(selection,run) {
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>JSON.stringify(selection),setItem(){}}});
+  try { return run(); } finally {
+    if(previous)Object.defineProperty(globalThis,'localStorage',previous);else delete globalThis.localStorage;
+  }
+}
 
 test('404 leaves roadmap unassigned and never calls POST', async () => {
   const calls = [];
@@ -37,10 +45,10 @@ test('server failure remains an error rather than an empty roadmap', async () =>
   globalThis.fetch = async () => Response.json({message:'Unavailable'}, {status:503});
   await assert.rejects(api.fetchOnboardingPlan('123'), err => err.status === 503);
 });
-test('assigned steps preserve order, completion and action type', async () => {
+test('flat steps preserve order and completion without guessing a current step', async () => {
   globalThis.fetch = async () => Response.json({steps:[{...step,id:'intro',status:'completed'},step,{...step,id:'later'}]});
   const steps = await api.fetchOnboardingPlan('123');
-  assert.deepEqual(steps.map(s => [s.step_id,s.completed,s.current]), [['intro',true,false],['git',false,true],['later',false,false]]);
+  assert.deepEqual(steps.map(s => [s.step_id,s.completed,s.current]), [['intro',true,false],['git',false,false],['later',false,false]]);
   assert.equal(steps[1].action_type,'access_request');
   assert.match(api.stepQuestion(steps[1]), /Доступ к Git.*repo\/team/);
 });
@@ -56,13 +64,13 @@ test('confirm queues proposal without marking a step completed', async () => {
 test('unassigned, loading and error states do not show empty progress', () => {
   assert.match(render({}), /Твой путь скоро появится/);
   assert.doesNotMatch(render({}), /Выполнено|0%|Обновить Roadmap/);
-  assert.match(render({loading:true}), /Загружаем Roadmap/);
-  assert.doesNotMatch(render({loading:true}), /Твой путь скоро появится/);
-  assert.match(render({error:'Нет связи'}), /Нет связи/);
-  assert.doesNotMatch(render({error:'Нет связи'}), /Твой путь скоро появится/);
+  assert.match(render({data:null,loading:true}), /Загружаем Roadmap/);
+  assert.doesNotMatch(render({data:null,loading:true}), /Твой путь скоро появится/);
+  assert.match(render({data:null,error:'Нет связи'}), /Нет связи/);
+  assert.doesNotMatch(render({data:null,error:'Нет связи'}), /Твой путь скоро появится/);
 });
 test('access action is available for an incomplete non-current step', () => {
-  const html = render({steps:[{step_id:'git',step_number:2,title:step.title,description:'',period:step.period,completed:false,current:false,action_type:'access_request'}]});
+  const html = withSelection({track:'common',step:'git',view:'stages'},()=>render({data:{assigned:true,steps:[{step_id:'git',step_number:2,title:step.title,description:'',period:step.period,completed:false,current:false,track:'common',action_type:'access_request'}],tracks:[{track:'common',display_name:'Общий онбординг'}],groupingAvailable:true}}));
   assert.match(html,/Спросить у AI-buddy/);
   assert.doesNotMatch(html,/Отправить заявку/);
 });
@@ -185,4 +193,86 @@ test('final access cards show the server decision without a waiting spinner or r
   const rejected=card('rejected');
   assert.match(rejected,/proposal-card--failed/);assert.match(rejected,/<h4>В доступе отказано<\/h4>/);
   for(const html of [approved,rejected])assert.doesNotMatch(html,/proposal-card--waiting|proposal-spinner|proposal-submit/);
+});
+
+
+test('roadmap groups assigned steps and uses only server current steps per track',async()=>{
+  const calls=[];
+  globalThis.fetch=async(path,init)=>{
+    calls.push([path,init.method || 'GET']);
+    return Response.json(path.endsWith('/plan_context')?{tracks:[
+      {track:'common',display_name:'Общий онбординг',current_step:{id:'later'}},
+      {track:'backend',display_name:'Backend'},
+    ]}:{id:'1',steps:[{...step,id:'first',track:'common'},{...step,id:'later',track:'common'},{...step,id:'backend',track:'backend',status:'completed'}]});
+  };
+  const data=await api.fetchOnboardingRoadmap('123');
+  assert.equal(data.assigned,true);assert.equal(data.groupingAvailable,true);
+  assert.deepEqual(data.steps.map(item=>[item.step_id,item.track,item.current]),[['first','common',false],['later','common',true],['backend','backend',false]]);
+  assert.deepEqual(data.tracks.map(item=>[item.display_name,item.current_step_id]),[['Общий онбординг','later'],['Backend',undefined]]);
+  assert.deepEqual(calls,[['/v1/users/123/plan','GET'],['/v1/users/123/plan_context','GET']]);
+});
+test('roadmap never assigns a missing plan and does not mask a context failure',async()=>{
+  const calls=[];
+  globalThis.fetch=async(path,init)=>{calls.push([path,init.method||'GET']);return Response.json({},{status:404});};
+  assert.deepEqual(await api.fetchOnboardingRoadmap('123'),unassigned);
+  assert.deepEqual(calls,[['/v1/users/123/plan','GET']]);
+  globalThis.fetch=async path=>path.endsWith('/plan_context')?Response.json({message:'Контекст недоступен'},{status:503}):Response.json({steps:[{...step,track:'common'}]});
+  await assert.rejects(api.fetchOnboardingRoadmap('123'),error=>error.status===503);
+});
+test('legacy roadmap keeps all steps without inventing track membership',async()=>{
+  globalThis.fetch=async path=>Response.json(path.endsWith('/plan_context')?{tracks:[{track:'common',display_name:'Общая адаптация',current_step:{id:'git'}}]}:{steps:[step,{...step,id:'unknown'}]});
+  const data=await api.fetchOnboardingRoadmap('123');
+  assert.equal(data.groupingAvailable,false);assert.equal(data.steps.length,2);
+  assert.ok(data.steps.every(item=>item.track===undefined));
+  assert.equal(data.steps[0].current,true);assert.equal(data.steps[1].current,false);
+});
+test('roadmap renders selected-track progress and retains completed tracks',()=>{
+  const data={assigned:true,groupingAvailable:true,tracks:[{track:'common',display_name:'Общий онбординг'},{track:'backend',display_name:'Backend'}],steps:[
+    {step_id:'a',step_number:1,track:'common',title:'Знакомство',description:'',period:'1 неделя',completed:true},
+    {step_id:'b',step_number:2,track:'common',title:'Доступ',description:'',period:'2 неделя',completed:false,current:true},
+    {step_id:'c',step_number:3,track:'backend',title:'Технический шаг',description:'',period:'1 неделя',completed:true},
+  ]};
+  const common=withSelection({track:'common',step:'',view:'stages'},()=>render({data}));
+  assert.match(common,/2 трека/);assert.match(common,/1 из 2 шагов выполнено/);assert.match(common,/50%/);
+  assert.doesNotMatch(common,/Технический шаг/);
+  const backend=withSelection({track:'backend',step:'',view:'stages'},()=>render({data}));
+  assert.match(backend,/1 из 1 шагов выполнено/);assert.match(backend,/100%/);assert.match(backend,/Все шаги выполнены/);
+});
+test('step completion and reopening use existing endpoints without assigning a plan',async()=>{
+  const calls=[];
+  globalThis.fetch=async(path,init)=>{calls.push([path,init.method,init.body && JSON.parse(init.body)]);return Response.json({});};
+  await api.toggleStep('123',{step_id:'git/team',completed:false});
+  await api.toggleStep('123',{step_id:'git/team',completed:true});
+  assert.deepEqual(calls,[['/v1/step/123/git%2Fteam/completion','PUT',undefined],['/v1/step/123/git%2Fteam/completion','PATCH',{status:'pending'}]]);
+});
+
+
+test('roadmap uses accessible check circles and names simultaneous current tracks',()=>{
+  const data={assigned:true,groupingAvailable:false,assignedTrack:'backend',tracks:[
+    {track:'common',display_name:'Общая адаптация',current_step_id:'a'},
+    {track:'backend',display_name:'Backend',current_step_id:'b'},
+  ],steps:[
+    {step_id:'a',step_number:1,title:'Команда',description:'',period:'1 неделя',completed:false,current:true,current_track_name:'Общая адаптация'},
+    {step_id:'b',step_number:2,title:'Окружение',description:'',period:'1 неделя',completed:false,current:true,current_track_name:'Backend'},
+    {step_id:'c',step_number:3,title:'Знакомство',description:'',period:'1 неделя',completed:true},
+  ]};
+  const html=render({data});
+  assert.equal((html.match(/role="checkbox"/g)||[]).length,3);
+  assert.equal((html.match(/aria-checked="false"/g)||[]).length,2);
+  assert.equal((html.match(/aria-checked="true"/g)||[]).length,1);
+  assert.match(html,/Текущий шаг · Общая адаптация/);assert.match(html,/Текущий шаг · Backend/);
+  assert.match(html,/Назначенное направление: Backend/);
+  assert.match(html,/Снять отметку: Знакомство/);assert.doesNotMatch(html,/roadmap-complete/);
+});
+test('completing the selected current step advances only within its server track',()=>{
+  const before={assigned:true,groupingAvailable:false,tracks:[
+    {track:'common',display_name:'Общий',current_step_id:'a'},
+    {track:'backend',display_name:'Backend',current_step_id:'b'},
+  ],steps:[{step_id:'a',completed:false},{step_id:'b',completed:false},{step_id:'next-common',completed:false},{step_id:'next-backend',completed:false}]};
+  const after={...before,steps:before.steps.map(step=>({...step,completed:step.step_id==='b'})),tracks:[before.tracks[0],{track:'backend',display_name:'Backend',current_step_id:'next-backend'}]};
+  assert.equal(nextRoadmapStep(before,after,'b'),'next-backend');
+  assert.equal(nextRoadmapStep(before,after,'a'),'a');
+  assert.equal(nextRoadmapStep(after,before,'b'),'b');
+  assert.equal(nextRoadmapStep(before,{...after,tracks:[]},'b'),'b');
+  assert.equal(nextRoadmapStep(before,{...after,tracks:[{track:'backend',current_step_id:'missing'}]},'b'),'b');
 });

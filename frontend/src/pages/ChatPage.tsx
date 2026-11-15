@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatMessage, fetchHistory, sendChatMessage, confirmAccessProposal, refreshSession, Conversation, listConversations, createConversation, deleteConversation, recentConversations } from '../lib/api';
 import { AccessProposalCard } from './AccessProposalCard';
 import { AppBrand, ThemeToggle } from './AppChrome';
+import { RoadmapPage } from './OnboardingPage';
 import { historyRefreshQueue, shouldRefreshHistory, mergeChatMessages, reconcileProposal } from '../lib/chatEvents';
 type Screen = 'home' | 'roadmap' | 'chat' | 'profile';
 type IconName = Screen | 'panel' | 'chevron' | 'plus' | 'help' | 'logout' | 'close' | 'sun' | 'moon' | 'send' | 'trash';
@@ -43,6 +44,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     } catch { /* Navigation also works without storage. */ }
     return 'home';
   });
+  const [roadmapVersion,setRoadmapVersion]=useState(0);
   const [menuOpen,setMenuOpen] = useState(()=>!window.matchMedia('(max-width: 760px)').matches);
   const [historyOpen,setHistoryOpen] = useState(()=>{
     try { return localStorage.getItem(`buddy-history-open-${userId}`)==='true'; } catch { return false; }
@@ -194,6 +196,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     let stopped=false; let socket:WebSocket|undefined; let timer:ReturnType<typeof setTimeout>; let attempts=0;
     const updates=historyRefreshQueue(()=>loadHistory());
     const chatUpdates=historyRefreshQueue(()=>loadChats(),400);
+    const roadmapUpdates=historyRefreshQueue(async()=>{setRoadmapVersion(version=>version+1);},250);
     const resume=()=>{if(document.visibilityState==='visible'){updates.schedule();chatUpdates.schedule();}};
     const poll=setInterval(()=>{
       if(document.visibilityState==='visible' && messagesRef.current.some(m=>m.proposal && ['pending_dispatch','pending','pending_approval'].includes(m.proposal.status)))updates.schedule();
@@ -203,16 +206,16 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     const connect=()=>{
       if(stopped) return;
       socket=new WebSocket(`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/v1/chat/events`);
-      socket.onopen=()=>{if(stopped)return;attempts=0;setLive('Уведомления подключены');updates.schedule();};
+      socket.onopen=()=>{if(stopped)return;attempts=0;setLive('Уведомления подключены');updates.schedule();roadmapUpdates.schedule();};
       socket.onmessage=event=>{
         if(stopped)return;
         if(shouldRefreshHistory(event.data,activeRef.current))updates.schedule();
-        try {if(JSON.parse(event.data)?.type==='message.created')chatUpdates.schedule();} catch { /* Ignore malformed events. */ }
+        try {const type=JSON.parse(event.data)?.type;if(type==='message.created')chatUpdates.schedule();if(['message.created','task.status_changed','access_request.failed'].includes(type))roadmapUpdates.schedule();} catch { /* Ignore malformed events. */ }
       };
       socket.onclose=()=>{if(stopped)return;setLive('Восстанавливаем уведомления…');
         timer=setTimeout(()=>{refreshSession().then(connect).catch(()=>{if(!stopped){setLive('Уведомления недоступны. Можно обновить данные вручную.');timer=setTimeout(connect,30000);}});},Math.min(1000*2**attempts++,30000));};
     }; connect();
-    return ()=>{stopped=true;updates.stop();chatUpdates.stop();clearTimeout(timer);clearInterval(poll);window.removeEventListener('focus',resume);document.removeEventListener('visibilitychange',resume);socket?.close();};
+    return ()=>{stopped=true;updates.stop();chatUpdates.stop();roadmapUpdates.stop();clearTimeout(timer);clearInterval(poll);window.removeEventListener('focus',resume);document.removeEventListener('visibilitychange',resume);socket?.close();};
   },[loadHistory,loadChats]);
   const send=async(text=input, key=String(Date.now()), failedId?:string)=>{
     text=text.trim(); if(!text || sending.current || restoring)return;
@@ -280,7 +283,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
         <ThemeToggle dark={dark} onToggle={onToggleTheme}/>
       </header>
       {screen==='home' && <main className="buddy-page buddy-home"><div className="buddy-intro"><h2>Привет{profile.name.trim()?`, ${profile.name.trim().split(/\s+/)[0]}`:''}!</h2><p>Я AI-buddy — твой помощник на стажировке. Помогу освоиться в команде, разобраться в рабочих процессах и найти нужную информацию.</p><p>Задавай вопросы в чате, а свой путь адаптации сможешь увидеть в Roadmap. Будем двигаться шаг за шагом.</p></div></main>}
-      {screen==='roadmap' && <main className="buddy-page buddy-roadmap"><div className="buddy-empty-state"><span className="buddy-state-icon"><Icon name="roadmap"/></span><h2>Твой путь скоро появится</h2><p>Бадди назначит треки, и здесь появится твой план адаптации.</p><p className="buddy-empty-note">А пока можешь познакомиться с AI-buddy и задать первый вопрос в чате.</p></div></main>}
+      {screen==='roadmap' && <main className="buddy-page roadmap-page"><RoadmapPage userId={userId} chatBusy={busy || restoring} refreshVersion={roadmapVersion} onSelectStepQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}}/></main>}
       {screen==='profile' && <main className="buddy-page buddy-profile"><div className="buddy-profile-card"><span className="buddy-avatar buddy-avatar--large">{initials}</span><h2>{profile.name || 'Стажёр'}</h2><p className="buddy-profile-caption">Твой профиль стажировки</p><dl className="buddy-profile-details"><div><dt>Почта</dt><dd>{profile.email || 'Войди повторно, чтобы отобразить почту'}</dd></div><div><dt>Команда</dt><dd>{profile.team || 'Не указана'}</dd></div><div><dt>Направление</dt><dd>{profile.track || 'Не указано'}</dd></div></dl></div><footer className="buddy-profile-actions"><button className="buddy-action-button buddy-logout" onClick={onLogout}><Icon name="logout"/>Выйти из аккаунта</button><button className="buddy-action-button" onClick={()=>helpDialog.current?.showModal()}><Icon name="help"/>Помощь</button></footer></main>}
       <main ref={main} hidden={screen!=='chat'} className="chat-main buddy-chat" aria-label="Переписка с AI-buddy">
       <div className="chat-scroll-area"><div className="chat-feed-column">

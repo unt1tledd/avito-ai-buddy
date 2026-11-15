@@ -39,6 +39,8 @@ export interface OnboardingStep {
   action_type?: string;
   completed: boolean;
   current?: boolean;
+  current_track_name?: string;
+  track?: string;
 }
 
 export interface AccessTask {
@@ -142,21 +144,54 @@ export async function confirmAccessProposal(id:string): Promise<{status:string; 
   if (!data.accessRequest?.status) throw new Error('Сервер не вернул результат заявки');
   return {status:data.accessRequest.status, tracker_issue_key:data.accessRequest.externalRequestId || data.accessRequest.taskId || ''};
 }
-export async function fetchOnboardingPlan(userId:string): Promise<OnboardingStep[]> {
-  const path = `/v1/users/${encodeURIComponent(userId)}/plan`;
-  let data;
-  try { data = await request(path); }
-  catch (err) { if (!(err instanceof ApiError) || err.status !== 404) throw err;
-    return []; // Wait for assignment; reading must never create a plan.
+export interface OnboardingTrack {
+  track: string;
+  display_name: string;
+  current_step_id?: string;
+}
+export interface OnboardingRoadmap {
+  assigned: boolean;
+  steps: OnboardingStep[];
+  tracks: OnboardingTrack[];
+  groupingAvailable: boolean;
+  assignedTrack?: string;
+}
+function onboardingStepFromApi(s:any, i:number):OnboardingStep {
+  return {step_id:String(s.id),step_number:i+1,title:s.title || '',description:s.description || '',
+    period:s.period || '',resource_id:s.resource_id,action_type:s.action_type,
+    completed:s.status==='completed',current:false,track:s.track || undefined};
+}
+async function readOnboardingPlan(userId:string):Promise<any|null> {
+  try { return await request(`/v1/users/${encodeURIComponent(userId)}/plan`); }
+  catch(err) {
+    if(err instanceof ApiError && err.status===404)return null;
+    throw err;
   }
-  let foundCurrent = false;
-  return (data.steps || []).map((s:any, i:number) => {
-    const completed = s.status === 'completed';
-    const current = !completed && !foundCurrent;
-    if (current) foundCurrent = true;
-    return {step_id:s.id, step_number:i+1, title:s.title, description:s.description,
-      period:s.period, resource_id:s.resource_id, action_type:s.action_type, completed, current};
-  });
+}
+// Retained for callers that need the flat list. A current step must only
+// come from plan_context, never from a client-side first-incomplete guess.
+export async function fetchOnboardingPlan(userId:string):Promise<OnboardingStep[]> {
+  const data=await readOnboardingPlan(userId);
+  return (data?.steps || []).map(onboardingStepFromApi);
+}
+export async function fetchOnboardingRoadmap(userId:string):Promise<OnboardingRoadmap> {
+  const data=await readOnboardingPlan(userId);
+  if(!data)return {assigned:false,steps:[],tracks:[],groupingAvailable:false};
+  const context=await request(`/v1/users/${encodeURIComponent(userId)}/plan_context`);
+  const tracks:OnboardingTrack[]=(context.tracks || []).map((track:any)=>({
+    track:track.track,display_name:track.display_name || track.track,
+    current_step_id:track.current_step?.id ? String(track.current_step.id) : undefined,
+  }));
+  const currentTracks=new Map(tracks.filter(track=>track.current_step_id).map(track=>[track.current_step_id,track]));
+  const steps:OnboardingStep[]=(data.steps || []).map(onboardingStepFromApi).map((step:OnboardingStep)=>({...step,
+    current:currentTracks.has(step.step_id),current_track_name:currentTracks.get(step.step_id)?.display_name}));
+  // Older servers omit step.track. Keep the full plan usable without
+  // inventing track membership or silently hiding unclassified steps.
+  const groupingAvailable=steps.length>0 && steps.every(step=>Boolean(step.track));
+  if(groupingAvailable) {
+    for(const step of steps)if(!tracks.some(track=>track.track===step.track))tracks.push({track:step.track!,display_name:step.track!});
+  }
+  return {assigned:true,steps,tracks,groupingAvailable,assignedTrack:data.track || undefined};
 }
 export async function toggleStep(userId:string, step:OnboardingStep): Promise<void> {
   await request(`/v1/step/${encodeURIComponent(userId)}/${encodeURIComponent(step.step_id)}/completion`,
