@@ -97,7 +97,8 @@ test('draft card shows resource and submit action, pending card has no submit ac
   assert.match(card('draft'),/repo\/team/);assert.match(card('draft'),/Developer/);
   assert.match(card('draft'),/Отправить заявку/);
   const queued=card('pending_dispatch');
-  assert.match(queued,/В очереди/);assert.match(queued,/proposal-status--waiting/);
+  assert.match(queued,/<h4>Заявка принята<\/h4>/);assert.match(queued,/в очереди на отправку/);
+  assert.match(queued,/proposal-card--waiting/);
   assert.doesNotMatch(queued,/Отправить заявку|proposal-spinner|одобрен/);
 });
 test('spinner exists only during confirmation HTTP request',()=>{
@@ -136,7 +137,7 @@ test('registration follows server character and UTF-8 byte length constraints',(
   assert.match(registrationError('😀'.repeat(7),'😀'.repeat(7)),/8 символов/);
 });
 
-const { shouldRefreshHistory, historyRefreshQueue } = load('lib/chatEvents.ts');
+const { shouldRefreshHistory, historyRefreshQueue, reconcileProposal, mergeChatMessages } = load('lib/chatEvents.ts');
 test('live history ignores malformed, unknown and other-conversation events',()=>{
   assert.equal(shouldRefreshHistory('not JSON','12'),false);
   assert.equal(shouldRefreshHistory('null','12'),false);
@@ -161,4 +162,27 @@ test('live refresh coalesces bursts, serializes requests and cancels on unmount'
   queue.schedule();queue.stop();finish();
   await tick();assert.equal(calls,2);
   queue.schedule();await tick();assert.equal(calls,2);
+});
+
+
+test('final access decisions survive delayed confirmation and history responses',()=>{
+  const message = status => api.messageFromApi({id:'9',role:'MESSAGE_ROLE_ASSISTANT',text:'Заявка',createdAt:'2026-11-15T10:00:00Z',
+    proposal:{id:'17',resourceId:'repo/team',resourceLabel:'Git',accessLevel:'Developer',accessRequest:{status,taskId:'23'}}});
+  for(const final of ['approved','rejected']) {
+    for(const stale of ['draft','pending_dispatch','pending','pending_approval','failed']) {
+      assert.equal(reconcileProposal(message(final).proposal,message(stale).proposal).status,final);
+      assert.equal(mergeChatMessages([message(final)],[message(stale)])[0].proposal.status,final);
+    }
+    assert.equal(mergeChatMessages([message('pending_dispatch')],[message(final)])[0].proposal.status,final);
+    assert.equal(mergeChatMessages([],[message(final)])[0].proposal.status,final);
+  }
+  assert.equal(reconcileProposal({...proposal,status:'failed'},{...proposal,status:'pending_dispatch'}).status,'pending_dispatch');
+  assert.equal(reconcileProposal({...proposal,status:'pending_dispatch'},{...proposal,status:'draft'}).status,'pending_dispatch');
+});
+test('final access cards show the server decision without a waiting spinner or resend button',()=>{
+  const approved=card('approved');
+  assert.match(approved,/proposal-card--approved/);assert.match(approved,/<h4>Доступ одобрен<\/h4>/);
+  const rejected=card('rejected');
+  assert.match(rejected,/proposal-card--failed/);assert.match(rejected,/<h4>В доступе отказано<\/h4>/);
+  for(const html of [approved,rejected])assert.doesNotMatch(html,/proposal-card--waiting|proposal-spinner|proposal-submit/);
 });

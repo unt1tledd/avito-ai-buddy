@@ -1038,6 +1038,13 @@ button {
 .login-card { width:min(420px,90vw); margin:36px auto; padding:28px; background:var(--bg-surface); border:2px solid var(--border-color); border-radius:20px; display:grid; gap:16px; overflow:auto; }
 .login-card label { display:grid; gap:8px; }
 .login-card input,.login-card select { padding:12px; border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary); background:var(--bg-surface); }
+.setup-team-select { display:block; position:relative; min-width:0; }
+.login-card .setup-team-select select { display:block; width:100%; min-width:0; appearance:none; -webkit-appearance:none; padding-right:44px; font:inherit; }
+.setup-team-select svg { position:absolute; right:14px; top:50%; transform:translateY(-50%); width:18px; height:18px; color:var(--text-secondary); pointer-events:none; }
+@media (forced-colors:active) {
+  .login-card .setup-team-select select { appearance:auto; -webkit-appearance:auto; }
+  .setup-team-select svg { display:none; }
+}
 .login-card button,.proposal-card button { padding:10px; border:2px solid var(--border-color); border-radius:10px; background:var(--bg-muted); color:var(--text-primary); cursor:pointer; }
 .chat-feed-column article { flex-shrink:0; }
 .chat-feed-column .user-msg-bubble { align-self:flex-end; }
@@ -1312,7 +1319,7 @@ body.sidebar-resizing,body.sidebar-resizing * { cursor:col-resize !important; us
 .buddy-home { padding: 40px 30px; }
 .buddy-intro p { font-size: 16px; line-height: 1.75; }
 .buddy-sidebar-resize { position: absolute; z-index: 3; inset: 0 0 0 auto; width: 8px; cursor: col-resize; touch-action: none; }
-.buddy-sidebar-resize::after { content: ''; position: absolute; top: 12px; bottom: 12px; right: 0; width: 2px; border-radius: 2px; background: var(--avito-blue); opacity: 0; transition: opacity 150ms ease; }
+.buddy-sidebar-resize::after { content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 2px; border-radius: 0; background: var(--avito-blue); opacity: 0; transition: opacity 150ms ease; }
 .buddy-sidebar-resize:hover::after,.buddy-sidebar-resize:focus-visible::after,.buddy-workspace--resizing .buddy-sidebar-resize::after { opacity: 1; }
 .buddy-workspace--resizing .buddy-sidebar { transition: width 70ms linear; }
 .buddy-brand,.buddy-navigation,.buddy-profile-link { transition: width 70ms linear; }
