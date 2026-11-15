@@ -9,7 +9,8 @@ import (
 )
 
 type Config struct {
-	Clients struct {
+	UserServiceToken string `env:"USER_SERVICE_TOKEN"`
+	Clients          struct {
 		UserGRPCAddr string        `env:"USER_GRPC_ADDR" envDefault:"user:9090"`
 		UserTimeout  time.Duration `env:"ONBOARDING_USER_TIMEOUT" envDefault:"5s"`
 	}

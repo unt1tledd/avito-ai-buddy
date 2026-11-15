@@ -11,7 +11,8 @@ import (
 // Config aggregates every configurable knob of the chat service, parsed
 // from the environment.
 type Config struct {
-	Clients struct {
+	UserServiceToken string `env:"USER_SERVICE_TOKEN"`
+	Clients          struct {
 		UserGRPCAddr         string        `env:"USER_GRPC_ADDR" envDefault:"user:50051"`
 		OnboardingGRPCAddr   string        `env:"ONBOARDING_GRPC_ADDR" envDefault:"onboarding:50051"`
 		AIBaseURL            string        `env:"AI_BASE_URL" envDefault:"http://ai:8080"`

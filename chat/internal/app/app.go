@@ -222,7 +222,7 @@ func newChatServer(ctx context.Context, logger *zap.Logger, cfg *config.Config, 
 		conversations,
 		msgRepository,
 		actions,
-		useradapter.NewClient(userConn),
+		useradapter.NewClient(userConn, cfg.UserServiceToken),
 		onboardingadapter.NewClient(planv1.NewPlanServiceClient(planConn)),
 		aiadapter.NewClient(&http.Client{
 			Timeout: cfg.Clients.AITimeout,
