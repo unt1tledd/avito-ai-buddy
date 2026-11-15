@@ -7,12 +7,20 @@ verify: ## Проверить контрольные суммы зависимо
 	@set -e; for module in $(GO_MODULES); do (cd $$module && GOWORK=off go mod verify); done
 fmt: ## Отформатировать Go-код
 	@set -e; for module in $(GO_MODULES); do (cd $$module && golangci-lint fmt --config ../.golangci.yaml); done
-lint: ## Запустить линтер Go
-	@set -e; for module in $(GO_MODULES); do ( \
-		cd $$module; \
-		packages=$$(go list ./...); \
-		if [ -n "$$packages" ]; then golangci-lint run --config ../.golangci.yaml ./...; fi \
-	); done
+lint:
+	@status=0; \
+	for module in $(GO_MODULES); do \
+		printf '\n=== Go lint: %s ===\n' "$$module"; \
+		( \
+			cd "$$module" || exit 1; \
+			if [ "$$module" = integration-tests ]; then \
+				golangci-lint run --config ../.golangci.yaml --build-tags=integration ./...; \
+			else \
+				golangci-lint run --config ../.golangci.yaml ./...; \
+			fi \
+		) || status=1; \
+	done; \
+	exit "$$status"
 test: ## Запустить Go-тесты с проверкой гонок
 	@set -e; for module in $(GO_MODULES); do ( \
 		cd $$module; \
@@ -82,17 +90,17 @@ integration-test-one: ## Запустить один интеграционны�
 
 integration-test-list: ## Показать список интеграционных тестов
 	@awk 'BEGIN { \
-		desc["TestAuthLifecycle"] = "Вход, ротация refresh-токена и выход"; \
-		desc["TestAuthInvalidInput"] = "Отказ при некорректных данных и токенах"; \
+		desc["TestAuthLifecycle"] = "                 Вход, ротация refresh-токена и выход"; \
+		desc["TestAuthInvalidInput"] = "             Отказ при некорректных данных и токенах"; \
 		desc["TestConcurrentRegistrationCreatesOneAccount"] = "Один аккаунт при параллельной регистрации"; \
-		desc["TestUserPersistsAcrossGRPCAndHTTP"] = "Создание профиля через gRPC и чтение через HTTP"; \
-		desc["TestUserInvalidCreationDoesNotPersist"] = "Невалидные данные профиля не сохраняются"; \
-		desc["TestChatHistoryIdempotencyAndIsolation"] = "История, пагинация, повторы и изоляция пользователей"; \
+		desc["TestUserPersistsAcrossGRPCAndHTTP"] = "          Создание профиля через gRPC и чтение через HTTP"; \
+		desc["TestUserInvalidCreationDoesNotPersist"] = "       Невалидные данные профиля не сохраняются"; \
+		desc["TestChatHistoryIdempotencyAndIsolation"] = "      История, пагинация, повторы и изоляция пользователей"; \
 		desc["TestChatRejectsUnauthorizedAndInvalidMessages"] = "Доступ к истории и валидация сообщений"; \
-		desc["TestConcurrentMessageRetriesSaveOnePair"] = "Одна пара сообщений при конкурентных повторах"; \
-		desc["TestAccessRequestLifecycle"] = "Заявка, решение и уведомление в Chat через Kafka"; \
-		desc["TestConcurrentTaskDecisionsHaveOneWinner"] = "Одно решение при конкурентном одобрении и отклонении"; \
-		desc["TestTaskAuthorizationAndValidation"] = "Авторизация и валидация запросов Task"; \
+		desc["TestConcurrentMessageRetriesSaveOnePair"] = "     Одна пара сообщений при конкурентных повторах"; \
+		desc["TestAccessRequestLifecycle"] = "               Заявка, решение и уведомление в Chat через Kafka"; \
+		desc["TestConcurrentTaskDecisionsHaveOneWinner"] = " Одно решение при конкурентном одобрении и отклонении"; \
+		desc["TestTaskAuthorizationAndValidation"] = "       Авторизация и валидация запросов Task"; \
 	} \
 	/^func Test[[:alnum:]_]+\(/ { \
 		name = $$2; sub(/\(.*/, "", name); \

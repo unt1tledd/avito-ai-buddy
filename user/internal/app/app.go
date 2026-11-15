@@ -20,6 +20,7 @@ import (
 	"avito-ai-buddy/user/migrations"
 
 	"avito-ai-buddy/pkg/observability"
+
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"

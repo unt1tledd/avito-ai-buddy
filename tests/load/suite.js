@@ -226,6 +226,27 @@ const contextCase = [
   '/load-test/guide',
 ];
 
+function questionCase(index) {
+  if (mode === 'context') {
+    return contextCase;
+  }
+
+  if (!isMock) {
+    return liveCases[index % liveCases.length];
+  }
+
+  const faultKinds = ['fast', 'slow', '429', '500', 'timeout'];
+  const kind = mode === 'faults'
+    ? faultKinds[index % faultKinds.length]
+    : index % 2 === 0 ? 'fast' : 'slow';
+
+  return [
+    kind,
+    `[load:${kind}] Как проверить работу тестовой инструкции? Маркер ${index}.`,
+    '/load-test/guide',
+  ];
+}
+
 function answerFrom(result) {
   return result.data?.assistantMessage ?? result.data?.assistant_message;
 }
@@ -244,50 +265,62 @@ function answerProblem(result, answer, source) {
 export function askQuestion(sessions) {
   const user = sessionFor('question', sessions);
   if (!user) return;
+
   const index = exec.scenario.iterationInTest;
-  const fault = ['fast', 'slow', '429', '500', 'timeout'][index % 5];
-  const mockKind = mode === 'faults' ? fault : (index % 2 ? 'slow' : 'fast');
-  const [kind, text, source] = isMock
-    ? [mockKind, `[load:${mockKind}] Как проверить работу тестовой инструкции? Маркер ${index}.`, '/load-test/guide']
-    : mode === 'context' ? contextCase : liveCases[index % liveCases.length];
+  const [kind, text, source] = questionCase(index);
   const key = String(index + 2);
-  const send = (step) => request(user, step, 'POST', `${CHAT}/messages`, {
-    text, idempotencyKey: key,
-  }, { name: step === 'r' ? 'ask_replay' : 'ask', kind, timeout: '75s' });
+
+  const send = (step) => request(
+    user,
+    step,
+    'POST',
+    `${CHAT}/messages`,
+    { text, idempotencyKey: key },
+    { name: step === 'r' ? 'ask_replay' : 'ask', kind, timeout: '75s' },
+  );
+
   const result = send('q');
   const answer = answerFrom(result);
-  const injectedFailure = mode === 'faults' && ['429', '500', 'timeout'].includes(kind);
-  if (injectedFailure) {
-    const after = history(user, 10, '', 0, false);
-    const rows = after.data?.messages;
-    const expected = result.correlated && result.response.status >= 500 &&
-      result.response.status <= 599 &&
-      (kind !== 'timeout' || result.response.timings.duration >= 20000) && !answer && after.response.status === 200 &&
-      Array.isArray(rows) && rows.length === 1 && rows[0]?.text === text;
-    finish(user, expected ? '' : 'fault_handling', result, kind);
-    return;
-  }
   const reason = answerProblem(result, answer, source);
+
   if (reason) {
     finish(user, reason, result, kind);
     return;
   }
+
+  const injectedFailure =
+    mode === 'faults' && ['429', '500', 'timeout'].includes(kind);
+
+  if (injectedFailure && !answer.text.startsWith('AI временно недоступен.')) {
+    finish(user, 'expected_fallback_missing', result, kind);
+    return;
+  }
+
   if (mode === 'mock' && index % 10 === 0) {
     const replay = send('r');
-    if (replay.response.status !== 200 || !replay.correlated || answerFrom(replay)?.id !== answer.id) {
+    if (
+      replay.response.status !== 200 ||
+      !replay.correlated ||
+      answerFrom(replay)?.id !== answer.id
+    ) {
       finish(user, 'idempotency', replay, kind);
       return;
     }
   }
+
   const after = history(user, 10, '', 0, false);
   const rows = after.data?.messages;
-  if (after.response.status !== 200 || !Array.isArray(rows) ||
-      rows.filter((row) => row.text === text).length !== 1 ||
-      rows.filter((row) => row.id === answer.id && row.text === answer.text).length !== 1 ||
-      (mode === 'context' ? rows.length !== 4 : mode !== 'soak' && rows.length !== 2)) {
+  if (
+    after.response.status !== 200 ||
+    !Array.isArray(rows) ||
+    rows.filter((row) => row.text === text).length !== 1 ||
+    rows.filter((row) => row.id === answer.id && row.text === answer.text).length !== 1 ||
+    (mode === 'context' ? rows.length !== 4 : mode !== 'soak' && rows.length !== 2)
+  ) {
     finish(user, 'answer_history', after, kind);
     return;
   }
+
   finish(user, '', result, kind);
 }
 

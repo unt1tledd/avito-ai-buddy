@@ -368,7 +368,20 @@ def run_k6(mode, prefix, stage, config):
     compact_metrics(stage / "metrics.json", config["seconds"])
 
     if status:
-        print(f"  k6: FAIL (код {status}). Журнал: {stage / 'k6.log'}", flush=True)
+        log_path = stage / "k6.log"
+        print(f"  k6: FAIL (код {status}). Журнал: {log_path}", flush=True)
+
+        with log_path.open(encoding="utf-8", errors="replace") as log:
+            first_error = next(
+                (
+                    line.strip()
+                    for line in log
+                    if "level=error" in line or line.lstrip().startswith("ERRO[")
+                ),
+                None,
+            )
+        if first_error:
+            print(f"  Первая ошибка k6: {first_error}", flush=True)
     else:
         print("  k6: PASS", flush=True)
 
