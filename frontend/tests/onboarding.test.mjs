@@ -1,4 +1,4 @@
-import test, { afterEach } from 'node:test';
+import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -17,6 +17,17 @@ function load(file, overrides = {}) {
   new Function('require', 'module', 'exports', outputText)(id => overrides[id] || require(id), module, module.exports);
   return module.exports;
 }
+// Deterministic browser storage; never rely on Node's experimental localStorage.
+const storage = new Map();
+Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{
+  getItem:key=>storage.get(key) ?? null,
+  setItem:(key,value)=>storage.set(key,String(value)),
+  removeItem:key=>storage.delete(key),
+}});
+beforeEach(()=>{
+  storage.clear();
+  globalThis.fetch=async()=>{throw new Error('Unexpected HTTP request: install a fetch mock in this test');};
+});
 const api = load('lib/api.ts');
 const { OnboardingPage, nextRoadmapStep } = load('pages/OnboardingPage.tsx', {'../lib/api': api});
 const { SetupPage } = load('pages/SetupPage.tsx', {'../lib/api': api});
@@ -62,12 +73,12 @@ test('confirm queues proposal without marking a step completed', async () => {
   assert.match(api.statusLabel('approved'),/одобрен/);
 });
 test('unassigned, loading and error states do not show empty progress', () => {
-  assert.match(render({}), /Твой путь скоро появится/);
+  assert.match(render({}), /Твой путь скоро начнётся/);
   assert.doesNotMatch(render({}), /Выполнено|0%|Обновить Roadmap/);
   assert.match(render({data:null,loading:true}), /Загружаем Roadmap/);
-  assert.doesNotMatch(render({data:null,loading:true}), /Твой путь скоро появится/);
+  assert.doesNotMatch(render({data:null,loading:true}), /Твой путь скоро начнётся/);
   assert.match(render({data:null,error:'Нет связи'}), /Нет связи/);
-  assert.doesNotMatch(render({data:null,error:'Нет связи'}), /Твой путь скоро появится/);
+  assert.doesNotMatch(render({data:null,error:'Нет связи'}), /Твой путь скоро начнётся/);
 });
 test('access action is available for an incomplete non-current step', () => {
   const html = withSelection({track:'common',step:'git',view:'stages'},()=>render({data:{assigned:true,steps:[{step_id:'git',step_number:2,title:step.title,description:'',period:step.period,completed:false,current:false,track:'common',action_type:'access_request'}],tracks:[{track:'common',display_name:'Общий онбординг'}],groupingAvailable:true}}));
@@ -83,7 +94,8 @@ test('setup has no self-assignment selector', () => {
   assert.match(html,/name="end_date"/);
 });
 
-const { AccessProposalCard } = load('pages/AccessProposalCard.tsx', {'../lib/api':api});
+const messageContent = load('pages/MessageContent.tsx');
+const { AccessProposalCard } = load('pages/AccessProposalCard.tsx', {'../lib/api':api,'./MessageContent':messageContent});
 const proposal = {proposal_id:'17',title:'Заявка',resource_id:'repo/team',resource_label:'Репозиторий команды',access_level:'Developer',status:'draft'};
 const card = (status, extras={}) => renderToStaticMarkup(React.createElement(AccessProposalCard, {proposal:{...proposal,status},sending:false,onConfirm(){},...extras}));
 
@@ -158,18 +170,21 @@ test('live history ignores malformed, unknown and other-conversation events',()=
   for(const type of ['task.status_changed','access_request.failed'])
     assert.equal(shouldRefreshHistory(JSON.stringify({type}),'12'),true);
 });
-test('live refresh coalesces bursts, serializes requests and cancels on unmount',async()=>{
+test('live refresh coalesces bursts, serializes requests and cancels on unmount',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
   let calls=0,finish;
-  const queue=historyRefreshQueue(()=>{calls++;return new Promise(resolve=>{finish=resolve;});},1);
-  const tick=()=>new Promise(resolve=>setTimeout(resolve,15));
+  const queue=historyRefreshQueue(()=>{calls++;return new Promise(resolve=>{finish=resolve;});},150);
+  t.after(()=>queue.stop());
   queue.schedule();queue.schedule();queue.schedule();
-  await tick();assert.equal(calls,1);
+  t.mock.timers.tick(149);assert.equal(calls,0);
+  t.mock.timers.tick(1);assert.equal(calls,1);
   queue.schedule();queue.schedule();
-  await tick();assert.equal(calls,1);
-  finish();await tick();assert.equal(calls,2);
-  queue.schedule();queue.stop();finish();
-  await tick();assert.equal(calls,2);
-  queue.schedule();await tick();assert.equal(calls,2);
+  t.mock.timers.tick(1000);assert.equal(calls,1);
+  finish();await Promise.resolve();
+  t.mock.timers.tick(150);assert.equal(calls,2);
+  queue.schedule();queue.stop();finish();await Promise.resolve();
+  t.mock.timers.tick(1000);assert.equal(calls,2);
+  queue.schedule();t.mock.timers.tick(1000);assert.equal(calls,2);
 });
 
 
@@ -233,7 +248,7 @@ test('roadmap renders selected-track progress and retains completed tracks',()=>
     {step_id:'c',step_number:3,track:'backend',title:'Технический шаг',description:'',period:'1 неделя',completed:true},
   ]};
   const common=withSelection({track:'common',step:'',view:'stages'},()=>render({data}));
-  assert.match(common,/2 трека/);assert.match(common,/1 из 2 шагов выполнено/);assert.match(common,/50%/);
+  assert.doesNotMatch(common,/2 трека|Обновить Roadmap|Выбранный трек/);assert.match(common,/1 из 2 шагов выполнено/);assert.match(common,/50%/);
   assert.doesNotMatch(common,/Технический шаг/);
   const backend=withSelection({track:'backend',step:'',view:'stages'},()=>render({data}));
   assert.match(backend,/1 из 1 шагов выполнено/);assert.match(backend,/100%/);assert.match(backend,/Все шаги выполнены/);
@@ -261,7 +276,7 @@ test('roadmap uses accessible check circles and names simultaneous current track
   assert.equal((html.match(/aria-checked="false"/g)||[]).length,2);
   assert.equal((html.match(/aria-checked="true"/g)||[]).length,1);
   assert.match(html,/Текущий шаг · Общая адаптация/);assert.match(html,/Текущий шаг · Backend/);
-  assert.match(html,/Назначенное направление: Backend/);
+  assert.doesNotMatch(html,/Назначенное направление:|Выбранный трек|Обновить Roadmap/);
   assert.match(html,/Снять отметку: Знакомство/);assert.doesNotMatch(html,/roadmap-complete/);
 });
 test('completing the selected current step advances only within its server track',()=>{
@@ -275,4 +290,174 @@ test('completing the selected current step advances only within its server track
   assert.equal(nextRoadmapStep(after,before,'b'),'b');
   assert.equal(nextRoadmapStep(before,{...after,tracks:[]},'b'),'b');
   assert.equal(nextRoadmapStep(before,{...after,tracks:[{track:'backend',current_step_id:'missing'}]},'b'),'b');
+});
+
+
+test('roadmap renders one switch button per assigned step track, with no fabricated tracks',async()=>{
+  const calls=[];
+  globalThis.fetch=async(path,init)=>{
+    calls.push([path,init.method||'GET']);
+    return Response.json(path.endsWith('/plan_context')?{tracks:[
+      {track:'common',display_name:'Общий онбординг',current_step:{id:'common-1'}},
+      {track:'backend',display_name:'Backend',current_step:{id:'backend-1'}},
+      {track:'security',display_name:'Безопасность',current_step:{id:'security-1'}},
+      {track:'not-assigned',display_name:'Не назначен'},
+    ]}:{id:'1',steps:['common','backend','security'].map(track=>({...step,id:track+'-1',track,title:'Шаг '+track}))});
+  };
+  const data=await api.fetchOnboardingRoadmap('123');
+  assert.deepEqual(data.tracks.map(track=>track.track),['common','backend','security']);
+  for(const track of data.tracks) {
+    const html=withSelection({track:track.track,step:'',view:'stages'},()=>render({data}));
+    const switches=html.match(/<div class="roadmap-track-buttons"[^>]*>(.*?)<\/div>/s)[1];
+    assert.equal((switches.match(/<button/g)||[]).length,3);
+    assert.equal((switches.match(/aria-pressed="true"/g)||[]).length,1);
+    assert.doesNotMatch(html,/<select|Не назначен/);
+    assert.match(html,new RegExp('Шаг '+track.track));
+    for(const other of data.tracks.filter(item=>item.track!==track.track))assert.doesNotMatch(html,new RegExp('Шаг '+other.track));
+  }
+  // Switching the rendered selection requires no extra API requests.
+  assert.deepEqual(calls,[['/v1/users/123/plan','GET'],['/v1/users/123/plan_context','GET']]);
+});
+
+
+test('assistant display removes service citations and localizes only task status notices',()=>{
+  assert.equal(messageContent.assistantDisplayText('Готово. [source:synth-repository-access]'),'Готово.');
+  assert.equal(messageContent.assistantDisplayText('Ответ [source:one], продолжение [source:two].'),'Ответ, продолжение.');
+  assert.equal(messageContent.assistantDisplayText('Статус задачи 2 изменён: approved.'),'Заявка №2: одобрено.');
+  assert.equal(messageContent.assistantDisplayText('Статус задачи 3 изменён: rejected.'),'Заявка №3: отклонено.');
+  assert.equal(messageContent.assistantDisplayText('Значение approved в примере [важно]'),'Значение approved в примере [важно]');
+  const user=renderToStaticMarkup(React.createElement(messageContent.MessageText,{text:'[source:example] approved'}));
+  assert.match(user,/\[source:example\] approved/);
+});
+test('assistant links are clickable and escaped; citation markers stay hidden',()=>{
+  const html=renderToStaticMarkup(React.createElement(messageContent.MessageText,{assistant:true,text:'Открой https://people.example/absence. Или [инструкцию](https://docs.example/guide). [source:demo] <script>alert(1)</script>'}));
+  assert.match(html,/href="https:\/\/people.example\/absence"/);
+  assert.match(html,/href="https:\/\/docs.example\/guide"/);
+  assert.match(html,/>инструкцию<\/a>/);assert.doesNotMatch(html,/source:demo|<script>/);
+  assert.match(html,/&lt;script&gt;/);
+});
+test('source cards retain demo labels and support materials without a safe URL',()=>{
+  const html=renderToStaticMarkup(React.createElement(messageContent.MessageSources,{sources:[
+    {id:'1',title:'[ДЕМО] Документ',url:'https://docs.example/guide'},
+    {id:'2',title:'Материал без ссылки',url:''},
+    {id:'3',title:'Небезопасная ссылка',url:'javascript:alert(1)'},
+  ]}));
+  assert.match(html,/message-source-card/);assert.match(html,/\[ДЕМО\] Документ/);
+  assert.match(html,/Материал без ссылки/);assert.equal((html.match(/<a /g)||[]).length,1);
+  assert.doesNotMatch(html,/href="javascript:/);
+});
+
+test('requests include old paginated proposals and retain the newest status per conversation', async () => {
+  const calls=[];
+  globalThis.fetch=async(path,init)=>{
+    calls.push([path,init.headers.get('X-Conversation-Id')]);
+    const old=new URL(path,'http://localhost').searchParams.get('pageToken')==='older';
+    const proposal={id:'access',resourceId:'git',accessRequest:{status:old?'pending_approval':'approved'}};
+    return Response.json({messages:[{id:old?'old':'new',role:'MESSAGE_ROLE_ASSISTANT',text:'',createdAt:old?'2026-11-14T10:00:00Z':'2026-11-15T10:00:00Z',proposal}],nextPageToken:old?'':'older'});
+  };
+  const result=await api.fetchConversationProposals([{id:'chat-1',title:'Git',createdAt:''}]);
+  assert.equal(result.failed,0);
+  assert.equal(result.items.length,1);
+  assert.equal(result.items[0].proposal.status,'approved');
+  assert.equal(result.items[0].conversationId,'chat-1');
+  assert.equal(calls.length,2);
+  assert.ok(calls.every(([,id])=>id==='chat-1'));
+  assert.equal(new URL(calls[1][0],'http://localhost').searchParams.get('pageToken'),'older');
+});
+
+test('requests report unavailable conversations rather than claiming there are no requests', async () => {
+  globalThis.fetch=async()=>Response.json({message:'Unavailable'},{status:503});
+  const result=await api.fetchConversationProposals([{id:'chat-1',title:'Git',createdAt:''}]);
+  assert.equal(result.failed,1);
+  assert.deepEqual(result.items,[]);
+});
+
+test('home roadmap preview finds the next unfinished step only within the current track', () => {
+  const {nextSummaryStep}=load('pages/RoadmapSummaryDialog.tsx');
+  const current={step_id:'a',track:'tech',current:true,completed:false};
+  const other={step_id:'b',track:'hr',completed:false};
+  const done={step_id:'c',track:'tech',completed:true};
+  const next={step_id:'d',track:'tech',completed:false};
+  const data={assigned:true,groupingAvailable:true,tracks:[],steps:[current,other,done,next]};
+  assert.equal(nextSummaryStep(data,current),next);
+  assert.equal(nextSummaryStep({...data,groupingAvailable:false},current),undefined);
+  assert.equal(nextSummaryStep({...data,steps:[current,other,done]},current),undefined);
+});
+
+test('roadmap dialog preserves loaded steps and empty state during refresh', () => {
+  const {RoadmapSummaryDialog}=load('pages/RoadmapSummaryDialog.tsx');
+  const renderDialog=data=>renderToStaticMarkup(React.createElement(RoadmapSummaryDialog,{data,loading:true,error:false,onRetry(){},onClose(){},onOpen(){}}));
+  const html=renderDialog({assigned:true,groupingAvailable:true,tracks:[],steps:[{step_id:'git',track:'tech',title:'Получить доступ к Git',current:true,completed:false}]});
+  assert.match(html,/Получить доступ к Git/);
+  assert.doesNotMatch(html,/Загружаем план адаптации/);
+  const empty=renderDialog(unassigned);
+  assert.match(empty,/Твой путь скоро начнётся/);
+  assert.doesNotMatch(empty,/Загружаем план адаптации/);
+});
+
+test('requests keep successful chats when another history fails and detect repeated page tokens', async()=>{
+  const calls=[];
+  globalThis.fetch=async(path,init)=>{
+    const id=init.headers.get('X-Conversation-Id');calls.push(id);
+    if(id==='broken')return Response.json({}, {status:503});
+    if(id==='loop')return Response.json({messages:[],nextPageToken:'same'});
+    return Response.json({messages:[{id:'m',createdAt:'2026-11-15',proposal:{id:'p',accessRequest:{status:'pending_approval'}}}]});
+  };
+  const result=await api.fetchConversationProposals(['good','broken','loop'].map(id=>({id,title:id,createdAt:''})));
+  assert.equal(result.failed,2);
+  assert.deepEqual(result.items.map(item=>item.conversationId),['good']);
+  assert.equal(calls.filter(id=>id==='loop').length,2);
+});
+
+test('requests limit parallel history reads to four and do not merge proposals across chats', async()=>{
+  let active=0,peak=0;
+  globalThis.fetch=async()=>{
+    active++;peak=Math.max(peak,active);
+    await new Promise(resolve=>setImmediate(resolve));active--;
+    return Response.json({messages:[{id:'m',createdAt:'2026-11-15',proposal:{id:'same',accessRequest:{status:'pending_approval'}}}]});
+  };
+  const result=await api.fetchConversationProposals(Array.from({length:9},(_,i)=>({id:String(i),title:'Chat',createdAt:''})));
+  assert.equal(result.failed,0);assert.equal(result.items.length,9);
+  assert.equal(new Set(result.items.map(item=>item.conversationId)).size,9);
+  assert.equal(peak,4);
+});
+
+test('empty conversation list makes no history requests',async()=>{
+  let calls=0;globalThis.fetch=async()=>{calls++;throw new Error('Unexpected fetch');};
+  assert.deepEqual(await api.fetchConversationProposals([]),{items:[],failed:0});
+  assert.equal(calls,0);
+});
+
+test('request refreshes a 401 session only once and preserves conversation and body',async()=>{
+  const isolated=load('lib/api.ts');
+  const calls=[];
+  globalThis.fetch=async(path,init)=>{
+    calls.push({path,init});
+    if(path==='/v1/auth/refresh')return Response.json({access_token:'refreshed'});
+    return calls.length===1?Response.json({}, {status:401}):Response.json({assistantMessage:{id:'reply',text:'Ответ'}});
+  };
+  await isolated.sendChatMessage('Вопрос','key','chat');
+  assert.deepEqual(calls.map(call=>call.path),['/v1/chat/messages','/v1/auth/refresh','/v1/chat/messages']);
+  assert.equal(calls[2].init.headers.get('Authorization'),'Bearer refreshed');
+  assert.equal(calls[2].init.headers.get('X-Conversation-Id'),'chat');
+  assert.equal(calls[2].init.body,calls[0].init.body);
+  assert.ok(calls.every(call=>call.init.credentials==='same-origin'));
+  calls.length=0;
+  globalThis.fetch=async(path)=>{calls.push(path);return Response.json({}, {status:path==='/v1/auth/refresh'?200:401});};
+  await assert.rejects(isolated.fetchHistory('','chat'),err=>err.status===401);
+  assert.equal(calls.length,3);
+});
+
+test('unknown access status is displayed without approval or send action',()=>{
+  const html=card('custom_review');
+  assert.match(html,/custom_review/);
+  assert.match(html,/proposal-card--neutral/);
+  assert.doesNotMatch(html,/Доступ одобрен|proposal-submit|proposal-spinner/);
+});
+
+test('roadmap refresh failure retains loaded steps and reports stale data',()=>{
+  const {RoadmapSummaryDialog}=load('pages/RoadmapSummaryDialog.tsx');
+  const html=renderToStaticMarkup(React.createElement(RoadmapSummaryDialog,{data:{assigned:true,groupingAvailable:true,steps:[{step_id:'git',title:'Доступ Git',current:true,completed:false,track:'tech'}],tracks:[]},loading:false,error:true,onRetry(){},onClose(){},onOpen(){}}));
+  assert.match(html,/Доступ Git/);assert.match(html,/Показаны последние загруженные данные/);
+  assert.match(html,/role="alert"/);
 });

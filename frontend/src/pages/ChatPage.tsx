@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatMessage, fetchHistory, sendChatMessage, confirmAccessProposal, refreshSession, Conversation, listConversations, createConversation, deleteConversation, recentConversations } from '../lib/api';
 import { AccessProposalCard } from './AccessProposalCard';
+import { MessageText, MessageSources } from './MessageContent';
 import { AppBrand, ThemeToggle } from './AppChrome';
+import { HomePage } from './HomePage';
 import { RoadmapPage } from './OnboardingPage';
 import { historyRefreshQueue, shouldRefreshHistory, mergeChatMessages, reconcileProposal } from '../lib/chatEvents';
 type Screen = 'home' | 'roadmap' | 'chat' | 'profile';
-type IconName = Screen | 'panel' | 'chevron' | 'plus' | 'help' | 'logout' | 'close' | 'sun' | 'moon' | 'send' | 'trash';
+type IconName = Screen | 'panel' | 'chevron' | 'plus' | 'help' | 'logout' | 'close' | 'sun' | 'moon' | 'trash';
 function Icon({name}: {name: IconName}) {
   const paths: Record<IconName, React.ReactNode> = {
     home: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></>,
@@ -21,7 +23,6 @@ function Icon({name}: {name: IconName}) {
     sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></>,
     moon: <path d="M20.5 14a9 9 0 0 1-10.5-10.5A9 9 0 1 0 20.5 14Z"/>,
     trash: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></>,
-    send: <path d="M12 19V5m-6 6 6-6 6 6"/>,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -46,6 +47,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
   });
   const [roadmapVersion,setRoadmapVersion]=useState(0);
   const [menuOpen,setMenuOpen] = useState(()=>!window.matchMedia('(max-width: 760px)').matches);
+  const toggleMenu=()=>setMenuOpen(open=>!open);
   const [historyOpen,setHistoryOpen] = useState(()=>{
     try { return localStorage.getItem(`buddy-history-open-${userId}`)==='true'; } catch { return false; }
   });
@@ -58,18 +60,18 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
   const workspace=useRef<HTMLDivElement>(null);
   const drag=useRef<{pointer:number;startX:number;startWidth:number}|null>(null);
   const [dragging,setDragging]=useState(false);
-  const [maxMenuWidth,setMaxMenuWidth]=useState(()=>Math.max(240,Math.min(480,window.innerWidth-400)));
+  const [maxMenuWidth,setMaxMenuWidth]=useState(()=>Math.max(240,Math.min(720,window.innerWidth-360)));
   const [menuWidth,setMenuWidth]=useState(()=>{
     try {
       const saved=Number(localStorage.getItem('buddy-sidebar-width'));
-      return Number.isFinite(saved) && saved>=240 ? Math.min(saved,480) : 280;
+      return Number.isFinite(saved) && saved>=240 ? Math.min(saved,720) : 280;
     } catch { return 280; }
   });
   const displayedMenuWidth=Math.min(menuWidth,maxMenuWidth);
   useEffect(()=>{
     const element=workspace.current;
     if(!element)return;
-    const observer=new ResizeObserver(()=>setMaxMenuWidth(Math.max(240,Math.min(480,element.clientWidth-400))));
+    const observer=new ResizeObserver(()=>setMaxMenuWidth(Math.max(240,Math.min(720,element.clientWidth-360))));
     observer.observe(element);
     return ()=>observer.disconnect();
   },[]);
@@ -245,16 +247,16 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     try{await deleteConversation(id);if(!id||id===activeRef.current)newChat();await loadChats();}catch(e){setError(errorText(e));}
   };
   return <div ref={workspace} className={`buddy-workspace${menuOpen?' buddy-workspace--menu-open':''}${dragging?' buddy-workspace--resizing':''}`} style={{'--menu-width':`${displayedMenuWidth}px`} as React.CSSProperties}>
-    <aside id="workspace-menu" className="buddy-sidebar" ref={element=>{if(element)element.inert=!menuOpen;}} aria-label="Основное меню" aria-hidden={!menuOpen}>
-      <div className="buddy-brand"><AppBrand/><button className="buddy-icon-button buddy-mobile-close" aria-label="Закрыть меню" onClick={()=>setMenuOpen(false)}><Icon name="panel"/></button></div>
+    <aside id="workspace-menu" className="buddy-sidebar" aria-label="Основное меню">
+      <div className="buddy-brand"><AppBrand/><button className="buddy-icon-button buddy-sidebar-toggle" aria-label={menuOpen?'Свернуть меню':'Открыть меню'} title={menuOpen?'Свернуть меню':'Открыть меню'} aria-expanded={menuOpen} aria-controls="workspace-menu" onClick={toggleMenu}><Icon name="panel"/></button></div>
       <nav className="buddy-navigation">
-        <button className={`buddy-nav-item${screen==='home'?' is-active':''}`} aria-current={screen==='home'?'page':undefined} onClick={()=>navigate('home')}><Icon name="home"/><span>Главная</span></button>
-        <button className={`buddy-nav-item${screen==='roadmap'?' is-active':''}`} aria-current={screen==='roadmap'?'page':undefined} onClick={()=>navigate('roadmap')}><Icon name="roadmap"/><span>Roadmap</span></button>
+        <button className={`buddy-nav-item${screen==='home'?' is-active':''}`} aria-label="Главная" title="Главная" aria-current={screen==='home'?'page':undefined} onClick={()=>navigate('home')}><Icon name="home"/><span>Главная</span></button>
+        <button className={`buddy-nav-item${screen==='roadmap'?' is-active':''}`} aria-label="Roadmap" title="Roadmap" aria-current={screen==='roadmap'?'page':undefined} onClick={()=>navigate('roadmap')}><Icon name="roadmap"/><span>Roadmap</span></button>
         <div className={`buddy-chat-nav${screen==='chat'?' is-active':''}`}>
-          <button className="buddy-nav-item" aria-current={screen==='chat'?'page':undefined} disabled={busy || restoring} onClick={()=>{newChat();setHistoryOpen(true);}}><Icon name="chat"/><span>Чат AI-buddy</span></button>
-          <button className="buddy-icon-button buddy-history-toggle" aria-label={historyOpen?'Свернуть историю чатов':'Развернуть историю чатов'} aria-expanded={historyOpen} aria-controls="buddy-chat-history" onClick={()=>setHistoryOpen(open=>!open)}><span className={`buddy-chevron${historyOpen?' is-open':''}`}><Icon name="chevron"/></span></button>
+          <button className="buddy-nav-item" aria-label="Чат AI-buddy" title="Чат AI-buddy" aria-current={screen==='chat'?'page':undefined} disabled={busy || restoring} onClick={()=>{newChat();setHistoryOpen(true);}}><Icon name="chat"/><span>Чат AI-buddy</span></button>
+          <button className="buddy-icon-button buddy-history-toggle" tabIndex={menuOpen?0:-1} aria-hidden={!menuOpen} aria-label={historyOpen?'Свернуть историю чатов':'Развернуть историю чатов'} aria-expanded={historyOpen && menuOpen} aria-controls="buddy-chat-history" onClick={()=>setHistoryOpen(open=>!open)}><span className={`buddy-chevron${historyOpen?' is-open':''}`}><Icon name="chevron"/></span></button>
         </div>
-        <section id="buddy-chat-history" className={`buddy-chat-history${historyOpen?' is-open':''}`} aria-label="История чатов" aria-hidden={!historyOpen} ref={element=>{if(element)element.inert=!historyOpen;}}><div className="buddy-history-clip"><div className="buddy-history-content">
+        <section id="buddy-chat-history" className={`buddy-chat-history${historyOpen && menuOpen?' is-open':''}`} aria-label="История чатов" aria-hidden={!historyOpen || !menuOpen} ref={element=>{if(element)element.inert=!historyOpen || !menuOpen;}}><div className="buddy-history-clip"><div className="buddy-history-content">
           <div className="buddy-history-heading"><span>Твои чаты</span><button className="buddy-icon-button" title="Новый чат" aria-label="Новый чат" disabled={busy || restoring} onClick={newChat}><Icon name="plus"/></button></div>
           {restoring ? <p className="buddy-history-empty">Загружаем историю…</p> : !chats.length ? <p className="buddy-history-empty">Здесь появятся твои чаты после первого вопроса.</p> : <>
             {chats.slice(0,historyLimit).map(chat=><div className={`buddy-history-row${screen==='chat' && active===chat.id?' is-active':''}`} key={chat.id}>
@@ -266,7 +268,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
           </>}
         </div></div></section>
       </nav>
-      <button className={`buddy-profile-link${screen==='profile'?' is-active':''}`} aria-current={screen==='profile'?'page':undefined} onClick={()=>navigate('profile')}><span className="buddy-avatar buddy-avatar--small">{initials}</span><span><strong>Профиль</strong><small>{profile.name || 'Стажёр'}</small></span></button>
+      <button className={`buddy-profile-link${screen==='profile'?' is-active':''}`} aria-label="Профиль" title="Профиль" aria-current={screen==='profile'?'page':undefined} onClick={()=>navigate('profile')}><span className="buddy-avatar buddy-avatar--small">{initials}</span><span><strong>Профиль</strong><small>{profile.name || 'Стажёр'}</small></span></button>
       {menuOpen && <div className="buddy-sidebar-resize" role="separator" tabIndex={0} aria-label="Ширина меню" aria-orientation="vertical" aria-valuemin={240} aria-valuemax={maxMenuWidth} aria-valuenow={displayedMenuWidth}
         title="Потяни, чтобы изменить ширину. Двойной клик — сброс."
         onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);drag.current={pointer:e.pointerId,startX:e.clientX,startWidth:displayedMenuWidth};setDragging(true);}}
@@ -278,11 +280,14 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     {menuOpen && <button className="buddy-menu-backdrop" aria-label="Закрыть меню" onClick={()=>setMenuOpen(false)}/>}
     <div className="buddy-main">
       <header className="buddy-topbar">
-        <button className="buddy-icon-button buddy-menu-toggle" aria-label={menuOpen?'Свернуть меню':'Открыть меню'} aria-expanded={menuOpen} aria-controls="workspace-menu" onClick={()=>setMenuOpen(open=>!open)}><Icon name="panel"/></button>
+
         <h1>{screenTitles[screen]}</h1>
         <ThemeToggle dark={dark} onToggle={onToggleTheme}/>
       </header>
-      {screen==='home' && <main className="buddy-page buddy-home"><div className="buddy-intro"><h2>Привет{profile.name.trim()?`, ${profile.name.trim().split(/\s+/)[0]}`:''}!</h2><p>Я AI-buddy — твой помощник на стажировке. Помогу освоиться в команде, разобраться в рабочих процессах и найти нужную информацию.</p><p>Задавай вопросы в чате, а свой путь адаптации сможешь увидеть в Roadmap. Будем двигаться шаг за шагом.</p></div></main>}
+      {screen==='home' && <HomePage userId={userId} name={profile.name} chats={chats} busy={busy || restoring} onChat={id=>void selectChat(id)} onQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}} onRoadmap={step=>{
+        if(step)try { const key=`buddy-roadmap-${userId}`;let saved;try{saved=JSON.parse(localStorage.getItem(key)||'null');}catch{/* Invalid preferences can be replaced. */}localStorage.setItem(key,JSON.stringify({track:step.track || '',step:step.step_id,view:saved?.view==='weeks'?'weeks':'stages'})); } catch { /* Storage is optional. */ }
+        navigate('roadmap');
+      }}/>}
       {screen==='roadmap' && <main className="buddy-page roadmap-page"><RoadmapPage userId={userId} chatBusy={busy || restoring} refreshVersion={roadmapVersion} onSelectStepQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}}/></main>}
       {screen==='profile' && <main className="buddy-page buddy-profile"><div className="buddy-profile-card"><span className="buddy-avatar buddy-avatar--large">{initials}</span><h2>{profile.name || 'Стажёр'}</h2><p className="buddy-profile-caption">Твой профиль стажировки</p><dl className="buddy-profile-details"><div><dt>Почта</dt><dd>{profile.email || 'Войди повторно, чтобы отобразить почту'}</dd></div><div><dt>Команда</dt><dd>{profile.team || 'Не указана'}</dd></div><div><dt>Направление</dt><dd>{profile.track || 'Не указано'}</dd></div></dl></div><footer className="buddy-profile-actions"><button className="buddy-action-button buddy-logout" onClick={onLogout}><Icon name="logout"/>Выйти из аккаунта</button><button className="buddy-action-button" onClick={()=>helpDialog.current?.showModal()}><Icon name="help"/>Помощь</button></footer></main>}
       <main ref={main} hidden={screen!=='chat'} className="chat-main buddy-chat" aria-label="Переписка с AI-buddy">
@@ -291,15 +296,14 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
         {loading && <p>Загружаем историю…</p>}
         {next && <button disabled={busy} onClick={()=>void loadHistory(true,next)}>Загрузить предыдущие сообщения</button>}
         {visibleMessages.map(m=><article key={m.id} className={m.sender==='user'?'user-msg-bubble':'assistant-msg-card'}>
-          {m.sender==='assistant' && <span className="ai-name-badge">AI-buddy</span>}<p style={{whiteSpace:'pre-wrap'}}>{m.text}</p>
+          <MessageText text={m.text} assistant={m.sender==='assistant'}/>
           {m.error && <button disabled={busy} onClick={()=>void send(m.retry_text,m.idempotency_key,m.id)}>Повторить</button>}
-          {!!m.sources?.length && <ul>{m.sources.map((s,i)=><li key={s.id||i}>{/^https?:\/\//i.test(s.url)?<a href={s.url} target="_blank" rel="noreferrer">{s.title}</a>:s.title}</li>)}</ul>}
+          {!!m.sources?.length && <MessageSources sources={m.sources}/>}
           {m.proposal && <AccessProposalCard proposal={m.proposal} sending={pending.includes(m.proposal.proposal_id)} error={proposalErrors[m.proposal.proposal_id]} onConfirm={()=>void confirm(m.proposal!.proposal_id)} onRefresh={()=>void loadHistory()}/>}
-        </article>)}{busy && <p role="status">AI-buddy готовит ответ…</p>}<div ref={end}/>
+        </article>)}{busy && <p role="status">Готовим ответ…</p>}<div ref={end}/>
       </div></div><div ref={composer} className="chat-composer">{!suggestionsDismissed && !messages.length && !loading && <div className="suggestion-list">{['Как настроить рабочее окружение?','Как оформить отгул?','Какие правила работы с персональными данными?'].map(q=><button key={q} className="suggestion-pill" disabled={busy || restoring} onClick={()=>void send(q)}>{q}</button>)}</div>}<form className="chat-input-bar" onClick={()=>textarea.current?.focus()} onSubmit={e=>{e.preventDefault();void send();}}>
         <textarea ref={textarea} rows={1} aria-label="Вопрос помощнику" placeholder="Введите вопрос" title="Enter — отправить, Shift + Enter — новая строка" disabled={restoring} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send();}}}/>
 
-        <button type="submit" className="buddy-send-button" aria-label="Отправить сообщение" disabled={busy || restoring || !input.trim()}><Icon name="send"/></button>
       </form></div></main>
     </div>
     <dialog ref={helpDialog} className="buddy-help-dialog" aria-labelledby="buddy-help-title" onClick={e=>{if(e.target===e.currentTarget)helpDialog.current?.close();}}>

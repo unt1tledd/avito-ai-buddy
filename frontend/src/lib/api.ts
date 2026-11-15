@@ -188,10 +188,12 @@ export async function fetchOnboardingRoadmap(userId:string):Promise<OnboardingRo
   // Older servers omit step.track. Keep the full plan usable without
   // inventing track membership or silently hiding unclassified steps.
   const groupingAvailable=steps.length>0 && steps.every(step=>Boolean(step.track));
-  if(groupingAvailable) {
-    for(const step of steps)if(!tracks.some(track=>track.track===step.track))tracks.push({track:step.track!,display_name:step.track!});
-  }
-  return {assigned:true,steps,tracks,groupingAvailable,assignedTrack:data.track || undefined};
+  // Buttons correspond to the actual groups in the assigned steps.
+  // Context only supplies their display names and authoritative current step.
+  const assignedTracks=groupingAvailable
+    ? [...new Set(steps.map(step=>step.track!))].map(track=>tracks.find(item=>item.track===track) || {track,display_name:track})
+    : tracks;
+  return {assigned:true,steps,tracks:assignedTracks,groupingAvailable,assignedTrack:data.track || undefined};
 }
 export async function toggleStep(userId:string, step:OnboardingStep): Promise<void> {
   await request(`/v1/step/${encodeURIComponent(userId)}/${encodeURIComponent(step.step_id)}/completion`,
@@ -231,4 +233,34 @@ export function stepQuestion(step: OnboardingStep): string {
   return step.action_type === 'access_request'
     ? `Как получить доступ для шага «${step.title}»?${step.resource_id ? ` Ресурс: ${step.resource_id}.` : ''}`
     : `Как выполнить шаг адаптации «${step.title}»?`;
+}
+
+export interface ConversationProposal { proposal: Proposal; conversationId: string; timestamp: string }
+export async function fetchConversationProposals(conversations:Conversation[]):Promise<{items:ConversationProposal[]; failed:number}> {
+  const items:ConversationProposal[]=[];
+  let index=0,failed=0;
+  await Promise.all(Array.from({length:Math.min(4,conversations.length)},async()=>{
+    while(index<conversations.length) {
+      const chat=conversations[index++];
+      try {
+        const found=new Map<string,ConversationProposal>();
+        const tokens=new Set<string>();
+        let token='';
+        do {
+          if(tokens.has(token))throw new Error('Repeated history page');
+          tokens.add(token);
+          const page=await fetchHistory(token,chat.id);
+          for(const message of page.messages)if(message.proposal) {
+            const previous=found.get(message.proposal.proposal_id);
+            if(!previous || Date.parse(message.timestamp)>Date.parse(previous.timestamp))found.set(message.proposal.proposal_id,{proposal:message.proposal,conversationId:chat.id,timestamp:message.timestamp});
+          }
+          token=page.next;
+        } while(token);
+        items.push(...found.values());
+      } catch { failed++; }
+    }
+  }));
+  const final=(status:string)=>['approved','rejected'].includes(status);
+  items.sort((a,b)=>Number(final(a.proposal.status))-Number(final(b.proposal.status)) || (Date.parse(b.timestamp)||0)-(Date.parse(a.timestamp)||0));
+  return {items,failed};
 }
