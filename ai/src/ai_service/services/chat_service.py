@@ -2,16 +2,20 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ..agents.agent import Agent, CONTEXT_LIMIT_ANSWER, MAX_SOURCE_BYTES, NO_KNOWLEDGE, json_size
+from ..agents.agent import Agent, MAX_SOURCE_BYTES, json_size
 from ..clients.resilient_llm import ModelUnavailable
 from ..core.diagnostics import logger, operation
-from ..rag.onboarding import snapshot_answer
 from ..schemas.contracts import (
     Actor, ChatActor, ChatResponse, CitedSource, MAX_RESPONSE_SOURCES, Message, OnboardingPlan, SearchResult,
 )
-from ..schemas.support import TEMPLATES, needs_safety_routing
+from ..schemas.support import IMMEDIATE_SAFETY_ANSWER, needs_safety_fallback
 
 
+LEXICAL_NO_KNOWLEDGE = (
+    "В доступных материалах недостаточно сведений, чтобы ответить на вопрос. "
+    "Рекомендую обратиться с этим вопросом к вашему наставнику."
+)
+LEXICAL_CONTEXT_LIMIT = "Найденные материалы слишком объёмные. Уточните вопрос, чтобы сузить поиск."
 LEXICAL_FALLBACK_NOTICE = "AI временно недоступен."
 MAX_EXCERPT_CHARS = 400
 
@@ -29,7 +33,7 @@ def lexical_answer(result: SearchResult) -> ChatResponse:
             sources.append(source)
             seen.add(source.id)
     if not sources:
-        text = CONTEXT_LIMIT_ANSWER if result.hits else NO_KNOWLEDGE
+        text = LEXICAL_CONTEXT_LIMIT if result.hits else LEXICAL_NO_KNOWLEDGE
         return ChatResponse(answer=LEXICAL_FALLBACK_NOTICE + "\n\n" + text, sources=[])
     parts = [LEXICAL_FALLBACK_NOTICE + " Ниже — найденные материалы, которые могут помочь:"]
     for index, source in enumerate(sources, 1):
@@ -76,22 +80,23 @@ class ChatService:
             raise TimeoutError
         with operation("chat.answer"):
             async with asyncio.timeout_at(deadline):
-                snapshot = None if needs_safety_routing(message) else snapshot_answer(message, onboarding_plans)
-                if snapshot is not None:
-                    return snapshot
                 if self.agent is None:
                     raise ChatUnavailable("Knowledge chat is unavailable.")
                 profile = Actor(user_id=actor.user_id, team=actor.team, role=actor.role)
                 try:
-                    return await self.agent.answer(
-                        message, profile, deadline=deadline,
-                        onboarding_plans=onboarding_plans, history=history,
-                    )
-                except ModelUnavailable as error:
+                    # Reserve recovery time for the whole primary path, not just
+                    # LLM calls: embeddings, history and tools share this budget.
+                    async with asyncio.timeout_at(deadline - self.agent.fallback_reserve):
+                        return await self.agent.answer(
+                            message, profile, deadline=deadline,
+                            onboarding_plans=onboarding_plans, history=history,
+                        )
+                except (ModelUnavailable, TimeoutError) as error:
                     if asyncio.get_running_loop().time() >= deadline:
                         raise TimeoutError from error
-                    if needs_safety_routing(message):
-                        return ChatResponse(answer=TEMPLATES["immediate_safety"], sources=[])
-                    logger.warning("event=chat_fallback reason=%s", error.reason, extra={"reason": error.reason})
+                    if needs_safety_fallback(message):
+                        return ChatResponse(answer=IMMEDIATE_SAFETY_ANSWER, sources=[])
+                    reason = error.reason if isinstance(error, ModelUnavailable) else "answer_budget_exhausted"
+                    logger.warning("event=chat_fallback reason=%s", reason, extra={"reason": reason})
                     # Query is the original user question, never model output or unverified history.
                     return lexical_answer(await self.agent.knowledge.search_lexical(message, profile))

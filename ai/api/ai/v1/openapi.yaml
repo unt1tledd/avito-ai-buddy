@@ -157,11 +157,11 @@ components:
           title: Onboarding Plans
           description: Optional onboarding tracks supplied by Chat, each with its
             current step or null. Step action_type is context only, not an instruction
-            to execute an action. The model formulates search queries before retrieval,
-            using the resolved step when relevant. Ambiguous step references across
-            multiple active tracks require clarification before search and generation.
-            Onboarding context is accepted only through this field and is limited
-            to 128 KiB of JSON context, including string escaping for the model request.
+            to execute an action. The planner formulates a context-aware search query
+            for every message before final generation. The final model can clarify
+            ambiguous step references after retrieval. Onboarding context is accepted
+            only through this field and is limited to 128 KiB of JSON context, including
+            string escaping for the model request.
         history:
           items:
             $ref: '#/components/schemas/Message'
@@ -259,10 +259,10 @@ components:
           type: array
           maxItems: 6
           title: Source Ids
-          description: Source IDs stored with a past assistant reply. Source-free
-            replies are excluded unless their complete text matches a service-defined
-            clarification question or conversational template; every listed source must still be accessible to
-            the current actor.
+          description: Source IDs stored with a past assistant reply. Every listed
+            source must still be accessible to the current actor. Source-free replies
+            without citation markers are retained only as untrusted conversation context,
+            not evidence of facts or access rights. Chat must preserve source metadata.
       additionalProperties: false
       type: object
       required:

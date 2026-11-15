@@ -26,8 +26,6 @@ dev = [
 
 [tool.setuptools.package-data]
 "ai_service.agents" = ["prompts/*.txt"]
-"ai_service.rag" = ["track_aliases.toml"]
-"ai_service.schemas" = ["resources/*.json"]
 "ai_service.repositories" = ["sql/*.sql"]
 
 [tool.pytest.ini_options]

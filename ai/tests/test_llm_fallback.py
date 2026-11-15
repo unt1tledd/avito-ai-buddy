@@ -137,7 +137,7 @@ def test_overall_deadline_still_cancels_slow_lexical_fallback(settings, monkeypa
 
 @pytest.mark.parametrize('after_search', [False, True])
 def test_safety_route_is_preserved_during_model_outage(settings, monkeypatch, after_search):
-    from ai_service.schemas.support import TEMPLATES
+    from ai_service.schemas.support import IMMEDIATE_SAFETY_ANSWER
 
     async def unexpected(*args, **kwargs):
         pytest.fail('Potential danger reached lexical recovery')
@@ -148,7 +148,7 @@ def test_safety_route_is_preserved_during_model_outage(settings, monkeypatch, af
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, 'Я сейчас хочу причинить себе вред')
     assert response.status_code == 200
-    assert response.json() == {'answer': TEMPLATES['immediate_safety'], 'sources': []}
+    assert response.json() == {'answer': IMMEDIATE_SAFETY_ANSWER, 'sources': []}
 
 
 def test_model_time_budget_leaves_time_for_fallback(settings, monkeypatch):
