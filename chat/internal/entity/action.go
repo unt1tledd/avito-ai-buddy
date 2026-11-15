@@ -1,5 +1,7 @@
 package entity
 
+import "time"
+
 // Action is an access proposal attached to an assistant message: the intern
 // may confirm it, which sends an access request to the task service.
 type Action struct {
@@ -8,6 +10,7 @@ type Action struct {
 	ResourceID    string
 	ResourceLabel string
 	AccessLevel   string
+	CreatedAt     time.Time
 	AccessRequest *AccessRequest
 }
 

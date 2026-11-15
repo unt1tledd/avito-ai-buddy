@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"avito-ai-buddy/chat/internal/entity"
 	xerrors "avito-ai-buddy/chat/internal/errors"
 	"avito-ai-buddy/chat/internal/port"
 )
+
+const proposalTTL = 24 * time.Hour
 
 type repository interface {
 	GetByID(ctx context.Context, userID, proposalID int64) (*entity.Action, error)
@@ -40,7 +43,7 @@ func NewService(actions repository, outbox outboxRepository, auth port.TokenVali
 
 // ConfirmProposal enqueues an access request for the proposal. The request is
 // created once (idempotent by proposal); re-confirming a FAILED dispatch
-// resets the outbox message so the worker tries again.
+// resets the outbox message while the proposal is still valid.
 func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID string) (entity.AccessRequest, error) {
 	userID, err := s.auth.ValidateToken(ctx, token)
 	if err != nil {
@@ -62,6 +65,7 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 		if proposal == nil {
 			return xerrors.ErrProposalNotFound
 		}
+		expiresAt := proposal.CreatedAt.Add(proposalTTL)
 
 		if proposal.AccessRequest != nil {
 			request = *proposal.AccessRequest
@@ -77,6 +81,9 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 				// return the saved request without dispatching again.
 				return nil
 			}
+			if !time.Now().Before(expiresAt) {
+				return xerrors.ErrProposalExpired
+			}
 			// The dispatch failed after all retries: re-confirmation resets
 			// the outbox message so the worker tries again.
 			request.Status = "pending_dispatch"
@@ -89,6 +96,9 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 			return nil
 		}
 
+		if !time.Now().Before(expiresAt) {
+			return xerrors.ErrProposalExpired
+		}
 		request.Status = "pending_dispatch"
 		if err := s.actions.SaveAccessRequest(txCtx, actionID, request); err != nil {
 			return fmt.Errorf("save request status: %w", err)

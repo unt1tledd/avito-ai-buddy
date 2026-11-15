@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
@@ -71,7 +72,7 @@ func TestConfirmProposalEnqueuesAccessRequest(t *testing.T) {
 			txCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
-			proposal := entity.Action{ID: 42, ResourceID: "repo", AccessLevel: "read"}
+			proposal := entity.Action{ID: 42, ResourceID: "repo", AccessLevel: "read", CreatedAt: time.Now()}
 			pending := entity.AccessRequest{Status: "pending_dispatch"}
 			var savedRequest *entity.AccessRequest
 			var queued *entity.OutboxMessage
@@ -153,6 +154,8 @@ func TestConfirmProposalEnqueuesAccessRequest(t *testing.T) {
 
 func TestConfirmProposalDoesNotEnqueueAgain(t *testing.T) {
 	approved := entity.AccessRequest{TaskID: "task-1", Status: "approved"}
+	pending := entity.AccessRequest{Status: "pending_dispatch"}
+	expired := time.Now().Add(-proposalTTL - time.Minute)
 	for _, tc := range []struct {
 		name     string
 		proposal *entity.Action
@@ -162,15 +165,31 @@ func TestConfirmProposalDoesNotEnqueueAgain(t *testing.T) {
 	}{
 		{
 			name:     "already dispatched",
-			proposal: &entity.Action{ID: 42, AccessRequest: &approved},
+			proposal: &entity.Action{ID: 42, CreatedAt: expired, AccessRequest: &pending},
 			status:   entity.OutboxStatusSuccess,
-			want:     approved,
+			want:     pending,
 		},
 		{
 			name:     "dispatch still in progress",
-			proposal: &entity.Action{ID: 42, AccessRequest: &approved},
+			proposal: &entity.Action{ID: 42, CreatedAt: expired, AccessRequest: &pending},
 			status:   entity.OutboxStatusInProgress,
+			want:     pending,
+		},
+		{
+			name:     "expired approved proposal still returns its status",
+			proposal: &entity.Action{ID: 42, CreatedAt: expired, AccessRequest: &approved},
 			want:     approved,
+		},
+		{
+			name:     "expired proposal cannot be confirmed",
+			proposal: &entity.Action{ID: 42, CreatedAt: expired},
+			wantErr:  chaterrors.ErrProposalExpired,
+		},
+		{
+			name:     "expired proposal cannot restart failed dispatch",
+			proposal: &entity.Action{ID: 42, CreatedAt: expired, AccessRequest: &pending},
+			status:   entity.OutboxStatusFailed,
+			wantErr:  chaterrors.ErrProposalExpired,
 		},
 		{name: "proposal not found", wantErr: chaterrors.ErrProposalNotFound},
 	} {
@@ -215,7 +234,7 @@ func TestConfirmProposalDoesNotEnqueueAgain(t *testing.T) {
 func TestConfirmProposalRequeuesFailedDispatch(t *testing.T) {
 	ctx := t.Context()
 	failed := entity.AccessRequest{TaskID: "task-1", Status: "failed_dispatch"}
-	proposal := &entity.Action{ID: 42, AccessRequest: &failed}
+	proposal := &entity.Action{ID: 42, CreatedAt: time.Now(), AccessRequest: &failed}
 	var saved entity.AccessRequest
 	var resetKey string
 	var sent bool
