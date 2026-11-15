@@ -36,7 +36,7 @@ func TestGetTeamID(t *testing.T) {
 					t.Fatalf("unexpected request: %s %s", r.Method, r.URL)
 				}
 				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
-			})}, "http://user.test/")
+			})}, "http://user.test/", 64<<10)
 			id, err := client.GetTeamID(t.Context(), 42)
 			if id != tc.wantID || (err == nil) != (tc.wantID != 0) ||
 				errors.Is(err, taskerrors.ErrInvalidInput) != tc.permanent {

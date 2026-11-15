@@ -58,6 +58,8 @@ func (s *chatServer) SendMessage(ctx context.Context, req *chatpb.SendMessageReq
 		case errors.Is(err, chaterrors.ErrAuthUnavailable):
 			s.logger.Error("auth dependency unavailable", zap.String("rpc", "SendMessage"), zap.String("request_id", observability.RequestID(ctx)), zap.Error(err))
 			return nil, status.Error(codes.Unavailable, chaterrors.ErrAuthUnavailable.Error())
+		case errors.Is(err, chaterrors.ErrInvalidMessageLength):
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		case errors.Is(err, chaterrors.ErrIdempotencyKeyReused):
 			return nil, status.Error(codes.AlreadyExists, chaterrors.ErrIdempotencyKeyReused.Error())
 		case errors.Is(err, chaterrors.ErrReplyInProgress):

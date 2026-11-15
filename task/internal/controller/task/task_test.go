@@ -23,13 +23,17 @@ func (s serviceStub) ListPending(_ context.Context, teamID, afterID int64, limit
 	return s.list(teamID, afterID, limit)
 }
 
+func (s serviceStub) GetUserTasks(_ context.Context, userID, afterID int64, limit int32) ([]entity.AccessRequest, error) {
+	return s.list(userID, afterID, limit)
+}
+
 func (s serviceStub) Decide(_ context.Context, decision entity.Decision) (entity.AccessRequest, error) {
 	return s.decide(decision)
 }
 
 func TestControllerAuthorizationAndValidation(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	controller := NewController(nil, logger, "test-token")
+	controller := NewController(nil, logger, "test-token", nil, 50)
 	auth := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))
 
 	if _, err := controller.ListPending(t.Context(), &taskv1.ListPendingRequest{TeamId: 7}); status.Code(err) != codes.Unauthenticated {
@@ -56,12 +60,12 @@ func TestControllerAuthorizationAndValidation(t *testing.T) {
 
 func TestListPendingUsesDefaultLimitAndEncodesStatus(t *testing.T) {
 	tasks := serviceStub{list: func(teamID, afterID int64, limit int32) ([]entity.AccessRequest, error) {
-		if teamID != 7 || afterID != 305 || limit != 50 {
+		if teamID != 7 || afterID != 305 || limit != 20 {
 			t.Fatalf("unexpected pagination: %d, %d, %d", teamID, afterID, limit)
 		}
 		return []entity.AccessRequest{{ID: 306, Status: entity.Pending}}, nil
 	}}
-	controller := NewController(tasks, slog.Default(), "test-token")
+	controller := NewController(tasks, slog.Default(), "test-token", nil, 20)
 	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))
 	got, err := controller.ListPending(ctx, &taskv1.ListPendingRequest{TeamId: 7, AfterId: 305})
 	if err != nil || len(got.GetTasks()) != 1 ||
@@ -79,12 +83,51 @@ func TestDecidePassesDecisionAndMapsConflict(t *testing.T) {
 		}
 		return entity.AccessRequest{}, taskerrors.ErrAlreadyDecided
 	}}
-	controller := NewController(tasks, slog.Default(), "test-token")
+	controller := NewController(tasks, slog.Default(), "test-token", nil, 50)
 	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))
 	_, err := controller.Decide(ctx, &taskv1.DecideRequest{TaskId: 305, Decision: &taskv1.Decision{
 		TeamId: 7, DecidedByUserId: 51, Status: taskv1.AccessRequestStatus_ACCESS_REQUEST_STATUS_APPROVED, ExternalRequestId: "ext-1",
 	}})
 	if status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("Decide: %v, want AlreadyExists", err)
+	}
+}
+
+type tokenValidatorStub func(context.Context, string) (int64, error)
+
+func (f tokenValidatorStub) ValidateToken(ctx context.Context, token string) (int64, error) {
+	return f(ctx, token)
+}
+
+func TestGetUserTasksRequiresOwnerAndUsesSessionUser(t *testing.T) {
+	auth := tokenValidatorStub(func(_ context.Context, token string) (int64, error) {
+		if token != "intern-token" {
+			return 0, taskerrors.ErrInvalidToken
+		}
+		return 42, nil
+	})
+	tasks := serviceStub{list: func(userID, afterID int64, limit int32) ([]entity.AccessRequest, error) {
+		if userID != 42 || afterID != 7 || limit != 50 {
+			t.Fatalf("unexpected user or pagination: %d, %d, %d", userID, afterID, limit)
+		}
+		return []entity.AccessRequest{{ID: 8, UserID: userID, Status: entity.Approved}}, nil
+	}}
+	controller := NewController(tasks, slog.Default(), "test-token", auth, 50)
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer intern-token"))
+
+	got, err := controller.GetUserTasks(ctx, &taskv1.GetUserTasksRequest{UserId: 42, AfterId: 7})
+	if err != nil || len(got.GetTasks()) != 1 ||
+		got.GetTasks()[0].GetStatus() != taskv1.AccessRequestStatus_ACCESS_REQUEST_STATUS_APPROVED {
+		t.Fatalf("GetUserTasks for owner: %v, %v", got, err)
+	}
+	if _, err := controller.GetUserTasks(ctx, &taskv1.GetUserTasksRequest{UserId: 43}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("GetUserTasks for another user: %v", err)
+	}
+	if _, err := controller.GetUserTasks(t.Context(), &taskv1.GetUserTasksRequest{UserId: 42}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("GetUserTasks without a token: %v", err)
+	}
+	tracker := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))
+	if _, err := controller.GetUserTasks(tracker, &taskv1.GetUserTasksRequest{UserId: 42}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("GetUserTasks with tracker credentials: %v", err)
 	}
 }

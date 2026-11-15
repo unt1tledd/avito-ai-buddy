@@ -1,5 +1,6 @@
 import React from 'react';
 import { Proposal, statusLabel } from '../lib/api';
+import { MessageLink } from './MessageContent';
 
 export function AccessProposalCard({proposal, sending, error, onConfirm, onRefresh}: {
   proposal: Proposal; sending: boolean; error?: string; onConfirm: () => void; onRefresh?: () => void;
@@ -31,7 +32,7 @@ export function AccessProposalCard({proposal, sending, error, onConfirm, onRefre
       </svg></span>
       <div><span className="proposal-eyebrow">Заявка на доступ</span><h3>{proposal.resource_label || proposal.resource_id}</h3></div>
     </header>
-    <dl className="proposal-details"><div><dt>Ресурс</dt><dd>{proposal.resource_id}</dd></div><div><dt>Уровень доступа</dt><dd>{proposal.access_level}</dd></div>{proposal.tracker_issue_key && <div><dt>Номер заявки</dt><dd>{proposal.tracker_issue_key}</dd></div>}</dl>
+    <dl className="proposal-details"><div><dt>Ресурс</dt><dd><MessageLink value={proposal.resource_id}/></dd></div><div><dt>Уровень доступа</dt><dd>{proposal.access_level}</dd></div>{proposal.tracker_issue_key && <div><dt>Номер заявки</dt><dd>{proposal.tracker_issue_key}</dd></div>}</dl>
     <ol className="proposal-progress" aria-label="Этапы заявки">{['Подготовлена','Отправлена','Решение'].map((label,index)=><li key={label} className={index<=stage?'is-reached':''} aria-current={index===stage?'step':undefined}><span aria-hidden="true"/>{label}</li>)}</ol>
     <div className="proposal-feedback" role="status" aria-live="polite"><h4>{heading}</h4><p>{description}</p></div>
     {error && <div className="proposal-error" role="alert"><strong>Не удалось подтвердить отправку</strong><p>{error}</p><p>Повторная попытка проверит состояние этой же заявки.</p></div>}

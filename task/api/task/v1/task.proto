@@ -16,6 +16,13 @@ service TaskService {
     };
   }
 
+  rpc GetUserTasks(GetUserTasksRequest) returns (GetUserTasksResponse) {
+    option (google.api.http) = {
+      get: "/v1/tasks/{user_id}"
+      response_body: "tasks"
+    };
+  }
+
   rpc Decide(DecideRequest) returns (AccessRequest) {
     option (google.api.http) = {
       put: "/internal/v1/tasks/{task_id}/decision"
@@ -31,6 +38,16 @@ message ListPendingRequest {
 }
 
 message ListPendingResponse {
+  repeated AccessRequest tasks = 1;
+}
+
+message GetUserTasksRequest {
+  int64 user_id = 1 [(validate.rules).int64.gt = 0];
+  int64 after_id = 2 [(validate.rules).int64.gte = 0];
+  optional int32 limit = 3 [(validate.rules).int32 = {gte: 1, lte: 100}];
+}
+
+message GetUserTasksResponse {
   repeated AccessRequest tasks = 1;
 }
 
