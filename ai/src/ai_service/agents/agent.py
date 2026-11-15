@@ -24,7 +24,7 @@ from ..schemas.contracts import (
 )
 from ..schemas.support import (
     EMPATHY_VARIANTS, TEMPLATE_VARIANTS, TEMPLATES, EmpathyID, TemplateAnswer,
-    empathy_prefix, needs_safety_routing, template_text,
+    empathy_prefix, needs_safety_fallback, needs_safety_routing, template_text,
 )
 
 
@@ -176,7 +176,7 @@ class Agent:
     def __init__(self, model: LanguageModel, knowledge: Retriever, prompt: str, *, settings: Settings | None = None):
         settings = settings or Settings()
         self.model = ResilientModel(model, settings)
-        self.fallback_reserve = min(settings.llm_fallback_reserve_seconds, settings.chat_timeout_seconds / 2)
+        self.fallback_reserve = min(settings.llm_fallback_reserve_seconds, settings.effective_chat_timeout_seconds / 2)
         self.knowledge = knowledge
         self.prompt = (
             prompt + "\n\nРазрешённые вопросы для kind=clarification (выбери answer дословно):\n"
@@ -197,6 +197,7 @@ class Agent:
     ) -> ChatResponse:
         turn = Turn(message=message)
         safety_context = needs_safety_routing(message)
+        safety_fallback = needs_safety_fallback(message)
         # Potential danger takes priority over the deterministic step clarification.
         ambiguous, selected_plan = resolve_step_reference(message, onboarding_plans, history)
         if ambiguous and not safety_context:
@@ -234,7 +235,7 @@ class Agent:
                     deadline=deadline - self.fallback_reserve if deadline is not None else None,
                 )
             except ModelError:
-                if safety_context and not turn.tools_called:
+                if safety_fallback and not turn.tools_called:
                     return ChatResponse(answer=TEMPLATES["immediate_safety"], sources=[])
                 raise
             calls = response.calls
@@ -245,7 +246,7 @@ class Agent:
                     # A provider refusal or malformed classification must not leave
                     # a potentially endangered person with a generic gateway error.
                     # No facts/actions are generated, and timeouts still propagate.
-                    if safety_context and not turn.tools_called:
+                    if safety_fallback and not turn.tools_called:
                         return ChatResponse(answer=TEMPLATES["immediate_safety"], sources=[])
                     if error.reason != "missing_citation":
                         raise

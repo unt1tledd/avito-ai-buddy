@@ -9,7 +9,7 @@ from ..rag.onboarding import snapshot_answer
 from ..schemas.contracts import (
     Actor, ChatActor, ChatResponse, CitedSource, MAX_RESPONSE_SOURCES, Message, OnboardingPlan, SearchResult,
 )
-from ..schemas.support import TEMPLATES, needs_safety_routing
+from ..schemas.support import TEMPLATES, needs_safety_fallback, needs_safety_routing
 
 
 LEXICAL_FALLBACK_NOTICE = "AI временно недоступен."
@@ -83,15 +83,19 @@ class ChatService:
                     raise ChatUnavailable("Knowledge chat is unavailable.")
                 profile = Actor(user_id=actor.user_id, team=actor.team, role=actor.role)
                 try:
-                    return await self.agent.answer(
-                        message, profile, deadline=deadline,
-                        onboarding_plans=onboarding_plans, history=history,
-                    )
-                except ModelUnavailable as error:
+                    # Reserve recovery time for the whole primary path, not just
+                    # LLM calls: embeddings, history and tools share this budget.
+                    async with asyncio.timeout_at(deadline - self.agent.fallback_reserve):
+                        return await self.agent.answer(
+                            message, profile, deadline=deadline,
+                            onboarding_plans=onboarding_plans, history=history,
+                        )
+                except (ModelUnavailable, TimeoutError) as error:
                     if asyncio.get_running_loop().time() >= deadline:
                         raise TimeoutError from error
-                    if needs_safety_routing(message):
+                    if needs_safety_fallback(message):
                         return ChatResponse(answer=TEMPLATES["immediate_safety"], sources=[])
-                    logger.warning("event=chat_fallback reason=%s", error.reason, extra={"reason": error.reason})
+                    reason = error.reason if isinstance(error, ModelUnavailable) else "answer_budget_exhausted"
+                    logger.warning("event=chat_fallback reason=%s", reason, extra={"reason": reason})
                     # Query is the original user question, never model output or unverified history.
                     return lexical_answer(await self.agent.knowledge.search_lexical(message, profile))
