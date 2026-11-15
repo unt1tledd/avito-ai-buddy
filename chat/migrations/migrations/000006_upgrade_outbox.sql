@@ -1,6 +1,0 @@
--- +goose Up
-ALTER TYPE chat.outbox_status ADD VALUE IF NOT EXISTS 'FAILED';
-
-ALTER TABLE chat.outbox
-    ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ;

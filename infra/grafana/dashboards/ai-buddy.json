@@ -1,0 +1,279 @@
+{
+  "uid": "ai-buddy-overview",
+  "title": "AI Buddy — Overview",
+  "schemaVersion": 41,
+  "version": 1,
+  "tags": [
+    "ai-buddy",
+    "observability"
+  ],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "preload": true,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Chat · p95",
+      "description": "Successful SendMessage requests, rolling 5-minute window.",
+      "type": "stat",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, {service=\"chat\"} |= \"RPC completed\" | json rpc=\"rpc\", code=\"code\", duration_ms=\"duration_ms\" | rpc=~\".*/SendMessage\" | code=\"OK\" | unwrap duration_ms | __error__=\"\" [5m]) by (service)",
+          "legendFormat": "Chat",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Chat · Requests / sec",
+      "description": "SendMessage requests, rolling 5-minute window.",
+      "type": "stat",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate({service=\"chat\"} |= \"RPC completed\" | json rpc=\"rpc\", code=\"code\" | rpc=~\".*/SendMessage\" | __error__=\"\" [5m]))",
+          "legendFormat": "Traffic",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Chat · Server errors",
+      "description": "Share of SendMessage requests ending in Internal, Unavailable, DeadlineExceeded or Unknown.",
+      "type": "stat",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "100 * (sum(rate({service=\"chat\"} |= \"RPC completed\" | json rpc=\"rpc\", code=\"code\" | rpc=~\".*/SendMessage\" | __error__=\"\" | code=~\"Internal|Unavailable|DeadlineExceeded|Unknown\" [5m])) or vector(0)) / (sum(rate({service=\"chat\"} |= \"RPC completed\" | json rpc=\"rpc\", code=\"code\" | rpc=~\".*/SendMessage\" | __error__=\"\" [5m])) > 0)",
+          "legendFormat": "Errors",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Latency p95 · Chat and LLM",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, {service=\"chat\"} |= \"RPC completed\" | json rpc=\"rpc\", code=\"code\", duration_ms=\"duration_ms\" | rpc=~\".*/SendMessage\" | code=\"OK\" | unwrap duration_ms | __error__=\"\" [5m]) by (service)",
+          "legendFormat": "Chat · SendMessage",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, {service=\"ai\"} |= \"llm.respond\" | json operation=\"operation\", result=\"result\", duration_ms=\"duration_ms\" | operation=\"llm.respond\" | result=\"ok\" | unwrap duration_ms | __error__=\"\" [5m]) by (service)",
+          "legendFormat": "AI · LLM",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Monitoring targets · Up",
+      "description": "1 = Prometheus scraped the target. 0 = scrape failed.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "up{job=~\"grafana|loki|alloy|prometheus\"}",
+          "legendFormat": "{{job}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Chat and AI · Recent logs",
+      "description": "",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 11
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{service=~\"chat|ai\"}",
+          "legendFormat": "",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      }
+    }
+  ]
+}

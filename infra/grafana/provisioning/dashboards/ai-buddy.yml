@@ -1,0 +1,9 @@
+apiVersion: 1
+
+providers:
+  - name: AI Buddy
+    type: file
+    folder: AI Buddy
+    disableDeletion: true
+    options:
+      path: /etc/grafana/dashboards

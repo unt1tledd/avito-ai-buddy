@@ -7,7 +7,79 @@ package conversation
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const create = `-- name: Create :one
+INSERT INTO chat.conversation (user_id, is_default)
+VALUES ($1, false)
+RETURNING id, title, created_at
+`
+
+type CreateRow struct {
+	ID        int64              `json:"id"`
+	Title     string             `json:"title"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) Create(ctx context.Context, userID int64) (CreateRow, error) {
+	row := q.db.QueryRow(ctx, create, userID)
+	var i CreateRow
+	err := row.Scan(&i.ID, &i.Title, &i.CreatedAt)
+	return i, err
+}
+
+const delete = `-- name: Delete :execrows
+UPDATE chat.conversation SET deleted_at = now()
+WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+`
+
+type DeleteParams struct {
+	UserID int64 `json:"user_id"`
+	ID     int64 `json:"id"`
+}
+
+func (q *Queries) Delete(ctx context.Context, arg DeleteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, delete, arg.UserID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteAll = `-- name: DeleteAll :exec
+UPDATE chat.conversation SET deleted_at = now()
+WHERE user_id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) DeleteAll(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteAll, userID)
+	return err
+}
+
+const getByID = `-- name: GetByID :one
+SELECT id, user_id, created_at FROM chat.conversation
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+`
+
+type GetByIDParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+type GetByIDRow struct {
+	ID        int64              `json:"id"`
+	UserID    int64              `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetByID(ctx context.Context, arg GetByIDParams) (GetByIDRow, error) {
+	row := q.db.QueryRow(ctx, getByID, arg.ID, arg.UserID)
+	var i GetByIDRow
+	err := row.Scan(&i.ID, &i.UserID, &i.CreatedAt)
+	return i, err
+}
 
 const getOrCreate = `-- name: GetOrCreate :one
 INSERT INTO chat.conversation (user_id)
@@ -16,9 +88,53 @@ ON CONFLICT (user_id) WHERE is_default AND deleted_at IS NULL DO UPDATE SET user
 RETURNING id, user_id, created_at
 `
 
-func (q *Queries) GetOrCreate(ctx context.Context, userID int64) (ChatConversation, error) {
+type GetOrCreateRow struct {
+	ID        int64              `json:"id"`
+	UserID    int64              `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetOrCreate(ctx context.Context, userID int64) (GetOrCreateRow, error) {
 	row := q.db.QueryRow(ctx, getOrCreate, userID)
-	var i ChatConversation
+	var i GetOrCreateRow
 	err := row.Scan(&i.ID, &i.UserID, &i.CreatedAt)
 	return i, err
+}
+
+const list = `-- name: List :many
+SELECT c.id,
+       COALESCE((SELECT left(m.body, 80) FROM chat.message m
+                 WHERE m.conversation_id = c.id AND m.role = 'user'
+                 ORDER BY m.id LIMIT 1), c.title)::text AS title,
+       c.created_at
+FROM chat.conversation c
+WHERE c.user_id = $1 AND c.deleted_at IS NULL
+  AND (NOT c.is_default OR EXISTS (SELECT 1 FROM chat.message m WHERE m.conversation_id = c.id))
+ORDER BY c.created_at DESC, c.id DESC
+`
+
+type ListRow struct {
+	ID        int64              `json:"id"`
+	Title     string             `json:"title"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) List(ctx context.Context, userID int64) ([]ListRow, error) {
+	rows, err := q.db.Query(ctx, list, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRow
+	for rows.Next() {
+		var i ListRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

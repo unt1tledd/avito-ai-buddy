@@ -4,26 +4,27 @@ package conversation
 
 import (
 	"context"
-	"github.com/jackc/pgx/v5"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
+	"errors"
 	"strconv"
 
 	"avito-ai-buddy/chat/internal/entity"
 	sqlc "avito-ai-buddy/chat/internal/repository/conversation/sqlc"
 	"avito-ai-buddy/pkg/transactor"
+
+	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // PostgresRepository stores intern conversations in PostgreSQL.
 type PostgresRepository struct {
 	queries sqlc.Querier
-	db      sqlc.DBTX
 }
 
 // NewPostgresRepository builds the repository over a pgx pool or transaction.
 func NewPostgresRepository(db sqlc.DBTX) *PostgresRepository {
-	return &PostgresRepository{queries: sqlc.New(db), db: db}
+	return &PostgresRepository{queries: sqlc.New(db)}
 }
 
 // getQueries prefers the transaction from the context when present, so all
@@ -35,51 +36,53 @@ func (r *PostgresRepository) getQueries(ctx context.Context) sqlc.Querier {
 	return r.queries
 }
 
-// GetOrCreate returns the intern's conversation, creating it on first use.
+// GetOrCreate loads the selected conversation or opens the default one.
 func (r *PostgresRepository) GetOrCreate(ctx context.Context, userID int64) (*entity.Conversation, error) {
-
-	db := r.db
-	if tx, err := transactor.ExtractTx(ctx); err == nil {
-		db = tx
-	}
+	queries := r.getQueries(ctx)
 	selected := metadata.ValueFromIncomingContext(ctx, "x-conversation-id")
-	result := &entity.Conversation{}
-	var row pgx.Row
-	if len(selected) > 0 {
-		id, err := strconv.ParseInt(selected[0], 10, 64)
-		if err != nil || id <= 0 {
-			return nil, status.Error(codes.InvalidArgument, "invalid conversation ID")
-		}
-		row = db.QueryRow(ctx, `SELECT id,user_id,created_at FROM chat.conversation WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL`, id, userID)
-	} else {
-		row, err := r.getQueries(ctx).GetOrCreate(ctx, userID)
+	if len(selected) == 0 {
+		row, err := queries.GetOrCreate(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
 		return &entity.Conversation{ID: row.ID, UserID: row.UserID, CreatedAt: row.CreatedAt.Time}, nil
 	}
-	if err := row.Scan(&result.ID, &result.UserID, &result.CreatedAt); err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, status.Error(codes.NotFound, "conversation not found")
-		}
-		return nil, err
+	id, err := strconv.ParseInt(selected[0], 10, 64)
+	if err != nil || id <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation ID")
 	}
-	return result, nil
-}
-
-// GetForTask routes asynchronous task updates to the proposal's own conversation.
-func (r *PostgresRepository) GetForTask(ctx context.Context, userID int64, taskID string) (*entity.Conversation, error) {
-	db := r.db
-	if tx, err := transactor.ExtractTx(ctx); err == nil {
-		db = tx
-	}
-	result := &entity.Conversation{}
-	err := db.QueryRow(ctx, `SELECT c.id,c.user_id,c.created_at FROM chat.conversation c JOIN chat.message m ON m.conversation_id=c.id JOIN chat.action a ON a.message_id=m.id WHERE c.user_id=$1 AND a.task_id=$2 AND c.deleted_at IS NULL LIMIT 1`, userID, taskID).Scan(&result.ID, &result.UserID, &result.CreatedAt)
-	if err == pgx.ErrNoRows {
-		return nil, nil
+	row, err := queries.GetByID(ctx, sqlc.GetByIDParams{ID: id, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, status.Error(codes.NotFound, "conversation not found")
 	}
 	if err != nil {
 		return nil, err
 	}
+	return &entity.Conversation{ID: row.ID, UserID: row.UserID, CreatedAt: row.CreatedAt.Time}, nil
+}
+
+func (r *PostgresRepository) List(ctx context.Context, userID int64) ([]entity.ConversationSummary, error) {
+	rows, err := r.getQueries(ctx).List(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]entity.ConversationSummary, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, entity.ConversationSummary{ID: row.ID, Title: row.Title, CreatedAt: row.CreatedAt.Time})
+	}
 	return result, nil
+}
+
+func (r *PostgresRepository) Create(ctx context.Context, userID int64) (entity.ConversationSummary, error) {
+	row, err := r.getQueries(ctx).Create(ctx, userID)
+	return entity.ConversationSummary{ID: row.ID, Title: row.Title, CreatedAt: row.CreatedAt.Time}, err
+}
+
+func (r *PostgresRepository) Delete(ctx context.Context, userID, id int64) (bool, error) {
+	affected, err := r.getQueries(ctx).Delete(ctx, sqlc.DeleteParams{UserID: userID, ID: id})
+	return affected > 0, err
+}
+
+func (r *PostgresRepository) DeleteAll(ctx context.Context, userID int64) error {
+	return r.getQueries(ctx).DeleteAll(ctx, userID)
 }

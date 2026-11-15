@@ -7,9 +7,11 @@ var (
 	ErrInvalidToken           = errors.New("invalid or expired access token")
 	ErrMissingConfirmationIDs = errors.New("user and proposal IDs are required")
 	ErrProposalNotFound       = errors.New("proposal not found")
+	ErrProposalExpired        = errors.New("Срок предложения истёк. Попросите помощника создать новое")
 )
 
 var (
+	ErrInvalidMessageLength = errors.New("invalid message length")
 	ErrGetConversation      = errors.New("get chat conversation")
 	ErrListMessages         = errors.New("list conversation messages")
 	ErrGetUserContext       = errors.New("get user context")

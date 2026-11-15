@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"avito-ai-buddy/pkg/observability"
+
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
@@ -23,6 +24,7 @@ import (
 	"avito-ai-buddy/pkg/health"
 	"avito-ai-buddy/pkg/transactor"
 
+	authhttp "avito-ai-buddy/task/internal/adapter/auth/http"
 	chatkafka "avito-ai-buddy/task/internal/adapter/chat/kafka"
 	userhttp "avito-ai-buddy/task/internal/adapter/user/http"
 	"avito-ai-buddy/task/internal/config"
@@ -47,13 +49,17 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	}
 
 	repository := taskrepo.NewPostgresRepository(db)
-	users := userhttp.NewClient(&http.Client{Timeout: 3 * time.Second}, cfg.UserBaseURL)
+	users := userhttp.NewClient(&http.Client{Timeout: cfg.UserTimeout}, cfg.UserBaseURL, cfg.UserMaxResponseBytes, cfg.UserServiceToken)
 	service := taskusecase.NewService(repository, users)
-	publisher := chatkafka.NewPublisher(cfg.Brokers(), cfg.TaskEventsTopic)
+	publisher := chatkafka.NewPublisher(cfg.Brokers(), cfg.TaskEventsTopic, cfg.KafkaWriter)
 	defer func() { _ = publisher.Close() }()
 	outboxWorker := outbox.New(logger, outboxrepo.PostgresRepository{}, transactor.NewTransactor(db), publisher, cfg.Outbox)
 
-	taskController := taskctrl.NewController(service, logger, cfg.TrackerToken)
+	auth := authhttp.NewClient(&http.Client{
+		Timeout:       cfg.AuthTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}, cfg.AuthBaseURL, "/v1/auth/validate", cfg.AuthMaxResponseBytes)
+	taskController := taskctrl.NewController(service, logger, cfg.TrackerToken, auth, cfg.DefaultPageSize)
 	grpcListener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.GRPCAddr)
 	if err != nil {
 		return fmt.Errorf("listen for tracker gRPC: %w", err)
@@ -61,9 +67,10 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	defer func() { _ = grpcListener.Close() }()
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
 		level := slog.LevelInfo
-		if code == codes.Internal || code == codes.Unavailable || code == codes.Unknown {
+		switch code {
+		case codes.Internal, codes.Unavailable, codes.Unknown:
 			level = slog.LevelError
-		} else if code == codes.DeadlineExceeded {
+		case codes.DeadlineExceeded:
 			level = slog.LevelWarn
 		}
 		logger.Log(ctx, level, "RPC completed", "rpc", method, "code", code.String(),
@@ -79,7 +86,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	defer func() { _ = gatewayConn.Close() }()
 	group, ctx := errgroup.WithContext(ctx)
 	checkKafka := publisher.CheckTopics(cfg.TaskCommandsTopic, cfg.TaskEventsTopic, cfg.KafkaConsumer.DLQTopic)
-	server, err := newHTTPServer(ctx, gatewayConn, db.Ping, checkKafka)
+	server, err := newHTTPServer(ctx, gatewayConn, cfg.HTTPServer, db.Ping, checkKafka)
 	if err != nil {
 		return err
 	}
@@ -106,14 +113,14 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	group.Go(func() error {
 		<-ctx.Done()
 		healthServer.Shutdown()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		shutdownErr := server.Shutdown(shutdownCtx)
 		cancel()
 		if shutdownErr != nil {
 			_ = server.Close()
 		}
 
-		timer := time.AfterFunc(5*time.Second, grpcServer.Stop)
+		timer := time.AfterFunc(cfg.ShutdownTimeout, grpcServer.Stop)
 		defer timer.Stop()
 		grpcServer.GracefulStop()
 		if shutdownErr != nil {
@@ -122,7 +129,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 		return nil
 	})
 	group.Go(func() error {
-		return kafkaconsumer.RunConsumer(ctx, logger, cfg.Brokers(), cfg.TaskCommandsTopic, cfg.KafkaConsumer,
+		return kafkaconsumer.RunConsumer(ctx, logger, cfg.Brokers(), cfg.TaskCommandsTopic, cfg.KafkaConsumer, cfg.KafkaWriter,
 			kafkaconsumer.NewCreateHandler(service))
 	})
 	group.Go(func() error {
@@ -144,7 +151,7 @@ func connectGateway(addr *net.TCPAddr) (*grpc.ClientConn, error) {
 	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
 }
 
-func newHTTPServer(ctx context.Context, conn *grpc.ClientConn, pingDB, checkKafka func(context.Context) error) (*http.Server, error) {
+func newHTTPServer(ctx context.Context, conn *grpc.ClientConn, cfg config.HTTPServerConfig, pingDB, checkKafka func(context.Context) error) (*http.Server, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, trackerJSON{JSONPb: &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{UseProtoNames: true},
@@ -159,11 +166,11 @@ func newHTTPServer(ctx context.Context, conn *grpc.ClientConn, pingDB, checkKafk
 		return nil, fmt.Errorf("register tracker HTTP routes: %w", err)
 	}
 	return &http.Server{
-		Handler:           http.MaxBytesHandler(mux, 8<<10),
-		ReadHeaderTimeout: 3 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       30 * time.Second,
+		Handler:           http.MaxBytesHandler(mux, cfg.MaxBodyBytes),
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		ReadTimeout:       cfg.ReadTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
 	}, nil
 }
 

@@ -105,7 +105,7 @@ func TestConsumeCommitAfterProcessingOrDLQAck(t *testing.T) {
 				}
 				return nil
 			})
-			cfg := config.KafkaConsumerConfig{MaxAttempts: 3, RetryBaseBackoff: time.Millisecond, RetryMaxBackoff: 2 * time.Millisecond}
+			cfg := config.KafkaConsumerConfig{DLQPublishTimeout: time.Second, MaxAttempts: 3, RetryBaseBackoff: time.Millisecond, RetryMaxBackoff: 2 * time.Millisecond}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 			if err := consume(ctx, logger, reader, dlq, handler, cfg); err != nil {
 				t.Fatal(err)

@@ -13,6 +13,7 @@ type CreateAccessRequest struct {
 
 // TaskEvent is a task status change consumed from Kafka.
 type TaskEvent struct {
+	ProposalID        int64  `json:"proposal_id,string,omitempty"`
 	UserID            string `json:"user_id"`
 	TaskID            string `json:"task_id"`
 	ExternalRequestID string `json:"external_request_id,omitempty"`

@@ -31,6 +31,8 @@ services:
       context: .
       dockerfile: user/Dockerfile
     environment:
+      USER_SERVICE_TOKEN: "${USER_SERVICE_TOKEN:?Set USER_SERVICE_TOKEN in .env}"
+      AUTH_BASE_URL: "http://auth:8080"
       GRPC_HOST: "0.0.0.0"
       USER_SEED_DEMO: "${USER_SEED_DEMO:-true}"
       POSTGRES_HOST: db
@@ -102,8 +104,7 @@ services:
       EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS:-}"
       EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
       KNOWLEDGE_PROCESSING_APPROVED: "${KNOWLEDGE_PROCESSING_APPROVED:-false}"
-      EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS}"
-      EMBEDDING_INDEX_VERSION: "${EMBEDDING_INDEX_VERSION:-1}"
+      CHAT_TIMEOUT_SECONDS: "${CHAT_TIMEOUT_SECONDS:-60}"
       RETRIEVAL_MODE: "${RETRIEVAL_MODE:-hybrid}"
       SEARCH_CANDIDATES: "${SEARCH_CANDIDATES:-10}"
       SEARCH_TOP_K: "${SEARCH_TOP_K:-3}"
@@ -178,6 +179,7 @@ services:
       context: .
       dockerfile: chat/Dockerfile
     environment:
+      USER_SERVICE_TOKEN: "${USER_SERVICE_TOKEN:?Set USER_SERVICE_TOKEN in .env}"
       CHAT_POSTGRES_URL: "postgresql://chat_app:${CHAT_DB_PASSWORD}@db:5432/chat?sslmode=disable"
       AUTH_BASE_URL: "http://auth:8080"
       CHAT_HTTP_PORT: "8080"
@@ -188,6 +190,7 @@ services:
       AI_SERVICE_TOKEN: "${AI_SERVICE_TOKEN:-}"
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_TASK_COMMANDS_TOPIC: "task.access_requests.create"
+      CHAT_PROPOSAL_TTL: "${CHAT_PROPOSAL_TTL:-24h}"
     depends_on:
       db:
         condition: service_healthy
@@ -212,6 +215,7 @@ services:
       context: .
       dockerfile: onboarding/Dockerfile
     environment:
+      USER_SERVICE_TOKEN: "${USER_SERVICE_TOKEN:?Set USER_SERVICE_TOKEN in .env}"
       ONBOARDING_POSTGRES_URL: "postgresql://onboarding_app:${ONBOARDING_DB_PASSWORD}@db:5432/onboarding?sslmode=disable"
       ONBOARDING_SERVICE_TOKEN: "${ONBOARDING_SERVICE_TOKEN:-}"
       ONBOARDING_SEED_DEMO: "${ONBOARDING_SEED_DEMO:-true}"
@@ -237,6 +241,7 @@ services:
       context: .
       dockerfile: task/Dockerfile
     environment:
+      USER_SERVICE_TOKEN: "${USER_SERVICE_TOKEN:?Set USER_SERVICE_TOKEN in .env}"
       TASK_DATABASE_URL: "postgresql://task_app:${TASK_DB_PASSWORD}@db:5432/task_db?sslmode=disable"
       TASK_TRACKER_TOKEN: "${TASK_TRACKER_TOKEN:-}"
       TASK_USER_BASE_URL: "http://user:8080"
@@ -304,8 +309,10 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/ai-buddy.json
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     depends_on: [loki, prometheus]
 
@@ -313,3 +320,7 @@ volumes:
   postgres_data:
   ai_context_cache:
   kafka_data:
+  loki_data:
+  alloy_data:
+  prometheus_data:
+  grafana_data:

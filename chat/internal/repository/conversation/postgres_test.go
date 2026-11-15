@@ -18,7 +18,7 @@ func TestGetOrCreate(t *testing.T) {
 	queries := mocks.NewMockQuerier(gomock.NewController(t))
 	repo := &PostgresRepository{queries: queries}
 	createdAt := time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)
-	queries.EXPECT().GetOrCreate(ctx, int64(7)).Return(sqlc.ChatConversation{
+	queries.EXPECT().GetOrCreate(ctx, int64(7)).Return(sqlc.GetOrCreateRow{
 		ID: 21, UserID: 7, CreatedAt: pgtype.Timestamptz{Time: createdAt, Valid: true},
 	}, nil)
 
@@ -29,7 +29,7 @@ func TestGetOrCreate(t *testing.T) {
 	}
 
 	dbErr := errors.New("database unavailable")
-	queries.EXPECT().GetOrCreate(ctx, int64(8)).Return(sqlc.ChatConversation{}, dbErr)
+	queries.EXPECT().GetOrCreate(ctx, int64(8)).Return(sqlc.GetOrCreateRow{}, dbErr)
 	got, err = repo.GetOrCreate(ctx, 8)
 	if got != nil || !errors.Is(err, dbErr) {
 		t.Fatalf("GetOrCreate() = %+v, %v, want nil, %v", got, err, dbErr)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
@@ -12,6 +13,7 @@ import (
 	sqlc "avito-ai-buddy/chat/internal/repository/action/sqlc"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/mock/gomock"
 )
 
@@ -31,27 +33,30 @@ func TestCreate(t *testing.T) {
 
 func TestGetByID(t *testing.T) {
 	dbErr := errors.New("database unavailable")
+	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name    string
-		row     sqlc.ChatAction
+		row     sqlc.GetByIDRow
 		dbErr   error
 		want    *entity.Action
 		wantErr error
 	}{
 		{
 			name: "confirmed proposal",
-			row: sqlc.ChatAction{
+			row: sqlc.GetByIDRow{
 				ID: 42, MessageID: 12, ResourceID: "repo", ResourceLabel: "Repository", AccessLevel: "read",
 				TaskID: "task-1", ExternalRequestID: "request-1", Status: "approved",
+				CreatedAt: pgtype.Timestamptz{Time: createdAt, Valid: true},
 			},
 			want: &entity.Action{
 				ID: 42, MessageID: 12, ResourceID: "repo", ResourceLabel: "Repository", AccessLevel: "read",
+				CreatedAt:     createdAt,
 				AccessRequest: &entity.AccessRequest{TaskID: "task-1", ExternalRequestID: "request-1", Status: "approved"},
 			},
 		},
 		{
 			name: "unconfirmed proposal",
-			row:  sqlc.ChatAction{ID: 42, MessageID: 12},
+			row:  sqlc.GetByIDRow{ID: 42, MessageID: 12},
 			want: &entity.Action{ID: 42, MessageID: 12},
 		},
 		{name: "missing proposal", dbErr: fmt.Errorf("query proposal: %w", pgx.ErrNoRows)},

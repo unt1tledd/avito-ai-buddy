@@ -62,6 +62,18 @@ func (r *PostgresRepository) ListPending(ctx context.Context, teamID, afterID in
 	return requests, nil
 }
 
+func (r *PostgresRepository) GetUserTasks(ctx context.Context, userID, afterID int64, limit int32) ([]entity.AccessRequest, error) {
+	rows, err := r.queries.GetUserTasks(ctx, sqlc.GetUserTasksParams{UserID: userID, AfterID: afterID, PageSize: limit})
+	if err != nil {
+		return nil, err
+	}
+	requests := make([]entity.AccessRequest, 0, len(rows))
+	for _, row := range rows {
+		requests = append(requests, toEntity(row))
+	}
+	return requests, nil
+}
+
 func (r *PostgresRepository) Decide(ctx context.Context, decision entity.Decision) (entity.AccessRequest, error) {
 	var result entity.AccessRequest
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
@@ -93,7 +105,7 @@ func (r *PostgresRepository) Decide(ctx context.Context, decision entity.Decisio
 
 		result = toEntity(row)
 		payload, err := json.Marshal(entity.StatusEvent{
-			UserID: result.UserID, TaskID: result.ID, Status: result.Status,
+			UserID: result.UserID, TaskID: result.ID, ProposalID: result.ProposalID, Status: result.Status,
 			ExternalRequestID: result.ExternalRequestID,
 		})
 		if err != nil {

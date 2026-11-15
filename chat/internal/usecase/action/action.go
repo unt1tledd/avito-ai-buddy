@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"avito-ai-buddy/chat/internal/entity"
 	xerrors "avito-ai-buddy/chat/internal/errors"
@@ -30,17 +31,19 @@ type actionService struct {
 	actions repository
 	outbox  outboxRepository
 	tx      port.Transactor
+	ttl     time.Duration
 }
 
 // NewService builds the action usecase: it needs the proposal repository,
-// the outbox repository, the auth token validator and a transaction manager.
-func NewService(actions repository, outbox outboxRepository, auth port.TokenValidator, tx port.Transactor) *actionService {
-	return &actionService{actions: actions, outbox: outbox, auth: auth, tx: tx}
+// the outbox repository, the auth token validator, a transaction manager and
+// the proposal lifetime configured for the service.
+func NewService(actions repository, outbox outboxRepository, auth port.TokenValidator, tx port.Transactor, ttl time.Duration) *actionService {
+	return &actionService{actions: actions, outbox: outbox, auth: auth, tx: tx, ttl: ttl}
 }
 
 // ConfirmProposal enqueues an access request for the proposal. The request is
 // created once (idempotent by proposal); re-confirming a FAILED dispatch
-// resets the outbox message so the worker tries again.
+// resets the outbox message while the proposal is still valid.
 func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID string) (entity.AccessRequest, error) {
 	userID, err := s.auth.ValidateToken(ctx, token)
 	if err != nil {
@@ -62,9 +65,13 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 		if proposal == nil {
 			return xerrors.ErrProposalNotFound
 		}
+		expiresAt := proposal.CreatedAt.Add(s.ttl)
 
 		if proposal.AccessRequest != nil {
 			request = *proposal.AccessRequest
+			if request.Status == "approved" || request.Status == "rejected" {
+				return nil
+			}
 			status, _, err := s.outbox.GetMessageStatus(txCtx, idempotencyKey)
 			if err != nil {
 				return fmt.Errorf("load outbox message: %w", err)
@@ -73,6 +80,9 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 				// Already dispatched successfully or still in progress:
 				// return the saved request without dispatching again.
 				return nil
+			}
+			if !time.Now().Before(expiresAt) {
+				return xerrors.ErrProposalExpired
 			}
 			// The dispatch failed after all retries: re-confirmation resets
 			// the outbox message so the worker tries again.
@@ -86,6 +96,9 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 			return nil
 		}
 
+		if !time.Now().Before(expiresAt) {
+			return xerrors.ErrProposalExpired
+		}
 		request.Status = "pending_dispatch"
 		if err := s.actions.SaveAccessRequest(txCtx, actionID, request); err != nil {
 			return fmt.Errorf("save request status: %w", err)

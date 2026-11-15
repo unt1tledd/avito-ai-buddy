@@ -43,6 +43,7 @@ type Decision struct {
 
 // StatusEvent is the JSON contract consumed by Chat.
 type StatusEvent struct {
+	ProposalID        int64  `json:"proposal_id,string"`
 	UserID            int64  `json:"user_id,string"`
 	TaskID            int64  `json:"task_id,string"`
 	Status            Status `json:"status"`

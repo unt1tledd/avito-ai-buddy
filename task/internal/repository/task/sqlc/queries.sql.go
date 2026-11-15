@@ -147,6 +147,52 @@ func (q *Queries) GetByTeam(ctx context.Context, arg GetByTeamParams) (TaskAcces
 	return i, err
 }
 
+const getUserTasks = `-- name: GetUserTasks :many
+SELECT id, proposal_id, user_id, team_id, resource_id, access_level, status, created_at, decided_at, decided_by_user_id, decision_comment, external_request_id FROM task.access_request
+WHERE user_id = $1 AND id > $2
+ORDER BY id
+LIMIT $3
+`
+
+type GetUserTasksParams struct {
+	UserID   int64
+	AfterID  int64
+	PageSize int32
+}
+
+func (q *Queries) GetUserTasks(ctx context.Context, arg GetUserTasksParams) ([]TaskAccessRequest, error) {
+	rows, err := q.db.Query(ctx, getUserTasks, arg.UserID, arg.AfterID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TaskAccessRequest
+	for rows.Next() {
+		var i TaskAccessRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProposalID,
+			&i.UserID,
+			&i.TeamID,
+			&i.ResourceID,
+			&i.AccessLevel,
+			&i.Status,
+			&i.CreatedAt,
+			&i.DecidedAt,
+			&i.DecidedByUserID,
+			&i.DecisionComment,
+			&i.ExternalRequestID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertEvent = `-- name: InsertEvent :exec
 INSERT INTO task.outbox (task_id, payload) VALUES ($1, $2)
 `
