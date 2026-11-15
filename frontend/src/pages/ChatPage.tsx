@@ -147,7 +147,6 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
   const loadChats=useCallback(async()=>{try{setChats(await listConversations());}catch(e){setError(errorText(e));}},[]);
   const [next,setNext] = useState('');
   const [loading,setLoading] = useState(true);
-  const [live,setLive] = useState('Подключаем уведомления…');
   const end = useRef<HTMLDivElement>(null);
   const loadHistory = useCallback(async (older=false, page='') => {
     const id=activeRef.current;
@@ -219,14 +218,14 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     const connect=()=>{
       if(stopped) return;
       socket=new WebSocket(`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/v1/chat/events`);
-      socket.onopen=()=>{if(stopped)return;attempts=0;setLive('Уведомления подключены');updates.schedule();roadmapUpdates.schedule();};
+      socket.onopen=()=>{if(stopped)return;attempts=0;updates.schedule();roadmapUpdates.schedule();};
       socket.onmessage=event=>{
         if(stopped)return;
         if(shouldRefreshHistory(event.data,activeRef.current))updates.schedule();
         try {const type=JSON.parse(event.data)?.type;if(type==='message.created')chatUpdates.schedule();if(['message.created','task.status_changed','access_request.failed'].includes(type))roadmapUpdates.schedule();} catch { /* Ignore malformed events. */ }
       };
-      socket.onclose=()=>{if(stopped)return;setLive('Восстанавливаем уведомления…');
-        timer=setTimeout(()=>{refreshSession().then(connect).catch(()=>{if(!stopped){setLive('Уведомления недоступны. Можно обновить данные вручную.');timer=setTimeout(connect,30000);}});},Math.min(1000*2**attempts++,30000));};
+      socket.onclose=()=>{if(stopped)return;
+        timer=setTimeout(()=>{refreshSession().then(connect).catch(()=>{if(!stopped){timer=setTimeout(connect,30000);}});},Math.min(1000*2**attempts++,30000));};
     }; connect();
     return ()=>{stopped=true;updates.stop();chatUpdates.stop();roadmapUpdates.stop();clearTimeout(timer);clearInterval(poll);window.removeEventListener('focus',resume);document.removeEventListener('visibilitychange',resume);socket?.close();};
   },[loadHistory,loadChats]);

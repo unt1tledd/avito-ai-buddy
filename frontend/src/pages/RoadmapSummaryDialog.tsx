@@ -5,7 +5,8 @@ export function nextSummaryStep(data:OnboardingRoadmap,step:OnboardingStep):Onbo
   // The flat legacy plan does not establish track membership.
   if(!data.groupingAvailable || !step.track)return undefined;
   const steps=data.steps.filter(item=>item.track===step.track);
-  return steps.slice(steps.findIndex(item=>item.step_id===step.step_id)+1).find(item=>!item.completed);
+  const index=steps.findIndex(item=>item.step_id===step.step_id);
+  return index<0?undefined:steps.slice(index+1).find(item=>!item.completed);
 }
 export function RoadmapSummaryDialog({data,loading,error,onRetry,onClose,onOpen}:{data:OnboardingRoadmap|null;loading:boolean;error:boolean;onRetry:()=>void;onClose:()=>void;onOpen:(step?:OnboardingStep)=>void}) {
   const dialog=useRef<HTMLDialogElement>(null);

@@ -117,20 +117,24 @@ export function RoadmapPage({userId,chatBusy,onSelectStepQuestion,refreshVersion
   const [error,setError]=useState('');
   const [savingStep,setSavingStep]=useState('');
   const mounted=useRef(false);
-  const revision=useRef(0);
+  const revision=useRef({value:0});
   const saving=useRef(false);
   const refresh=useCallback(async(force=false)=>{
     if(saving.current && !force)return;
-    const requestRevision=++revision.current;
+    const requestRevision=++revision.current.value;
     setLoading(true);
     try {
       const snapshot=await fetchOnboardingRoadmap(userId);
-      if(mounted.current && requestRevision===revision.current){setData(snapshot);setError('');}
+      if(mounted.current && requestRevision===revision.current.value){setData(snapshot);setError('');}
     } catch(reason) {
-      if(mounted.current && requestRevision===revision.current)setError(errorText(reason));
-    } finally {if(mounted.current && requestRevision===revision.current)setLoading(false);}
+      if(mounted.current && requestRevision===revision.current.value)setError(errorText(reason));
+    } finally {if(mounted.current && requestRevision===revision.current.value)setLoading(false);}
   },[userId]);
-  useEffect(()=>{mounted.current=true;return ()=>{mounted.current=false;revision.current++;};},[]);
+  useEffect(()=>{
+    const requestRevision=revision.current;
+    mounted.current=true;
+    return ()=>{mounted.current=false;requestRevision.value++;};
+  },[]);
   useEffect(()=>{void refresh();},[refresh,refreshVersion]);
   useEffect(()=>{
     const resume=()=>{if(document.visibilityState==='visible' && !saving.current)void refresh();};
@@ -141,7 +145,7 @@ export function RoadmapPage({userId,chatBusy,onSelectStepQuestion,refreshVersion
   },[refresh]);
   const toggle=async(step:OnboardingStep)=>{
     if(saving.current)return;
-    saving.current=true;revision.current++;setLoading(false);setSavingStep(step.step_id);setError('');
+    saving.current=true;revision.current.value++;setLoading(false);setSavingStep(step.step_id);setError('');
     try {
       await toggleStep(userId,step);
       if(mounted.current)await refresh(true);

@@ -55,7 +55,7 @@ export function reconcileProposal(current:Proposal, incoming:Proposal):Proposal 
 export function mergeChatMessages(current:ChatMessage[], incoming:ChatMessage[]):ChatMessage[] {
   const merged=new Map(current.map(message=>[message.id,message]));
   for(const message of incoming) {
-    if(message.sender==='user' && !message.id.startsWith('local-')) {
+    if(message.sender==='user' && !message.id.startsWith('local-') && !merged.has(message.id)) {
       const optimistic=[...merged.values()].find(item=>item.id.startsWith('local-') && item.text===message.text && Math.abs(Date.parse(item.timestamp)-Date.parse(message.timestamp))<120000);
       if(optimistic)merged.delete(optimistic.id);
     }

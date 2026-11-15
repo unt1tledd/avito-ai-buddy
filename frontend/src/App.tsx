@@ -3,15 +3,15 @@ import { ChatPage } from './pages/ChatPage';
 import { AuthForm } from './pages/AuthForm';
 import { SetupPage } from './pages/SetupPage';
 import { AppBrand, ThemeToggle } from './pages/AppChrome';
-import { currentUser, refreshSession, login, logout, request, ApiError } from './lib/api';
+import { currentUser, refreshSession, login, logout, request, ApiError, UserMetadata } from './lib/api';
 export default function App() {
   const [user, setUser] = useState('');
-  const [metadata,setMetadata] = useState<any>(null);
+  const [metadata,setMetadata] = useState<UserMetadata|null>(null);
   const [profile,setProfile] = useState<'loading'|'missing'|'ready'|'error'>('loading');
   const [profileError,setProfileError] = useState('');
   const checkProfile = async (id:string) => {
     setProfile('loading');
-    try { setMetadata(await request(`/v1/user/${encodeURIComponent(id)}/metadata`));setProfile('ready'); }
+    try { setMetadata(await request<UserMetadata>(`/v1/user/${encodeURIComponent(id)}/metadata`));setProfile('ready'); }
     catch(e) { if(e instanceof ApiError && e.status===404) setProfile('missing');
       else {setProfile('error');setProfileError(e instanceof Error?e.message:'Не удалось загрузить профиль');} }
   };

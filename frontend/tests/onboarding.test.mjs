@@ -651,3 +651,67 @@ test('UI preferences tolerate blocked browser storage',()=>{
     if(session)Object.defineProperty(globalThis,'sessionStorage',session);else delete globalThis.sessionStorage;
   }
 });
+
+test('reloading already confirmed history must not erase a new identical pending message',()=>{
+  const saved={id:'server-1',sender:'user',text:'Привет',timestamp:'2026-11-15T12:00:00Z'};
+  const pending={...saved,id:'local-new',timestamp:'2026-11-15T12:00:10Z'};
+  const messages=mergeChatMessages([saved,pending],[saved]);
+  assert.deepEqual(messages.map(message=>message.id),['server-1','local-new']);
+});
+
+test('roadmap preview cannot choose a next step if the requested current step is absent',()=>{
+  const {nextSummaryStep}=load('pages/RoadmapSummaryDialog.tsx');
+  const data={assigned:true,groupingAvailable:true,tracks:[],steps:[{step_id:'first',track:'tech',completed:false}]};
+  assert.equal(nextSummaryStep(data,{step_id:'missing',track:'tech',completed:false}),undefined);
+});
+
+test('successful malformed JSON is an error, while empty 204 and non-JSON server failures are supported',async()=>{
+  globalThis.fetch=async()=>new Response('not JSON',{status:200});
+  await assert.rejects(api.request('/test'),SyntaxError);
+  globalThis.fetch=async()=>new Response(null,{status:204});
+  assert.deepEqual(await api.request('/test'),{});
+  globalThis.fetch=async()=>new Response('<html>Bad gateway</html>',{status:502});
+  await assert.rejects(api.request('/test'),error=>error instanceof api.ApiError && error.status===502);
+});
+
+test('HTTP timeout still applies when the caller provides its own cancellation signal',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const caller=new AbortController();
+  let signal;
+  globalThis.fetch=async(_path,init)=>{
+    signal=init.signal;
+    return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Timeout','AbortError')),{once:true}));
+  };
+  const result=api.request('/slow',{signal:caller.signal});
+  const outcome=result.catch(error=>error);
+  t.mock.timers.tick(120000);
+  const aborted=signal.aborted;
+  caller.abort(); // Clean up even when testing a broken timeout implementation.
+  await outcome;
+  assert.equal(aborted,true);
+});
+
+test('HTTP timeout includes reading a stalled response body',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  let started;
+  const reading=new Promise(resolve=>{started=resolve;});
+  globalThis.fetch=async(_path,init)=>({
+    status:200,ok:true,
+    json(){started();return new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new DOMException('Timeout','AbortError')),{once:true}));},
+  });
+  const result=api.request('/slow-body');
+  const rejected=assert.rejects(result,error=>error.name==='AbortError');
+  await reading;
+  t.mock.timers.tick(120000);
+  await rejected;
+});
+
+test('caller cancellation forwards its original reason to the HTTP request',async()=>{
+  const caller=new AbortController();
+  const reason=new DOMException('Cancelled by user','AbortError');
+  globalThis.fetch=async(_path,init)=>new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true}));
+  const result=api.request('/cancelled',{signal:caller.signal});
+  const rejected=assert.rejects(result,error=>error===reason);
+  caller.abort(reason);
+  await rejected;
+});
