@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChatMessage, fetchHistory, sendChatMessage, confirmAccessProposal, refreshSession, Conversation, listConversations, createConversation, deleteConversation, recentConversations } from '../lib/api';
+import { ChatMessage, fetchHistory, sendChatMessage, confirmAccessProposal, refreshSession, Conversation, listConversations, createConversation, deleteConversation, recentConversations, friendlyError } from '../lib/api';
+import { MessageCopyButton } from './MessageCopyButton';
+import { LogoutDialog } from './LogoutDialog';
 import { AccessProposalCard } from './AccessProposalCard';
 import { MessageText, MessageSources } from './MessageContent';
 import { AppBrand, ThemeToggle } from './AppChrome';
 import { HomePage } from './HomePage';
 import { RoadmapPage } from './OnboardingPage';
 import { historyRefreshQueue, shouldRefreshHistory, mergeChatMessages, reconcileProposal } from '../lib/chatEvents';
+import { ProfileDialog, readMenuOpen, saveMenuOpen, readProfileDialog, saveProfileDialog } from '../lib/uiPreferences';
 type Screen = 'home' | 'roadmap' | 'chat' | 'profile';
 type IconName = Screen | 'panel' | 'chevron' | 'plus' | 'help' | 'logout' | 'close' | 'sun' | 'moon' | 'trash';
 function Icon({name}: {name: IconName}) {
@@ -28,8 +31,10 @@ function Icon({name}: {name: IconName}) {
 }
 const screenTitles: Record<Screen, string> = {home:'Главная', roadmap:'Roadmap', chat:'Чат AI-buddy', profile:'Профиль'};
 
-const errorText = (e:unknown) => e instanceof Error ? (e.message === 'send message failed' ? 'Помощник не смог обработать вопрос. Повтори попытку; если ошибка повторится, требуется проверка сервиса ИИ.' : e.message) : 'Не удалось выполнить запрос';
-export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:string;onLogout:()=>void;dark:boolean;onToggleTheme:()=>void;profile:{name:string;email:string;team?:string;track?:string}}) {
+const errorText = friendlyError;
+export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:string;onLogout:()=>Promise<void>;dark:boolean;onToggleTheme:()=>void;profile:{name:string;email:string;team?:string;track?:string}}) {
+  const [profileDialog,setProfileDialog]=useState<ProfileDialog>(()=>readProfileDialog(userId));
+  const changeProfileDialog=(dialog:ProfileDialog)=>{saveProfileDialog(userId,dialog);setProfileDialog(dialog);};
   const [messages,setMessages] = useState<ChatMessage[]>([]);
   const [input,setInput] = useState('');
   const [error,setError] = useState('');
@@ -46,7 +51,8 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     return 'home';
   });
   const [roadmapVersion,setRoadmapVersion]=useState(0);
-  const [menuOpen,setMenuOpen] = useState(()=>!window.matchMedia('(max-width: 760px)').matches);
+  const [menuOpen,setMenuOpen] = useState(()=>readMenuOpen(userId,!window.matchMedia('(max-width: 760px)').matches));
+  useEffect(()=>{saveMenuOpen(userId,menuOpen);},[userId,menuOpen]);
   const toggleMenu=()=>setMenuOpen(open=>!open);
   const [historyOpen,setHistoryOpen] = useState(()=>{
     try { return localStorage.getItem(`buddy-history-open-${userId}`)==='true'; } catch { return false; }
@@ -89,6 +95,11 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
   useEffect(()=>{drag.current=null;setDragging(false);},[menuOpen]);
   const finishResize=()=>{drag.current=null;setDragging(false);};
   const helpDialog = useRef<HTMLDialogElement>(null);
+  useEffect(()=>{
+    const dialog=helpDialog.current;
+    if(profileDialog==='help'){if(dialog && !dialog.open)dialog.showModal();}
+    else if(dialog?.open)dialog.close();
+  },[profileDialog]);
   const initials = profile.name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('') || 'Я';
   const navigate=(nextScreen:Screen)=>{
     setScreen(nextScreen);
@@ -136,7 +147,6 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
   const loadChats=useCallback(async()=>{try{setChats(await listConversations());}catch(e){setError(errorText(e));}},[]);
   const [next,setNext] = useState('');
   const [loading,setLoading] = useState(true);
-  const [live,setLive] = useState('Подключаем уведомления…');
   const end = useRef<HTMLDivElement>(null);
   const loadHistory = useCallback(async (older=false, page='') => {
     const id=activeRef.current;
@@ -208,14 +218,14 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     const connect=()=>{
       if(stopped) return;
       socket=new WebSocket(`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/v1/chat/events`);
-      socket.onopen=()=>{if(stopped)return;attempts=0;setLive('Уведомления подключены');updates.schedule();roadmapUpdates.schedule();};
+      socket.onopen=()=>{if(stopped)return;attempts=0;updates.schedule();roadmapUpdates.schedule();};
       socket.onmessage=event=>{
         if(stopped)return;
         if(shouldRefreshHistory(event.data,activeRef.current))updates.schedule();
         try {const type=JSON.parse(event.data)?.type;if(type==='message.created')chatUpdates.schedule();if(['message.created','task.status_changed','access_request.failed'].includes(type))roadmapUpdates.schedule();} catch { /* Ignore malformed events. */ }
       };
-      socket.onclose=()=>{if(stopped)return;setLive('Восстанавливаем уведомления…');
-        timer=setTimeout(()=>{refreshSession().then(connect).catch(()=>{if(!stopped){setLive('Уведомления недоступны. Можно обновить данные вручную.');timer=setTimeout(connect,30000);}});},Math.min(1000*2**attempts++,30000));};
+      socket.onclose=()=>{if(stopped)return;
+        timer=setTimeout(()=>{refreshSession().then(connect).catch(()=>{if(!stopped){timer=setTimeout(connect,30000);}});},Math.min(1000*2**attempts++,30000));};
     }; connect();
     return ()=>{stopped=true;updates.stop();chatUpdates.stop();roadmapUpdates.stop();clearTimeout(timer);clearInterval(poll);window.removeEventListener('focus',resume);document.removeEventListener('visibilitychange',resume);socket?.close();};
   },[loadHistory,loadChats]);
@@ -226,11 +236,12 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     if(!chatID){try{const chat=await createConversation();chatID=chat.id;activateChat(chatID);setMessages([]);setChats(prev=>recentConversations([chat,...prev.filter(item=>item.id!==chat.id)]));}catch(e){setError(errorText(e));sending.current=false;setBusy(false);return;}}
     if(!failedId){setInput('');setMessages(prev=>[...prev,{id:`local-${key}`,sender:'user',text,timestamp:new Date().toISOString()}]);}
     try {const reply=await sendChatMessage(text,key,chatID);
-      setMessages(prev=>mergeChatMessages(prev.filter(m=>m.id!==failedId && m.id!==`local-${key}`),[reply]));
+      setMessages(prev=>mergeChatMessages(prev.filter(m=>m.id!==failedId),[reply]));
       await loadHistory();void loadChats();
     } catch(e){
       void loadChats();
       setMessages(prev=>[...prev.filter(m=>m.id!==failedId),{id:`error-${key}`,sender:'assistant',text:errorText(e),timestamp:new Date().toISOString(),error:true,idempotency_key:key,retry_text:text}]);
+      await loadHistory();
     } finally {sending.current=false;setBusy(false);}
   };
   const confirm=async(id:string)=>{
@@ -250,10 +261,10 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     <aside id="workspace-menu" className="buddy-sidebar" aria-label="Основное меню">
       <div className="buddy-brand"><AppBrand/><button className="buddy-icon-button buddy-sidebar-toggle" aria-label={menuOpen?'Свернуть меню':'Открыть меню'} title={menuOpen?'Свернуть меню':'Открыть меню'} aria-expanded={menuOpen} aria-controls="workspace-menu" onClick={toggleMenu}><Icon name="panel"/></button></div>
       <nav className="buddy-navigation">
-        <button className={`buddy-nav-item${screen==='home'?' is-active':''}`} aria-label="Главная" title="Главная" aria-current={screen==='home'?'page':undefined} onClick={()=>navigate('home')}><Icon name="home"/><span>Главная</span></button>
-        <button className={`buddy-nav-item${screen==='roadmap'?' is-active':''}`} aria-label="Roadmap" title="Roadmap" aria-current={screen==='roadmap'?'page':undefined} onClick={()=>navigate('roadmap')}><Icon name="roadmap"/><span>Roadmap</span></button>
+        <button className={`buddy-nav-item${screen==='home'?' is-active':''}`} aria-label="Главная" title="Главная" aria-current={screen==='home'?'page':undefined} onDoubleClick={()=>setMenuOpen(true)} onClick={()=>navigate('home')}><Icon name="home"/><span>Главная</span></button>
+        <button className={`buddy-nav-item${screen==='roadmap'?' is-active':''}`} aria-label="Roadmap" title="Roadmap" aria-current={screen==='roadmap'?'page':undefined} onDoubleClick={()=>setMenuOpen(true)} onClick={()=>navigate('roadmap')}><Icon name="roadmap"/><span>Roadmap</span></button>
         <div className={`buddy-chat-nav${screen==='chat'?' is-active':''}`}>
-          <button className="buddy-nav-item" aria-label="Чат AI-buddy" title="Чат AI-buddy" aria-current={screen==='chat'?'page':undefined} disabled={busy || restoring} onClick={()=>{newChat();setHistoryOpen(true);}}><Icon name="chat"/><span>Чат AI-buddy</span></button>
+          <button className="buddy-nav-item" aria-label="Чат AI-buddy" title="Чат AI-buddy" onDoubleClick={()=>setMenuOpen(true)} aria-current={screen==='chat'?'page':undefined} disabled={busy || restoring} onClick={()=>{navigate('chat');setHistoryOpen(true);if(!activeRef.current && chats[0])void selectChat(chats[0].id);}}><Icon name="chat"/><span>Чат AI-buddy</span></button>
           <button className="buddy-icon-button buddy-history-toggle" tabIndex={menuOpen?0:-1} aria-hidden={!menuOpen} aria-label={historyOpen?'Свернуть историю чатов':'Развернуть историю чатов'} aria-expanded={historyOpen && menuOpen} aria-controls="buddy-chat-history" onClick={()=>setHistoryOpen(open=>!open)}><span className={`buddy-chevron${historyOpen?' is-open':''}`}><Icon name="chevron"/></span></button>
         </div>
         <section id="buddy-chat-history" className={`buddy-chat-history${historyOpen && menuOpen?' is-open':''}`} aria-label="История чатов" aria-hidden={!historyOpen || !menuOpen} ref={element=>{if(element)element.inert=!historyOpen || !menuOpen;}}><div className="buddy-history-clip"><div className="buddy-history-content">
@@ -268,7 +279,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
           </>}
         </div></div></section>
       </nav>
-      <button className={`buddy-profile-link${screen==='profile'?' is-active':''}`} aria-label="Профиль" title="Профиль" aria-current={screen==='profile'?'page':undefined} onClick={()=>navigate('profile')}><span className="buddy-avatar buddy-avatar--small">{initials}</span><span><strong>Профиль</strong><small>{profile.name || 'Стажёр'}</small></span></button>
+      <button className={`buddy-profile-link${screen==='profile'?' is-active':''}`} aria-label="Профиль" title="Профиль" onDoubleClick={()=>setMenuOpen(true)} aria-current={screen==='profile'?'page':undefined} onClick={()=>navigate('profile')}><span className="buddy-avatar buddy-avatar--small">{initials}</span><span><strong>Профиль</strong><small>{profile.name || 'Стажёр'}</small></span></button>
       {menuOpen && <div className="buddy-sidebar-resize" role="separator" tabIndex={0} aria-label="Ширина меню" aria-orientation="vertical" aria-valuemin={240} aria-valuemax={maxMenuWidth} aria-valuenow={displayedMenuWidth}
         title="Потяни, чтобы изменить ширину. Двойной клик — сброс."
         onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);drag.current={pointer:e.pointerId,startX:e.clientX,startWidth:displayedMenuWidth};setDragging(true);}}
@@ -289,25 +300,26 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
         navigate('roadmap');
       }}/>}
       {screen==='roadmap' && <main className="buddy-page roadmap-page"><RoadmapPage userId={userId} chatBusy={busy || restoring} refreshVersion={roadmapVersion} onSelectStepQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}}/></main>}
-      {screen==='profile' && <main className="buddy-page buddy-profile"><div className="buddy-profile-card"><span className="buddy-avatar buddy-avatar--large">{initials}</span><h2>{profile.name || 'Стажёр'}</h2><p className="buddy-profile-caption">Твой профиль стажировки</p><dl className="buddy-profile-details"><div><dt>Почта</dt><dd>{profile.email || 'Войди повторно, чтобы отобразить почту'}</dd></div><div><dt>Команда</dt><dd>{profile.team || 'Не указана'}</dd></div><div><dt>Направление</dt><dd>{profile.track || 'Не указано'}</dd></div></dl></div><footer className="buddy-profile-actions"><button className="buddy-action-button buddy-logout" onClick={onLogout}><Icon name="logout"/>Выйти из аккаунта</button><button className="buddy-action-button" onClick={()=>helpDialog.current?.showModal()}><Icon name="help"/>Помощь</button></footer></main>}
+      {screen==='profile' && <main className="buddy-page buddy-profile"><div className="buddy-profile-card"><span className="buddy-avatar buddy-avatar--large">{initials}</span><h2>{profile.name || 'Стажёр'}</h2><p className="buddy-profile-caption">Твой профиль стажировки</p><dl className="buddy-profile-details"><div><dt>Почта</dt><dd>{profile.email || 'Войди повторно, чтобы отобразить почту'}</dd></div><div><dt>Команда</dt><dd>{profile.team || 'Не указана'}</dd></div><div><dt>Направление</dt><dd>{profile.track || 'Не указано'}</dd></div></dl></div><footer className="buddy-profile-actions"><button className="buddy-action-button buddy-logout" onClick={()=>changeProfileDialog('logout')}><Icon name="logout"/>Выйти из аккаунта</button><button className="buddy-action-button" onClick={()=>changeProfileDialog('help')}><Icon name="help"/>Помощь</button></footer></main>}
       <main ref={main} hidden={screen!=='chat'} className="chat-main buddy-chat" aria-label="Переписка с AI-buddy">
       <div className="chat-scroll-area"><div className="chat-feed-column">
-      {error && <p role="alert">{error}<button onClick={()=>void loadHistory()}>Повторить</button></p>}
+      {error && <div className="chat-error-banner" role="alert"><span><strong>Не удалось обновить чат</strong><span>{error}</span></span><button className="buddy-action-button" disabled={loading} onClick={()=>{void loadHistory();void loadChats();}}>Повторить</button></div>}
         {loading && <p>Загружаем историю…</p>}
         {next && <button disabled={busy} onClick={()=>void loadHistory(true,next)}>Загрузить предыдущие сообщения</button>}
-        {visibleMessages.map(m=><article key={m.id} className={m.sender==='user'?'user-msg-bubble':'assistant-msg-card'}>
+        {visibleMessages.map(m=><div key={m.id} className={`chat-message chat-message--${m.sender}${m.proposal || m.sources?.length?' chat-message--rich':''}`}><article className={m.sender==='user'?'user-msg-bubble':`assistant-msg-card${m.error?' assistant-msg-card--send-error':''}`}>
           <MessageText text={m.text} assistant={m.sender==='assistant'}/>
-          {m.error && <button disabled={busy} onClick={()=>void send(m.retry_text,m.idempotency_key,m.id)}>Повторить</button>}
+          {m.error && <button className="buddy-action-button chat-retry" disabled={busy} onClick={()=>void send(m.retry_text,m.idempotency_key,m.id)}>Повторить</button>}
           {!!m.sources?.length && <MessageSources sources={m.sources}/>}
           {m.proposal && <AccessProposalCard proposal={m.proposal} sending={pending.includes(m.proposal.proposal_id)} error={proposalErrors[m.proposal.proposal_id]} onConfirm={()=>void confirm(m.proposal!.proposal_id)} onRefresh={()=>void loadHistory()}/>}
-        </article>)}{busy && <p role="status">Готовим ответ…</p>}<div ref={end}/>
+        </article>{!m.error && <div className="message-actions"><MessageCopyButton text={m.text}/></div>}</div>)}{busy && <p role="status">Готовим ответ…</p>}<div ref={end}/>
       </div></div><div ref={composer} className="chat-composer">{!suggestionsDismissed && !messages.length && !loading && <div className="suggestion-list">{['Как настроить рабочее окружение?','Как оформить отгул?','Какие правила работы с персональными данными?'].map(q=><button key={q} className="suggestion-pill" disabled={busy || restoring} onClick={()=>void send(q)}>{q}</button>)}</div>}<form className="chat-input-bar" onClick={()=>textarea.current?.focus()} onSubmit={e=>{e.preventDefault();void send();}}>
         <textarea ref={textarea} rows={1} aria-label="Вопрос помощнику" placeholder="Введите вопрос" title="Enter — отправить, Shift + Enter — новая строка" disabled={restoring} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send();}}}/>
 
       </form></div></main>
     </div>
-    <dialog ref={helpDialog} className="buddy-help-dialog" aria-labelledby="buddy-help-title" onClick={e=>{if(e.target===e.currentTarget)helpDialog.current?.close();}}>
-      <div className="buddy-help-content"><button className="buddy-icon-button buddy-help-close" autoFocus aria-label="Закрыть помощь" onClick={()=>helpDialog.current?.close()}><Icon name="close"/></button><span className="buddy-state-icon"><Icon name="help"/></span><h2 id="buddy-help-title">Тут пока что пусто,<br/>мы закрыты</h2><button className="buddy-action-button" onClick={()=>helpDialog.current?.close()}>Понятно</button></div>
+    {profileDialog==='logout' && <LogoutDialog onClose={()=>changeProfileDialog('')} onLogout={async()=>{await onLogout();saveProfileDialog(userId,'');}}/>}
+    <dialog ref={helpDialog} className="buddy-help-dialog" aria-labelledby="buddy-help-title" onCancel={e=>{e.preventDefault();changeProfileDialog('');}} onClick={e=>{if(e.target===e.currentTarget)changeProfileDialog('');}}>
+      <div className="buddy-help-content"><button className="buddy-icon-button buddy-help-close" autoFocus aria-label="Закрыть помощь" onClick={()=>changeProfileDialog('')}><Icon name="close"/></button><span className="buddy-state-icon"><Icon name="help"/></span><h2 id="buddy-help-title">Тут пока что пусто,<br/>мы закрыты</h2><button className="buddy-action-button" onClick={()=>changeProfileDialog('')}>Понятно</button></div>
     </dialog>
   </div>;
 }

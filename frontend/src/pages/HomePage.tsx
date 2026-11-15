@@ -43,7 +43,7 @@ export function HomePage({userId,name,chats,busy,onChat,onQuestion,onRoadmap}:{u
       </button>
       {error && <button className="home-text-button" onClick={()=>setVersion(v=>v+1)}>Повторить загрузку плана</button>}
     </section>
-    {opened==='requests' && <RequestsDialog chats={chats} onClose={()=>setDialog('')} onChat={onChat}/>}
+    {opened==='requests' && <RequestsDialog userId={userId} onClose={()=>setDialog('')} onChat={onChat}/>}
     {opened==='roadmap' && <RoadmapSummaryDialog data={data} loading={loading} error={error} onRetry={()=>setVersion(v=>v+1)} onClose={()=>setDialog('')} onOpen={step=>{setDialog('');onRoadmap(step);}}/>}
   </main>;
 }
