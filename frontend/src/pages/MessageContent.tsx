@@ -21,6 +21,19 @@ export function MessageLink({value}:{value:string}) {
 
 // Raw HTML stays text. Only HTTP(S) links are rendered as clickable URLs.
 const markdown=new MarkdownIt({html:false,linkify:true,breaks:true});
+// Hide a known onboarding template label only in assistant prose. Code and
+// link tokens must retain their original contents and identifiers.
+markdown.core.ruler.push('assistant-step-labels',state=>{
+  if(!state.env?.assistant)return;
+  for(const block of state.tokens) {
+    let linkDepth=0;
+    for(const token of block.children || []) {
+      if(token.type==='link_open')linkDepth++;
+      if(token.type==='link_close')linkDepth--;
+      if(token.type==='text' && linkDepth===0)token.content=token.content.replace(/[ \t]*\((?:ID|идентификатор)(?:[ \t]+шага)?[ \t]*:[ \t]*(?:(?:backend|common)-\d+|dev-environment)[ \t]*\)/gi,'');
+    }
+  }
+});
 markdown.validateLink=value=>httpUrl(value)!==null;
 markdown.disable('image');
 markdown.renderer.rules.link_open=(tokens,index,options,_env,renderer)=>{
@@ -34,7 +47,7 @@ markdown.renderer.rules.table_close=()=>'</table></div>';
 
 export function MessageText({text,assistant=false}:{text:string;assistant?:boolean}) {
   const display=assistant?assistantDisplayText(text):text;
-  const html=useMemo(()=>markdown.render(display),[display]);
+  const html=useMemo(()=>markdown.render(display,{assistant}),[display,assistant]);
   return <div className="message-text message-markdown" dangerouslySetInnerHTML={{__html:html}}/>;
 }
 
