@@ -1,16 +1,16 @@
 {
   "dataset": "avito-wiki",
-  "version": "1.3",
+  "version": "1.3.2",
   "created_on": "2026-11-11",
   "synthetic": false,
-  "notice": "Смешанный корпус: 85 исходных демостатей, 59 фрагментов исходного Excel и 160 авторских учебных демоматериалов. Учебный текст не является утверждённой политикой компании.",
+  "notice": "Смешанный корпус: 85 исходных демостатей, 59 фрагментов исходного Excel и 160 авторских учебных демоматериалов; отдельно заданы правила доступа учебного приложения. Учебный текст не является утверждённой политикой компании.",
   "source_of_structure": "Пять исходных разделов из схемы пользователя и два дополнительных раздела для стажёров: адаптация и разработка. Дополнено двумя листами пользовательского Excel-чек-листа с сохранением периодов и строк. Учебное расширение: 16 авторских подразделов практики стажёра и наставника; их рекомендации не дополняют факты исходного Excel.",
   "timezone": "Europe/Moscow",
   "currency": "RUB",
   "source_domain": "wiki.avito.example",
   "links": "Домен wiki.avito.example относится только к вымышленным демостатьям. У фрагментов из Excel url=null: гиперссылок в исходнике нет.",
-  "document_count": 304,
-  "eval_case_count": 589,
+  "document_count": 312,
+  "eval_case_count": 620,
   "roles": {
     "intern": "Стажёр: общие статьи",
     "mentor": "Наставник: общие и закрытые учебные материалы, только по серверной проверке роли"
@@ -397,6 +397,26 @@
       ]
     },
     {
+      "id": "project-access",
+      "title": "Доступы учебного приложения",
+      "topics": [
+        {
+          "id": "access-requests",
+          "title": "Заявки на доступ",
+          "document_ids": [
+            "project-cluster-space-access",
+            "project-vpn-access",
+            "project-wiki-access",
+            "project-jira-access",
+            "project-grafana-access",
+            "project-sentry-access",
+            "project-redash-access",
+            "project-learning-platform-access"
+          ]
+        }
+      ]
+    },
+    {
       "id": "intern-practice",
       "title": "Практика стажёра",
       "topics": [
@@ -674,16 +694,18 @@
     "checklist_source": "sources/intern-checklist.json",
     "learning_source": "sources/learning-expansion-v1.3.json",
     "baseline_hashes": "sources/baseline-v1.2-hashes.json",
-    "builder": "build_learning_corpus.py"
+    "builder": "build_learning_corpus.py",
+    "access_resources": "sources/access-resources.json"
   },
-  "updated_on": "2026-11-13",
+  "updated_on": "2026-11-16",
   "content_origin": "mixed",
   "content_counts": {
     "synthetic": 85,
     "checklist_rows": 47,
     "checklist_summaries": 11,
     "checklist_guide": 1,
-    "authored_learning": 160
+    "authored_learning": 160,
+    "project_access": 8
   },
   "source_documents": [
     {
@@ -713,22 +735,73 @@
       "documents": 160,
       "worked_examples": 48,
       "actuality": "Авторские учебные рекомендации. Не утверждённая политика компании и не персональные результаты."
+    },
+    {
+      "id": "project-access-resources",
+      "filename": "sources/access-resources.json",
+      "type": "project_demo_configuration",
+      "documents": 8,
+      "document_ids": [
+        "project-cluster-space-access",
+        "project-vpn-access",
+        "project-wiki-access",
+        "project-jira-access",
+        "project-grafana-access",
+        "project-sentry-access",
+        "project-redash-access",
+        "project-learning-platform-access"
+      ],
+      "evaluation_case_ids": [
+        "qa-project-access-cluster",
+        "qa-project-access-team",
+        "qa-project-access-unsupported",
+        "qa-project-access-vpn-unspecified",
+        "qa-project-access-vpn-explicit",
+        "qa-project-access-vpn-unsupported",
+        "qa-project-access-vpn-negated",
+        "qa-project-access-wiki-unspecified",
+        "qa-project-access-wiki-explicit",
+        "qa-project-access-wiki-unsupported",
+        "qa-project-access-wiki-negated",
+        "qa-project-access-jira-unspecified",
+        "qa-project-access-jira-explicit",
+        "qa-project-access-jira-unsupported",
+        "qa-project-access-jira-negated",
+        "qa-project-access-grafana-unspecified",
+        "qa-project-access-grafana-explicit",
+        "qa-project-access-grafana-unsupported",
+        "qa-project-access-grafana-negated",
+        "qa-project-access-sentry-unspecified",
+        "qa-project-access-sentry-explicit",
+        "qa-project-access-sentry-unsupported",
+        "qa-project-access-sentry-negated",
+        "qa-project-access-redash-unspecified",
+        "qa-project-access-redash-explicit",
+        "qa-project-access-redash-unsupported",
+        "qa-project-access-redash-negated",
+        "qa-project-access-learning-platform-unspecified",
+        "qa-project-access-learning-platform-explicit",
+        "qa-project-access-learning-platform-unsupported",
+        "qa-project-access-learning-platform-negated"
+      ],
+      "section_id": "project-access",
+      "actuality": "Явная конфигурация правил учебного приложения. Не извлечена из Excel и не утверждена как корпоративная политика."
     }
   ],
   "import_stats": {
     "text_preparation_version": "hybrid-text-v2",
-    "chunks": 352,
-    "document_access_rows": 608,
-    "source_characters": 261277,
-    "json_bytes": 620939,
+    "chunks": 360,
+    "document_access_rows": 624,
+    "source_characters": 268390,
+    "json_bytes": 638543,
     "multi_chunk_documents": 48,
     "role_document_counts": {
-      "intern": 232,
-      "mentor": 304
+      "intern": 240,
+      "mentor": 312
     },
     "mentor_only_documents": 72,
     "case_counts": {
-      "answerable": 496,
+      "answerable": 527,
       "insufficient_knowledge": 21,
       "restricted_source": 72
     }
