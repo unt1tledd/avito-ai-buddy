@@ -44,7 +44,11 @@ local-up-new: ## Полностью пересобрать приложение 
 	DOCKER_USE_SUDO="$(DOCKER_USE_SUDO)" bash infra/scripts/up-local.sh --import-ai	
 
 demo-up: local-up ## Поднять локальный стенд и подготовить демо-аккаунт с Roadmap
-	python3 infra/scripts/seed-demo.py	
+	@id=$$($(LOCAL_DOCKER) compose ps -q onboarding) && \
+		test -n "$$id" && \
+		onboarding_env=$$($(LOCAL_DOCKER) inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$$id") && \
+		ONBOARDING_SERVICE_TOKEN="$$(printf '%s\n' "$$onboarding_env" | sed -n 's/^ONBOARDING_SERVICE_TOKEN=//p')" \
+		python3 infra/scripts/seed-demo.py	
 
 
 local-monitoring: ## Запустить Grafana, Loki, Alloy, Blackbox и Prometheus
