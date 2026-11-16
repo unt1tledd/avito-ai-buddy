@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { OnboardingRoadmap, OnboardingStep, fetchOnboardingRoadmap, stepQuestion, toggleStep } from '../lib/api';
 
+import { NavigationIcon } from './NavigationIcon';
+
 type Selection = { track: string; step: string };
 const emptySelection:Selection = {track:'',step:''};
 const ALL_TRACKS = '__all__';
@@ -18,9 +20,9 @@ export function nextRoadmapStep(before:OnboardingRoadmap|null, after:OnboardingR
 }
 
 function RoadmapIcon({kind='route'}:{kind?:'route'|'refresh'|'chevron'|'buddy'|'check'}) {
+  if(kind==='route')return <NavigationIcon name="roadmap"/>;
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {kind==='route'?<><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v6a4 4 0 0 0 4 4h4a4 4 0 0 0 0-8h-3M18 15v2"/></>
-      :kind==='refresh'?<><path d="M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 13-2l2 2M4 17l2 2a8 8 0 0 0 13-2"/></>
+    {kind==='refresh'?<><path d="M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 13-2l2 2M4 17l2 2a8 8 0 0 0 13-2"/></>
       :kind==='chevron'?<path d="m6 9 6 6 6-6"/>
       :kind==='check'?<path d="m5 12 4 4L19 6"/>
       :<><rect x="4" y="6" width="16" height="14" rx="5"/><path d="M12 3v3M8 12h.01M16 12h.01M9 16h6"/></>}
@@ -81,7 +83,7 @@ export function OnboardingPage({data,loading=false,error,onRetry,onToggleStep,on
         <span className="roadmap-step-meta">Шаг {number}{step.period?` · ${step.period}`:''}</span>
         <span className="roadmap-step-title">{step.title}</span>
         <span className="roadmap-step-status">{step.completed?'Выполнено':step.current?currentLabel(step):'Предстоит'}</span>
-      </button><button className="roadmap-step-ask" disabled={chatBusy} aria-label={`Спросить бадди: ${step.title}`} onClick={()=>onSelectStepQuestion(stepQuestion(step))}><RoadmapIcon kind="buddy"/>Спросить бадди</button></div>
+      </button>{selected?.step_id===step.step_id && <button className="roadmap-step-ask" disabled={chatBusy} aria-label={`Спросить бадди: ${step.title}`} onClick={()=>onSelectStepQuestion(stepQuestion(step))}><RoadmapIcon kind="buddy"/>Спросить у AI-buddy</button>}</div>
     </li>;
   };
   if(!data && loading)return <div className="roadmap-placeholder" role="status"><span className="roadmap-loading-mark"/><p>Загружаем Roadmap…</p></div>;

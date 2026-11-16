@@ -113,6 +113,31 @@ test('spinner exists only during confirmation HTTP request',()=>{
   assert.match(sending,/disabled/);assert.match(sending,/proposal-spinner/);
   assert.match(sending,/Отправляем/);assert.doesNotMatch(card('draft'),/proposal-spinner/);
 });
+
+test('failed history offers retry and follows Task creation before a final decision',async()=>{
+  const calls=[];
+  let status='failed';
+  globalThis.fetch=async(path,init)=>{
+    calls.push([path,init.method || 'GET']);
+    if(init.method==='POST') { status='pending_dispatch'; return Response.json({accessRequest:{status}}); }
+    return Response.json({messages:[{id:'9',role:'MESSAGE_ROLE_ASSISTANT',text:'Заявка',proposal:{id:'17',resourceId:'wiki',resourceLabel:'Wiki',accessLevel:'read',accessRequest:{status,taskId:status==='pending'?'51':''}}}]});
+  };
+  const failed=(await api.fetchHistory('','23')).messages[0];
+  assert.equal(failed.proposal.status,'failed');
+  assert.match(card(failed.proposal.status),/Повторить отправку/);
+  assert.equal((await api.confirmAccessProposal(failed.proposal.proposal_id)).status,'pending_dispatch');
+  const queued=(await api.fetchHistory('','23')).messages[0];
+  assert.equal(queued.proposal.status,'pending_dispatch');
+  assert.doesNotMatch(card(queued.proposal.status),/proposal-submit/);
+  status='pending';
+  const pending=(await api.fetchHistory('','23')).messages[0];
+  assert.equal(pending.proposal.tracker_issue_key,'51');
+  assert.match(card(pending.proposal.status),/Ожидаем решения/);
+  assert.deepEqual(calls.map(([path,method])=>[path.split('?')[0],method]),[
+    ['/v1/chat/messages','GET'],['/v1/chat/proposals/17/confirm','POST'],
+    ['/v1/chat/messages','GET'],['/v1/chat/messages','GET'],
+  ]);
+});
 test('confirmation failure propagates and never becomes fake approval',async()=>{
   globalThis.fetch=async()=>Response.json({message:'Недоступно'},{status:503});
   await assert.rejects(api.confirmAccessProposal('17'),err=>err.status===503);
@@ -464,9 +489,31 @@ test('user tasks use the dedicated endpoint and map protobuf decision statuses',
   assert.ok(items.every(item=>!item.conversationId));
 });
 
+test('user requests render the fields emitted by the Task gateway', async () => {
+  globalThis.fetch = async () => Response.json([
+    { task_id:'11', proposal_id:'21', resource_id:'repo/old', access_level:'Reporter',
+      status:'ACCESS_REQUEST_STATUS_PENDING', created_at:'2026-11-14T12:00:00Z' },
+    { task_id:'9007199254740993', proposal_id:'22', resource_id:'repo/platform', access_level:'Developer',
+      status:'ACCESS_REQUEST_STATUS_APPROVED', created_at:'2026-11-15T12:00:00Z',
+      external_request_id:'TASK-22' },
+  ]);
+
+  const items = await api.fetchUserRequests('42');
+  assert.deepEqual(items.map(({ proposal }) => [proposal.proposal_id, proposal.tracker_issue_key]), [
+    ['22', 'TASK-22'], ['21', '11'],
+  ]);
+  const { RequestList } = load('pages/RequestList.tsx', { '../lib/api': api });
+  const html = renderToStaticMarkup(React.createElement(RequestList, { items }));
+  assert.match(html, /TASK-22/);
+  assert.match(html, /repo\/platform/);
+  assert.match(html, /Уровень доступа: Developer/);
+  assert.match(html, /Доступ одобрен/);
+  assert.doesNotMatch(html, /undefined/);
+});
+
 test('user tasks paginate with lossless int64 cursors and reject broken responses',async()=>{
   const paths=[];
-  globalThis.fetch=async(path)=>{paths.push(path);return Response.json(paths.length===1?Array.from({length:100},(_,i)=>({taskId:i===99?'9007199254740993':String(i+1),proposalId:String(i),status:1})):[]);};
+  globalThis.fetch=async(path)=>{paths.push(path);return Response.json(paths.length===1?Array.from({length:100},(_,i)=>({task_id:i===99?'9007199254740993':String(i+1),proposal_id:String(i),status:1})):[]);};
   assert.equal((await api.fetchUserRequests('42')).length,100);
   assert.match(paths[1],/after_id=9007199254740993$/);
   globalThis.fetch=async()=>Response.json({tasks:[]});

@@ -1278,12 +1278,32 @@ body.sidebar-resizing,body.sidebar-resizing * { cursor:col-resize !important; us
 .buddy-chat .suggestion-pill { white-space: normal; text-align: right; }
 .buddy-workspace button:disabled { cursor: default; }
 .buddy-menu-backdrop { display: none; }
-.buddy-help-dialog { margin: auto; padding: 0; width: min(420px,calc(100vw - 40px)); border: 1px solid var(--workspace-line); border-radius: 24px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 20px 80px #0003; }
+.buddy-help-dialog { margin: auto; padding: 0; width: min(720px,calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--workspace-line); border-radius: 24px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 20px 80px #0003; }
 .buddy-help-dialog::backdrop { background: #0006; }
-.buddy-help-content { padding: 48px 30px 30px; text-align: center; position: relative; }
-.buddy-help-close { position: absolute; right: 10px; top: 10px; }
-.buddy-help-content h2 { font-size: 25px; line-height: 1.4; font-weight: 700; margin-bottom: 28px; letter-spacing: -.03em; }
-.buddy-help-content .buddy-state-icon { margin-bottom: 20px; }
+.buddy-help-content { padding: 30px; text-align: left; position: relative; }
+.buddy-help-close { position: absolute; right: 14px; top: 14px; }
+.buddy-help-content header { padding-right: 40px; }
+.buddy-help-content h2 { font-size: 26px; line-height: 1.3; font-weight: 700; margin-bottom: 12px; letter-spacing: -.03em; }
+.buddy-help-intro { color: var(--text-secondary); font-size: 14px; line-height: 1.65; }
+.buddy-help-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin-top: 24px; }
+.buddy-help-section { padding: 18px; min-width: 0; border: 1px solid var(--glass-divider); border-radius: 16px; background: var(--glass-control); }
+.buddy-help-section h3 { font-size: 16px; line-height: 1.4; margin-bottom: 10px; }
+.buddy-help-section p,.buddy-help-section li { color: var(--text-secondary); font-size: 13px; line-height: 1.65; }
+.buddy-help-section ul { padding-left: 18px; margin: 0; }
+.buddy-help-section li + li { margin-top: 8px; }
+.buddy-help-section p + p { margin-top: 10px; }
+.buddy-help-section strong { color: var(--text-primary); font-weight: 600; }
+.buddy-help-email { display: inline-block; max-width: 100%; margin-top: 12px; color: var(--chat-link); font-size: 15px; font-weight: 600; text-underline-offset: 4px; overflow-wrap: anywhere; }
+.buddy-help-email:hover { text-decoration-thickness: 2px; }
+.buddy-help-email + p { margin-top: 12px; }
+.buddy-help-email:focus-visible,.buddy-help-dialog button:focus-visible { outline: 2px solid var(--avito-purple); outline-offset: 4px; }
+.buddy-help-content footer { display: flex; justify-content: flex-end; margin-top: 24px; }
+.buddy-help-content footer .buddy-action-button { min-height: 48px; padding: 12px 22px; font-size: 16px; }
+@media(max-width:600px) {
+  .buddy-help-content { padding: 24px 18px 18px; }
+  .buddy-help-grid { grid-template-columns: minmax(0,1fr); }
+  .buddy-help-content h2 { font-size: 23px; }
+}
 @media (hover:none) { .buddy-history-delete { opacity: 1; } }
 @media (max-width:760px) {
   .buddy-sidebar { position: absolute; inset: 0 auto 0 0; z-index: 50; --menu-width: min(300px,82vw); }
@@ -1315,10 +1335,12 @@ body.sidebar-resizing,body.sidebar-resizing * { cursor:col-resize !important; us
 }
 
 /* Одинаковый логотип и управление темой до и после входа. */
-.app-brand { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding: 0 0 14px; width: max-content; flex-shrink: 0; }
-.app-brand-wordmark { display: flex; align-items: center; gap: 5px; color: var(--text-primary); font-family: Arial, sans-serif; font-size: 33px; font-weight: 700; line-height: 1; letter-spacing: -1.7px; }
-.app-brand-dots { width: 31px !important; height: 31px !important; }
-.app-brand-caption { position: absolute; bottom: 0; right: 0; font-size: 11px; line-height: 1.1; font-weight: 500; letter-spacing: .07em; white-space: nowrap; color: var(--text-secondary); }
+.app-brand { position: relative; display: flex; flex-direction: row; align-items: flex-start; gap: 9px; padding: 0; width: max-content; flex-shrink: 0; }
+.app-brand-dots { width: 40px !important; height: 40px !important; margin-top: 1px; flex-shrink: 0; }
+.app-brand-type { display: flex; flex-direction: column; align-items: flex-start; }
+.app-brand-name { color: var(--text-primary); font-family: Arial, sans-serif; font-size: 39px; font-weight: 700; line-height: 1; letter-spacing: -2px; }
+.app-brand-caption { position: static; margin-top: -1px; font-size: 14px; line-height: 1.15; font-weight: 700; letter-spacing: .035em; white-space: nowrap; color: var(--text-secondary); }
+.app-header { justify-content: flex-start; height: 68px; min-height: 68px; }
 .auth-theme-toggle { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); }
 .auth-theme-toggle svg { width: 22px; height: 22px; }
 .buddy-brand { letter-spacing: normal; }

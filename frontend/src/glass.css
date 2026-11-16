@@ -19,9 +19,9 @@
   --glass-shadow: 0 8px 28px -12px rgba(45, 44, 76, .18), 0 2px 6px -3px rgba(45, 44, 76, .1);
   --glass-float: 0 20px 65px -24px rgba(38, 32, 65, .28), 0 4px 14px -8px rgba(38, 32, 65, .15);
   --glass-modal-shadow: 0 36px 100px -24px rgba(25, 23, 47, .35), 0 10px 30px -12px rgba(25, 23, 47, .18);
-  --glass-violet: rgba(153, 105, 221, .23);
-  --glass-blue: rgba(109, 178, 236, .12);
-  --glass-mint: rgba(109, 206, 179, .035);
+  --glass-background:
+    linear-gradient(0deg, var(--glass-canvas), transparent 80%),
+    linear-gradient(115deg, #dfcff0 0%, #dfdef1 45%, #d8e7f4 100%);
   --glass-active: rgba(145, 94, 211, .21);
   --glass-focus: rgba(150, 94, 235, .24);
   --glass-composer: rgba(226, 224, 240, .64);
@@ -50,9 +50,9 @@
   --glass-shadow: 0 8px 28px -12px rgba(0, 0, 0, .5), 0 2px 6px -3px rgba(0, 0, 0, .3);
   --glass-float: 0 20px 65px -24px rgba(0, 0, 0, .65), 0 4px 14px -8px rgba(0, 0, 0, .4);
   --glass-modal-shadow: 0 36px 100px -24px rgba(0, 0, 0, .8), 0 10px 30px -12px rgba(0, 0, 0, .5);
-  --glass-violet: rgba(132, 88, 204, .14);
-  --glass-blue: rgba(71, 130, 196, .1);
-  --glass-mint: rgba(74, 151, 137, .06);
+  --glass-background:
+    linear-gradient(0deg, var(--glass-canvas), transparent 80%),
+    linear-gradient(115deg, #30263f 0%, #202537 45%, #1b2a36 100%);
   --glass-active: rgba(173, 132, 234, .18);
   --glass-focus: rgba(185, 145, 247, .3);
   --glass-composer: rgba(30, 30, 41, .65);
@@ -67,11 +67,11 @@
   --chat-assistant-background: #E5E5EF;
 }
 .app-root {
-  background:
-    radial-gradient(ellipse at 12% 4%, var(--glass-violet), transparent 50%),
-    radial-gradient(ellipse at 92% 18%, var(--glass-blue), transparent 48%),
-    radial-gradient(ellipse at 60% 100%, var(--glass-mint), transparent 50%),
-    var(--glass-canvas);
+  /* A static, repeating dither softens quantization without large blurred layers. */
+  background-color: var(--glass-canvas);
+  background-image: url('./assets/surface-noise.svg'), var(--glass-background);
+  background-size: 160px 160px, 100% 100%, 100% 100%;
+  background-repeat: repeat, no-repeat, no-repeat;
 }
 .buddy-workspace { --workspace-line: var(--glass-divider); }
 .buddy-main,.buddy-chat { background: transparent; }
@@ -221,6 +221,7 @@
 .buddy-workspace ::-webkit-scrollbar-thumb:hover,.requests-dialog::-webkit-scrollbar-thumb:hover,.buddy-help-dialog::-webkit-scrollbar-thumb:hover { background: var(--glass-scrollbar-hover); }
 .buddy-workspace ::-webkit-scrollbar-corner { background: transparent; }
 @media (forced-colors:active) {
+  .app-root { background: Canvas; }
   .buddy-workspace,.requests-dialog,.buddy-help-dialog { scrollbar-color: auto; scrollbar-width: auto; }
   .buddy-sidebar,.buddy-topbar,.app-header,.home-activity,.roadmap-progress,.roadmap-detail,.login-card,.chat-input-bar,.requests-dialog,.buddy-help-dialog,.home-activity-row,.roadmap-step-card,.roadmap-summary-track,.message-source-card,.buddy-action-button {
     background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none;
@@ -286,11 +287,11 @@
 :root:not([data-theme='dark']) .proposal-card--approved { --proposal-accent: #245C38; --proposal-tint: #D5E8D9; --proposal-line: #8DB99A; }
 /* Fixed track cells avoid reflow when selection changes font weight or wrapping. */
 .roadmap-track-buttons { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)); align-items: stretch; }
-.roadmap-track-buttons button { min-height: 72px; font-size: 14px; font-weight: 500; line-height: 1.45; padding: 12px 16px; }
+.roadmap-track-buttons button { min-height: 52px; font-size: 14px; font-weight: 500; line-height: 1.45; padding: 12px 16px; }
 .roadmap-track-buttons button.is-active { font-weight: 500; }
-.roadmap-progress > div:first-child { display: grid; grid-template-columns: minmax(0,1fr) 84px; align-items: start; gap: 16px; min-height: 76px; }
+.roadmap-progress > div:first-child { display: grid; grid-template-columns: minmax(0,1fr) 84px; align-items: start; gap: 16px; min-height: 0; }
 .roadmap-progress > div:first-child > div { min-width: 0; }
-.roadmap-progress h3 { line-height: 1.45; min-height: 2.9em; overflow-wrap: anywhere; }
+.roadmap-progress h3 { line-height: 1.45; min-height: 0; overflow-wrap: anywhere; }
 .roadmap-progress strong { display: block; align-self: center; text-align: right; font-size: 27px; line-height: 1.4; padding-block: 4px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; background: none; overflow: visible; }
 .roadmap-progress .roadmap-finished { margin-top: 10px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .roadmap-progress .roadmap-finished svg { width: 16px; height: 16px; flex-shrink: 0; }
@@ -321,7 +322,7 @@
   .buddy-workspace--menu-open .buddy-menu-backdrop { background: transparent; }
   .buddy-home .buddy-intro { padding-inline: 17px; }
   .roadmap-track-buttons { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .roadmap-track-buttons button { min-height: 72px; padding: 10px; font-size: 13px; }
+  .roadmap-track-buttons button { min-height: 64px; padding: 10px; font-size: 13px; }
   .roadmap-progress { padding: 20px 16px; }
   .roadmap-steps-heading { padding-inline: 17px; }
   .roadmap-progress > div:first-child { grid-template-columns: minmax(0,1fr) 76px; gap: 12px; }
@@ -340,6 +341,13 @@
 }
 @media(forced-colors:active) { .buddy-navigation { -webkit-mask-image: none; mask-image: none; } }
 
-.roadmap-completion-note { min-height: 40px; padding-top: 8px; }
+.roadmap-completion-note { padding-top: 8px; }
+.roadmap-completion-note:empty { display: none; }
 .roadmap-progress .roadmap-completion-note .roadmap-finished { margin: 0; line-height: 1.5; }
 .buddy-sidebar { contain: layout style; }
+
+@media(max-width:760px) {
+  .roadmap-step-ask { animation: roadmap-ask-reveal 160ms ease-out; }
+}
+@keyframes roadmap-ask-reveal { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+@media(prefers-reduced-motion:reduce) { .roadmap-step-ask { animation: none; } }

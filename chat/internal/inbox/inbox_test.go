@@ -52,7 +52,7 @@ func (n *fakeTaskStatus) SaveTaskStatus(_ context.Context, event port.TaskEvent)
 		return nil, n.saveErr
 	}
 	n.events = append(n.events, event)
-	return &entity.Message{Text: event.Status}, nil
+	return &entity.Message{Text: string(event.Status)}, nil
 }
 
 func (n *fakeTaskStatus) PublishSavedTaskStatus(_ context.Context, _ port.TaskEvent, message entity.Message) {
@@ -87,7 +87,7 @@ func TestFirstDeliveryIsProcessed(t *testing.T) {
 	if err := inbox.PublishTaskStatus(ctx, event); err != nil {
 		t.Fatalf("PublishTaskStatus() = %v, want nil", err)
 	}
-	if notifier.events[0] != event || len(notifier.published) != 1 || notifier.published[0].Text != event.Status {
+	if notifier.events[0] != event || len(notifier.published) != 1 || notifier.published[0].Text != string(event.Status) {
 		t.Fatalf("saved events = %+v, published messages = %+v", notifier.events, notifier.published)
 	}
 	if len(queue.insert) != 1 || queue.insert[0].IdempotencyKey != "access-42" {

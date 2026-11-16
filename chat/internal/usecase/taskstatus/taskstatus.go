@@ -53,8 +53,17 @@ func (s *Service) SaveTaskStatus(ctx context.Context, event port.TaskEvent) (*en
 		return nil, fmt.Errorf("invalid user id %q", event.UserID)
 	}
 
-	if event.TaskID == "" || event.ProposalID < 0 || (event.Status != "approved" && event.Status != "rejected") {
-		return nil, fmt.Errorf("invalid task decision")
+	valid := false
+	switch event.Status {
+	case entity.TaskApproved, entity.TaskRejected:
+		valid = event.TaskID != "" && event.ProposalID >= 0
+	case entity.TaskPending:
+		valid = event.TaskID != "" && event.ProposalID > 0
+	case entity.TaskFailed:
+		valid = event.TaskID == "" && event.ProposalID > 0
+	}
+	if !valid {
+		return nil, fmt.Errorf("invalid task status")
 	}
 	conversationID, err := s.actions.ApplyTaskStatus(ctx, userID, event)
 	if err != nil {
@@ -92,6 +101,12 @@ func (s *Service) PublishSavedTaskStatus(ctx context.Context, event port.TaskEve
 }
 
 func statusText(event port.TaskEvent) string {
+	switch event.Status {
+	case entity.TaskPending:
+		return fmt.Sprintf("Заявка %s создана и ожидает решения.", event.TaskID)
+	case entity.TaskFailed:
+		return "Не удалось создать заявку на доступ. Можно повторить отправку в карточке заявки."
+	}
 	return fmt.Sprintf("Статус задачи %s изменён: %s.", event.TaskID, event.Status)
 }
 

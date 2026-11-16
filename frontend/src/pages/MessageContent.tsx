@@ -43,7 +43,8 @@ export function sourceTitle(title:string):string {
 }
 
 export function MessageSources({sources}:{sources:SourceLink[]}) {
-  const unique=[...new Map(sources.map(source=>[source.id || source.url || source.title,source])).values()];
+  const visible=sources.filter(source=>!(/\[ЧЕК[\s\u2010-\u2015-]*ЛИСТ\]/iu.test(source.title || '')));
+  const unique=[...new Map(visible.map(source=>[source.id || source.url || source.title,source])).values()];
   if(!unique.length)return null;
   return <section className="message-sources" aria-label="Источники ответа"><span className="message-sources-heading">{unique.length===1?'Источник':'Источники'}</span><ul>{unique.map((source,index)=>{
     const url=httpUrl(source.url || '');

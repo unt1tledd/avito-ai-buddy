@@ -8,6 +8,8 @@ const (
 	Pending  Status = "pending"
 	Approved Status = "approved"
 	Rejected Status = "rejected"
+	// Failed is used only in command-result events when no task exists.
+	Failed Status = "failed"
 )
 
 type CreateRequest struct {
@@ -45,7 +47,8 @@ type Decision struct {
 type StatusEvent struct {
 	ProposalID        int64  `json:"proposal_id,string"`
 	UserID            int64  `json:"user_id,string"`
-	TaskID            int64  `json:"task_id,string"`
+	TaskID            int64  `json:"task_id,string,omitempty"`
 	Status            Status `json:"status"`
 	ExternalRequestID string `json:"external_request_id,omitempty"`
+	DispatchID        string `json:"dispatch_id,omitempty"`
 }

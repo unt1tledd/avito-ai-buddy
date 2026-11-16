@@ -80,6 +80,7 @@ type createAccessRequestPayload struct {
 	ProposalID  string `json:"proposal_id"`
 	ResourceID  string `json:"resource_id"`
 	AccessLevel string `json:"access_level"`
+	DispatchID  string `json:"dispatch_id,omitempty"`
 }
 
 // PublishCreateAccessRequest sends the confirmed access request keyed by the
@@ -91,6 +92,7 @@ func (p *Publisher) PublishCreateAccessRequest(ctx context.Context, request port
 		ProposalID:  proposalID,
 		ResourceID:  request.ResourceID,
 		AccessLevel: request.AccessLevel,
+		DispatchID:  request.DispatchID,
 	})
 	if err != nil {
 		return fmt.Errorf("encode access request: %w", err)

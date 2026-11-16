@@ -143,7 +143,7 @@ VALUES (
            'CREATED'::chat.outbox_status,
            $3
        )
-ON CONFLICT (idempotency_key) DO NOTHING
+ON CONFLICT (idempotency_key) DO UPDATE SET data = EXCLUDED.data
 `
 
 type SendOutboxMessageParams struct {
