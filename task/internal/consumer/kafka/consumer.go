@@ -17,6 +17,7 @@ import (
 
 type createHandler interface {
 	Handle(context.Context, []byte) error
+	ReportFailure(context.Context, []byte) error
 }
 
 type commandReader interface {
@@ -71,6 +72,13 @@ func consume(ctx context.Context, logger *slog.Logger, reader commandReader, dlq
 				return nil
 			}
 			log.Warn("task command sent to DLQ", "error", cause)
+			if !retryKafka(ctx, log, cfg, "report task command result", func() error {
+				publishCtx, cancel := context.WithTimeout(ctx, cfg.DLQPublishTimeout)
+				defer cancel()
+				return handler.ReportFailure(publishCtx, message.Value)
+			}) {
+				return nil
+			}
 		}
 		if !retryKafka(ctx, log, cfg, "commit task Kafka offset", func() error {
 			return reader.CommitMessages(ctx, message)

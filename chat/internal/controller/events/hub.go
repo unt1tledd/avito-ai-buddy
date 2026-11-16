@@ -68,7 +68,7 @@ func (h *Hub) Subscribe(userID string) (<-chan Event, func()) {
 func (h *Hub) PublishTaskStatus(_ context.Context, event port.TaskEvent) error {
 	h.publish(event.UserID, Event{
 		Type:         EventTypeTaskStatusChanged,
-		StatusUpdate: StatusUpdate{TaskID: event.TaskID, ExternalRequestID: event.ExternalRequestID, Status: event.Status},
+		StatusUpdate: StatusUpdate{TaskID: event.TaskID, ExternalRequestID: event.ExternalRequestID, Status: string(event.Status)},
 	})
 	return nil
 }

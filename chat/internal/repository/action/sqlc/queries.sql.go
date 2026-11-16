@@ -21,8 +21,19 @@ JOIN chat.conversation c ON c.id = m.conversation_id
 WHERE m.id = a.message_id AND c.user_id = $4
   AND (($5::bigint > 0 AND a.id = $5)
        OR ($5::bigint = 0 AND a.task_id = $1))
-  AND a.status IN ('pending_dispatch', 'pending')
+  AND a.status IN ('pending_dispatch', 'pending', 'failed')
   AND (a.task_id = '' OR a.task_id = $1)
+  AND (
+      $3::text IN ('approved', 'rejected')
+      OR (
+          coalesce((SELECT o.data->>'dispatch_id' FROM chat.outbox o
+                    WHERE o.idempotency_key = a.id::text), '') = $6::text
+          AND (
+              ($3::text = 'pending' AND a.status IN ('pending_dispatch', 'failed'))
+              OR ($3::text = 'failed' AND a.status = 'pending_dispatch' AND a.task_id = '')
+          )
+      )
+  )
 RETURNING c.id AS conversation_id, (c.deleted_at IS NOT NULL)::boolean AS conversation_deleted
 `
 
@@ -32,6 +43,7 @@ type ApplyTaskStatusParams struct {
 	Status            string `json:"status"`
 	UserID            int64  `json:"user_id"`
 	ProposalID        int64  `json:"proposal_id"`
+	DispatchID        string `json:"dispatch_id"`
 }
 
 type ApplyTaskStatusRow struct {
@@ -46,6 +58,7 @@ func (q *Queries) ApplyTaskStatus(ctx context.Context, arg ApplyTaskStatusParams
 		arg.Status,
 		arg.UserID,
 		arg.ProposalID,
+		arg.DispatchID,
 	)
 	var i ApplyTaskStatusRow
 	err := row.Scan(&i.ConversationID, &i.ConversationDeleted)

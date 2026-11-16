@@ -176,3 +176,28 @@ func TestSaveTaskStatusPropagatesStorageFailure(t *testing.T) {
 		t.Fatalf("SaveTaskStatus() = %v, want %v", err, dbErr)
 	}
 }
+
+func TestDispatchStatusesHaveDistinctKeysForEachAttempt(t *testing.T) {
+	service := New(zap.NewNop(), &fakeActions{id: 21}, &fakeMessages{}, &fakeHub{})
+	var previous int64
+	for _, attempt := range []string{"first", "second"} {
+		for _, state := range []entity.TaskStatus{entity.TaskFailed, entity.TaskPending} {
+			event := port.TaskEvent{UserID: "7", ProposalID: 42, Status: state, DispatchID: attempt}
+			if state == entity.TaskPending {
+				event.TaskID = "51"
+			}
+			message, err := service.SaveTaskStatus(t.Context(), event)
+			if err != nil || message == nil {
+				t.Fatalf("event=%+v, message=%+v, err=%v", event, message, err)
+			}
+			key := numericKey(event.IdempotencyKey())
+			if key == previous {
+				t.Fatal("different lifecycle events share a dedup key")
+			}
+			previous = key
+			if repeated, err := service.SaveTaskStatus(t.Context(), event); err != nil || repeated != nil {
+				t.Fatalf("duplicate=%+v, err=%v", repeated, err)
+			}
+		}
+	}
+}

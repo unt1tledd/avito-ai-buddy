@@ -34,8 +34,8 @@ func (r *PostgresRepository) getQueries(ctx context.Context) sqlc.Querier {
 	return r.queries
 }
 
-// SendOutboxMessage enqueues a message for dispatch, skipping a message with
-// the same idempotency key.
+// SendOutboxMessage stores a command payload. Re-confirmation updates its
+// dispatch ID after ResetMessage, in the same transaction under the action lock.
 func (r *PostgresRepository) SendOutboxMessage(ctx context.Context, message entity.OutboxMessage) error {
 	return r.getQueries(ctx).SendOutboxMessage(ctx, sqlc.SendOutboxMessageParams{
 		IdempotencyKey: message.IdempotencyKey,
@@ -116,8 +116,8 @@ func (r *PostgresRepository) GetMessageStatus(ctx context.Context, idempotencyKe
 	return string(row.Status), row.Attempts, nil
 }
 
-// ResetMessage returns a FAILED message back to CREATED with a clean attempt
-// counter, so the next worker poll dispatches it again.
+// ResetMessage returns a failed delivery or failed Task processing attempt to
+// CREATED. The caller replaces the payload in the same transaction.
 func (r *PostgresRepository) ResetMessage(ctx context.Context, idempotencyKey string) error {
 	return r.getQueries(ctx).ResetOutboxMessage(ctx, idempotencyKey)
 }

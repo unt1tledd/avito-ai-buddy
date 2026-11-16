@@ -113,6 +113,31 @@ test('spinner exists only during confirmation HTTP request',()=>{
   assert.match(sending,/disabled/);assert.match(sending,/proposal-spinner/);
   assert.match(sending,/Отправляем/);assert.doesNotMatch(card('draft'),/proposal-spinner/);
 });
+
+test('failed history offers retry and follows Task creation before a final decision',async()=>{
+  const calls=[];
+  let status='failed';
+  globalThis.fetch=async(path,init)=>{
+    calls.push([path,init.method || 'GET']);
+    if(init.method==='POST') { status='pending_dispatch'; return Response.json({accessRequest:{status}}); }
+    return Response.json({messages:[{id:'9',role:'MESSAGE_ROLE_ASSISTANT',text:'Заявка',proposal:{id:'17',resourceId:'wiki',resourceLabel:'Wiki',accessLevel:'read',accessRequest:{status,taskId:status==='pending'?'51':''}}}]});
+  };
+  const failed=(await api.fetchHistory('','23')).messages[0];
+  assert.equal(failed.proposal.status,'failed');
+  assert.match(card(failed.proposal.status),/Повторить отправку/);
+  assert.equal((await api.confirmAccessProposal(failed.proposal.proposal_id)).status,'pending_dispatch');
+  const queued=(await api.fetchHistory('','23')).messages[0];
+  assert.equal(queued.proposal.status,'pending_dispatch');
+  assert.doesNotMatch(card(queued.proposal.status),/proposal-submit/);
+  status='pending';
+  const pending=(await api.fetchHistory('','23')).messages[0];
+  assert.equal(pending.proposal.tracker_issue_key,'51');
+  assert.match(card(pending.proposal.status),/Ожидаем решения/);
+  assert.deepEqual(calls.map(([path,method])=>[path.split('?')[0],method]),[
+    ['/v1/chat/messages','GET'],['/v1/chat/proposals/17/confirm','POST'],
+    ['/v1/chat/messages','GET'],['/v1/chat/messages','GET'],
+  ]);
+});
 test('confirmation failure propagates and never becomes fake approval',async()=>{
   globalThis.fetch=async()=>Response.json({message:'Недоступно'},{status:503});
   await assert.rejects(api.confirmAccessProposal('17'),err=>err.status===503);

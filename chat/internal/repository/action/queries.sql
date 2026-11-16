@@ -27,6 +27,17 @@ JOIN chat.conversation c ON c.id = m.conversation_id
 WHERE m.id = a.message_id AND c.user_id = sqlc.arg(user_id)
   AND ((sqlc.arg(proposal_id)::bigint > 0 AND a.id = sqlc.arg(proposal_id))
        OR (sqlc.arg(proposal_id)::bigint = 0 AND a.task_id = sqlc.arg(task_id)))
-  AND a.status IN ('pending_dispatch', 'pending')
+  AND a.status IN ('pending_dispatch', 'pending', 'failed')
   AND (a.task_id = '' OR a.task_id = sqlc.arg(task_id))
+  AND (
+      sqlc.arg(status)::text IN ('approved', 'rejected')
+      OR (
+          coalesce((SELECT o.data->>'dispatch_id' FROM chat.outbox o
+                    WHERE o.idempotency_key = a.id::text), '') = sqlc.arg(dispatch_id)::text
+          AND (
+              (sqlc.arg(status)::text = 'pending' AND a.status IN ('pending_dispatch', 'failed'))
+              OR (sqlc.arg(status)::text = 'failed' AND a.status = 'pending_dispatch' AND a.task_id = '')
+          )
+      )
+  )
 RETURNING c.id AS conversation_id, (c.deleted_at IS NOT NULL)::boolean AS conversation_deleted;

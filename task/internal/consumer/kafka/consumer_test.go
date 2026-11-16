@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -20,6 +21,15 @@ type testHandler func(context.Context, []byte) error
 func (h testHandler) Handle(ctx context.Context, payload []byte) error {
 	return h(ctx, payload)
 }
+
+func (h testHandler) ReportFailure(context.Context, []byte) error { return nil }
+
+type reportingHandler struct {
+	testHandler
+	report func(context.Context) error
+}
+
+func (h reportingHandler) ReportFailure(ctx context.Context, _ []byte) error { return h.report(ctx) }
 
 type testDLQ func(context.Context, ...kafkago.Message) error
 
@@ -157,5 +167,46 @@ func TestConsumeRecoversAfterKafkaFetchEOF(t *testing.T) {
 	}
 	if fetches != 4 || handled != 1 || committed != 1 {
 		t.Fatalf("fetches=%d, handled=%d, committed=%d; want 4, 1, 1", fetches, handled, committed)
+	}
+}
+
+func TestFailureResultMustBeAcknowledgedBeforeCommit(t *testing.T) {
+	for _, cancelDuringReport := range []bool{false, true} {
+		t.Run(fmt.Sprint(cancelDuringReport), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			var order []string
+			reports := 0
+			reader := testReader{commit: func(kafkago.Message) { order = append(order, "commit"); cancel() }}
+			handler := reportingHandler{
+				testHandler: func(context.Context, []byte) error {
+					order = append(order, "handle")
+					return taskerrors.ErrInvalidInput
+				},
+				report: func(context.Context) error {
+					order = append(order, "report")
+					reports++
+					if cancelDuringReport {
+						cancel()
+					}
+					if reports == 1 {
+						return errors.New("result topic unavailable")
+					}
+					return nil
+				},
+			}
+			dlq := testDLQ(func(context.Context, ...kafkago.Message) error { order = append(order, "dlq"); return nil })
+			cfg := config.KafkaConsumerConfig{MaxAttempts: 1, DLQPublishTimeout: time.Second, RetryBaseBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond}
+			if err := consume(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), reader, dlq, handler, cfg); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"handle", "dlq", "report", "report", "commit"}
+			if cancelDuringReport {
+				want = want[:3]
+			}
+			if !slices.Equal(order, want) {
+				t.Fatalf("order=%v, want %v", order, want)
+			}
+		})
 	}
 }
