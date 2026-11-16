@@ -5,7 +5,6 @@ from ..schemas.citations import SOURCE_REFERENCE
 from ..schemas.contracts import Actor, Message
 from .retriever import Retriever
 
-
 MAX_HISTORY_MESSAGES = 30
 MAX_HISTORY_BYTES = 128 * 1024
 

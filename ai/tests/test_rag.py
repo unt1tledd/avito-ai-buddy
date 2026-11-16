@@ -1,27 +1,33 @@
 import asyncio
 import json
-import os
 from pathlib import Path
-from uuid import uuid4
 
 import httpx
 import psycopg
 import pytest
 from mcp import Client
-from psycopg import sql
-from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from ai_service.clients.embeddings import Embeddings
 from ai_service.clients.llm import ModelResponse
-from ai_service.core.config import EMBEDDING_DIMENSIONS, Settings, resolve_embedding_profile
+from ai_service.core.config import (
+    EMBEDDING_DIMENSIONS,
+    Settings,
+    resolve_embedding_profile,
+)
 from ai_service.mcp.server import build_server
-from ai_service.rag.import_documents import import_documents
 from ai_service.rag.chunking import chunk_documents
+from ai_service.rag.import_documents import import_documents
 from ai_service.rag.retriever import Retriever
 from ai_service.repositories.knowledge import KnowledgeError, KnowledgeRepository
-from ai_service.schemas.contracts import Actor, Document, MAX_CHUNK_TEXT, SearchHit, SearchResult
+from ai_service.schemas.contracts import (
+    MAX_CHUNK_TEXT,
+    Actor,
+    Document,
+    SearchHit,
+    SearchResult,
+)
 
 
 @pytest.mark.parametrize(
@@ -71,22 +77,6 @@ MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 PROFILE = "a" * 64
 VECTOR = [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1)
 ACTOR = Actor(user_id="42", role="intern", team="51")
-
-
-@pytest.fixture
-def pg_schema():
-    dsn = os.environ.get("AI_TEST_POSTGRES_DSN")
-    if not dsn:
-        pytest.skip("Set AI_TEST_POSTGRES_DSN to a test database with pgvector installed in public")
-    schema = f"ai_acl_{uuid4().hex}"
-    identifier = sql.Identifier(schema)
-    with psycopg.connect(dsn, autocommit=True) as db:
-        db.execute("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public")
-        db.execute(sql.SQL("CREATE SCHEMA {}").format(identifier))
-        try:
-            yield make_conninfo(dsn, options=f"-csearch_path={schema},public")
-        finally:
-            db.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(identifier))
 
 
 def migration_sql(version, up=True):

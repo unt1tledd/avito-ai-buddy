@@ -4,7 +4,6 @@ from pydantic import AfterValidator, StringConstraints
 
 from ..schemas.contracts import Payload, valid_utf8
 
-
 FIND_INSTRUCTION_NAME = "find_instruction"
 FIND_INSTRUCTION_DESCRIPTION = (
     "Ищет доступные пользователю материалы с проверкой прав. Первый этап обязан вызвать поиск для каждого сообщения. "

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from test_rag import ACTOR, PROFILE, VECTOR
 
 from ai_service.clients.embeddings import EmbeddingError
 from ai_service.core.config import Settings
@@ -11,8 +12,6 @@ from ai_service.core.diagnostics import logger
 from ai_service.rag.retriever import Retriever
 from ai_service.repositories.knowledge import KnowledgeError
 from ai_service.schemas.contracts import SearchHit, SearchResult
-from test_rag import ACTOR, PROFILE, VECTOR
-
 
 HITS = SearchResult(hits=[SearchHit(id="vpn", title="VPN", text="Инструкция VPN")])
 
@@ -54,7 +53,7 @@ def test_embedding_timeout_cancels_upstream_and_runs_lexical():
 
 
 def test_healthy_embeddings_keep_existing_search_path():
-    knowledge, repository, embeddings = retriever()
+    knowledge, repository, _embeddings = retriever()
     assert asyncio.run(knowledge.search("VPN", ACTOR)) == HITS
     repository.search.assert_awaited_once_with(VECTOR, PROFILE, ACTOR, .3, query="VPN")
     repository.search_lexical.assert_not_awaited()
@@ -143,7 +142,7 @@ def test_failed_probe_reopens_circuit_and_success_resets_failure_streak(monkeypa
 def test_stale_success_cannot_close_circuit_opened_by_concurrent_failure(monkeypatch):
     now = [0.]
     monkeypatch.setattr("ai_service.rag.retriever.monotonic", lambda: now[0])
-    knowledge, repository, embeddings = retriever(embedding_circuit_failure_threshold=1)
+    knowledge, _repository, embeddings = retriever(embedding_circuit_failure_threshold=1)
 
     async def run():
         entered, release = asyncio.Event(), asyncio.Event()
@@ -207,7 +206,7 @@ def test_caller_cancellation_never_starts_fallback_or_blocks_next_probe(monkeypa
 
 
 def test_fallback_logs_mode_cause_and_count_without_question(caplog):
-    knowledge, repository, embeddings = retriever()
+    knowledge, _repository, embeddings = retriever()
     embeddings.embed.side_effect = EmbeddingError("sensitive upstream body", reason="http_503")
     with caplog.at_level(logging.INFO, logger=logger.name):
         asyncio.run(knowledge.search("sensitive user question", ACTOR))

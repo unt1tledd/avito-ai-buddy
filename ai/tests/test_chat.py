@@ -5,8 +5,8 @@ import json
 import logging
 
 import httpx
-import psycopg
 import pytest
+from conversation_examples import CLARIFICATION_QUESTIONS, DEFAULT_CLARIFICATION
 from fastapi.testclient import TestClient
 
 from ai_service.clients.embeddings import EmbeddingError, Embeddings
@@ -16,10 +16,8 @@ from ai_service.core.diagnostics import logger
 from ai_service.main import create_app
 from ai_service.rag.retriever import Retriever
 from ai_service.repositories.knowledge import KnowledgeRepository
-from conversation_examples import CLARIFICATION_QUESTIONS, DEFAULT_CLARIFICATION
 from ai_service.schemas.citations import SOURCE_REFERENCE
 from ai_service.schemas.contracts import SearchHit, SearchResult
-
 
 AUTH = {"Authorization": "Bearer chat-test-token"}
 ACTOR = {"user_id": "42", "team": "backend", "role": "intern"}
@@ -50,6 +48,7 @@ class ContextFillingModel(ScriptedModel):
         if len(self.requests) == 1:
             items = [item.model_dump(mode="json", exclude_unset=True) for item in response.output]
             from importlib.resources import files
+
             from ai_service.agents.agent import Agent
             final_prompt = Agent(None, None, files("ai_service.agents").joinpath("prompts", "system.txt").read_text()).prompt
             used = json_size([final_prompt, messages + items, tools])
@@ -86,42 +85,6 @@ def answer(text, *, kind="grounded_answer", proposal=None):
 
 
 @pytest.fixture
-def settings(monkeypatch):
-    visible_sources = {
-        ("intern", "backend"): ["demo-dev-environment"],
-        ("intern", "51"): ["demo-dev-environment"],
-        ("mentor", "backend"): ["demo-mentor-environment", "demo-dev-environment"],
-    }
-
-    async def embed(self, texts):
-        assert len(texts) == 1
-        return [EMBEDDING]
-
-    async def search(self, vector, profile, actor, min_similarity, *, query):
-        assert len(profile) == 64
-        assert vector == EMBEDDING
-        assert min_similarity == 0.3
-        rows = visible_sources.get((actor.role, actor.team), [])
-        return SearchResult(hits=[
-            SearchHit(id=key, title=key, text="Фрагмент инструкции") for key in rows
-        ])
-
-    async def accessible_source_ids(self, source_ids, profile, actor):
-        assert len(profile) == 64
-        return source_ids.intersection(visible_sources.get((actor.role, actor.team), []))
-
-    monkeypatch.setattr(Embeddings, "embed", embed)
-    monkeypatch.setattr(KnowledgeRepository, "search", search)
-    monkeypatch.setattr(KnowledgeRepository, "accessible_source_ids", accessible_source_ids)
-    return Settings(
-        service_token="chat-test-token",
-        knowledge_db_dsn="postgresql://knowledge.test/knowledge",
-        knowledge_processing_approved=True,
-        embedding_api_key="test-embedding-token",
-    )
-
-
-@pytest.fixture
 def use_mock_http(monkeypatch):
     async_client = httpx.AsyncClient
 
@@ -142,9 +105,11 @@ def use_mock_http(monkeypatch):
 ])
 def test_chat_rejects_invalid_provider_settings_on_startup(settings, overrides, variable, reason):
     configured = settings.model_copy(update={"llm_api_key": "llm-key", "llm_model": "test-model", **overrides})
-    with pytest.raises(RuntimeError, match=rf"^{variable} must be {reason}$"):
-        with TestClient(create_app(configured)):
-            pytest.fail("Chat started with invalid provider settings")
+    with (
+        pytest.raises(RuntimeError, match=rf"^{variable} must be {reason}$"),
+        TestClient(create_app(configured)),
+    ):
+        pytest.fail("Chat started with invalid provider settings")
 
 
 def ask(client, message, actor=ACTOR, **extra):
@@ -1901,7 +1866,8 @@ def test_long_input_history_is_windowed_and_never_cached_between_requests(settin
 
 def test_history_yields_to_question_and_sources_within_total_context_budget(settings, monkeypatch):
     from importlib.resources import files
-    from ai_service.agents.agent import Agent, FIND_INSTRUCTION_TOOL, json_size
+
+    from ai_service.agents.agent import FIND_INSTRUCTION_TOOL, Agent, json_size
 
     history = [{"role": "user", "content": "Ж" * 4000} for _ in range(8)]
     # A deliberately small overall budget checks that optional history is evicted first.
@@ -1983,8 +1949,9 @@ def test_expanded_history_and_request_budgets_accept_large_conversation(settings
 
 @pytest.mark.parametrize("resource", ["https://git.example.test/team/repo", "git-guide", "https://git.example.test/invented/repo"])
 def test_access_proposal_matches_chat_contract_and_cited_policy(settings, monkeypatch, resource):
-    from ai_service.schemas.contracts import AccessPolicy
     from conversation_examples import REPOSITORY_CLARIFICATION
+
+    from ai_service.schemas.contracts import AccessPolicy
 
     target = "https://git.example.test/team/repo"
     hit = SearchHit(id="git-guide", title="Git", text="Запросите Developer.", access_policies=[

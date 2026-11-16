@@ -6,7 +6,13 @@ from importlib.resources import files
 from typing import Annotated, Literal
 from unicodedata import normalize
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, ValidationError
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    StringConstraints,
+    ValidationError,
+)
 
 from ..clients.embeddings import EmbeddingError
 from ..clients.llm import FunctionCall, LanguageModel, ModelError, ModelResponse
@@ -15,15 +21,24 @@ from ..core.config import Settings
 from ..rag.history import history_message, prepare_history
 from ..rag.proposals import AccessSelection, ProposalValidationError, confirmed_proposal
 from ..rag.retriever import Retriever
-from ..rag.tools import FIND_INSTRUCTION_DESCRIPTION, FIND_INSTRUCTION_NAME, FindInstructionArguments
+from ..rag.tools import (
+    FIND_INSTRUCTION_DESCRIPTION,
+    FIND_INSTRUCTION_NAME,
+    FindInstructionArguments,
+)
 from ..repositories.knowledge import KnowledgeError
 from ..schemas.citations import SOURCE_REFERENCE
 from ..schemas.contracts import (
-    Actor, ChatResponse, MAX_RESPONSE_SOURCES, Message, OnboardingPlan,
-    SearchHit, SearchResult, valid_utf8,
+    MAX_RESPONSE_SOURCES,
+    Actor,
+    ChatResponse,
+    Message,
+    OnboardingPlan,
+    SearchHit,
+    SearchResult,
+    valid_utf8,
 )
 from ..schemas.support import IMMEDIATE_SAFETY_ANSWER, needs_safety_fallback
-
 
 MAX_TOOL_CALLS = 2
 MAX_CONTEXT_BYTES = 256 * 1024

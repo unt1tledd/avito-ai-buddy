@@ -6,12 +6,19 @@ from importlib.resources import files
 
 import pytest
 from fastapi.testclient import TestClient
+from test_chat import (
+    ScriptedModel,
+    answer,
+    ask,
+    call,
+    mock_search_results,
+    searched_model,
+)
 
 from ai_service.agents.agent import Agent
 from ai_service.clients.llm import ModelResponse
 from ai_service.main import create_app
 from ai_service.schemas.contracts import AccessPolicy, Actor, SearchHit, SearchResult
-from test_chat import ScriptedModel, answer, ask, call, mock_search_results, searched_model, settings
 
 
 def selected(**changes):

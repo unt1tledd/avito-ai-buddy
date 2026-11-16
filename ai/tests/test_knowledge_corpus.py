@@ -10,8 +10,7 @@ from pydantic import TypeAdapter
 
 from ai_service.rag.chunking import chunk_documents
 from ai_service.rag.import_documents import MAX_IMPORT_BYTES, MAX_IMPORT_DOCUMENTS
-from ai_service.schemas.contracts import Document, MAX_CHUNK_TEXT
-from test_rag import pg_schema
+from ai_service.schemas.contracts import MAX_CHUNK_TEXT, Document
 
 ROOT = Path(__file__).resolve().parents[1] / 'knowledge'
 
@@ -117,10 +116,12 @@ def test_expansion_builder_is_idempotent_and_rejects_changed_baseline(tmp_path, 
 
 def test_expanded_corpus_round_trip_and_role_acl(pg_schema):
     import asyncio
+
     import psycopg
+    from test_rag import ACTOR, PROFILE, VECTOR, migrate, pool_for
+
     from ai_service.repositories.knowledge import KnowledgeRepository
     from ai_service.schemas.contracts import Actor
-    from test_rag import ACTOR, PROFILE, VECTOR, migrate, pool_for
 
     migrate(pg_schema)
     documents = TypeAdapter(list[Document]).validate_python(load('documents.json'))
@@ -179,7 +180,12 @@ def test_project_access_policy_matches_catalog_and_keeps_checklist_unchanged():
 
 def test_demo_resource_catalog_preserves_draft_constraints():
     import pytest
-    from ai_service.rag.proposals import AccessSelection, ProposalValidationError, confirmed_proposal
+
+    from ai_service.rag.proposals import (
+        AccessSelection,
+        ProposalValidationError,
+        confirmed_proposal,
+    )
     from ai_service.schemas.contracts import SearchHit
 
     catalog = load('sources/access-resources.json')
@@ -199,7 +205,7 @@ def test_demo_resource_catalog_preserves_draft_constraints():
         actual[policy.resource_id] = policy.access_levels
         assert set(catalog['resource_origins'][policy.resource_id]['related_source_ids']) <= documents.keys()
 
-        def draft(**changes):
+        def draft(hit=hit, **changes):
             selection = AccessSelection.model_validate({
                 'policy_source_id': hit.id, 'policy_index': 0, 'target_status': 'selected',
                 'level_status': 'unspecified', **changes,

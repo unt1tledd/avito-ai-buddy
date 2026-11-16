@@ -1,8 +1,7 @@
 import hashlib
 import re
 
-from ..schemas.contracts import Document, DocumentChunk, MAX_CHUNK_TEXT
-
+from ..schemas.contracts import MAX_CHUNK_TEXT, Document, DocumentChunk
 
 CHUNK_OVERLAP = 150
 MAX_IMPORT_CHUNKS = 4000

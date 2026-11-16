@@ -1,22 +1,22 @@
 import argparse
 import asyncio
 import json
-from time import perf_counter
+from functools import partial
 from pathlib import Path
+from time import perf_counter
 
 import httpx
 from pydantic import TypeAdapter, ValidationError
 
 from ..clients.embeddings import Embeddings
-from ..clients.llm import ResponsesModel, ModelError
-from ..core.diagnostics import UpstreamError
+from ..clients.llm import ModelError, ResponsesModel
 from ..core.config import Settings, resolve_embedding_profile
+from ..core.diagnostics import UpstreamError
 from ..repositories.knowledge import KnowledgeRepository
 from ..schemas.contracts import Document
 from .chunking import chunk_documents
 from .contextualization import contextualize
 from .import_retry import retry_import_request
-
 
 IMPORT_EMBEDDING_TIMEOUT_SECONDS = 25
 IMPORT_EMBEDDING_BATCH_SIZE = 32
@@ -73,7 +73,7 @@ async def _import_documents(source: Path, settings: Settings) -> dict:
         for start in range(0, len(chunks), IMPORT_EMBEDDING_BATCH_SIZE):
             batch = chunks[start:start + IMPORT_EMBEDDING_BATCH_SIZE]
             texts = [chunk.embedding_text() for chunk in batch]
-            vectors.extend(await retry_import_request(lambda: embeddings.embed(texts)))
+            vectors.extend(await retry_import_request(partial(embeddings.embed, texts)))
 
     await KnowledgeRepository(settings.knowledge_db_dsn).replace(chunks, vectors, embeddings.model, embeddings.profile)
     return {

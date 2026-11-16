@@ -1,21 +1,24 @@
 import asyncio
 import json
 import math
-from pathlib import Path
 
 import psycopg
 import pytest
+from test_rag import ACTOR, PROFILE, VECTOR, migrate, pool_for
 
+from ai_service.clients.embeddings import Embeddings
 from ai_service.clients.llm import ModelError, ModelResponse, ResponsesModel
 from ai_service.core.config import Settings
 from ai_service.core.text_preparation import CONTEXT_PROMPT, TEXT_PREPARATION_VERSION
 from ai_service.rag.chunking import chunk_documents
 from ai_service.rag.contextualization import contextualize
 from ai_service.rag.import_documents import import_documents
-from ai_service.clients.embeddings import Embeddings
-from ai_service.repositories.knowledge import KnowledgeRepository, KnowledgeError, SEARCH_SQL
+from ai_service.repositories.knowledge import (
+    SEARCH_SQL,
+    KnowledgeError,
+    KnowledgeRepository,
+)
 from ai_service.schemas.contracts import Document
-from test_rag import pg_schema, migrate, pool_for, ACTOR, VECTOR, PROFILE
 
 FAR = [0.0, 1.0, *VECTOR[2:]]
 
@@ -162,9 +165,9 @@ def test_bm25_formula_matches_independent_calculation(pg_schema):
     asyncio.run(run())
     with psycopg.connect(pg_schema) as db:
         scores_sql = SEARCH_SQL.rsplit('    SELECT index_state.present', 1)[0] + 'SELECT id, score FROM bm25_scores'
-        params = dict(profile=PROFILE, preparation=TEXT_PREPARATION_VERSION, role=ACTOR.role, team=ACTOR.team,
-                      query='VPN', bm25_k1=1.2, bm25_b=.75, candidates=10, vector=json.dumps(VECTOR),
-                      max_distance=.7, bm25_weight=1., vector_weight=1., rrf_k=60., limit=3)
+        params = {'profile': PROFILE, 'preparation': TEXT_PREPARATION_VERSION, 'role': ACTOR.role, 'team': ACTOR.team,
+                      'query': 'VPN', 'bm25_k1': 1.2, 'bm25_b': .75, 'candidates': 10, 'vector': json.dumps(VECTOR),
+                      'max_distance': .7, 'bm25_weight': 1., 'vector_weight': 1., 'rrf_k': 60., 'limit': 3}
         scores = dict(db.execute(scores_sql, params).fetchall())
         lengths = dict(db.execute('SELECT source_id, token_count FROM document_chunks').fetchall())
         avgdl = sum(lengths.values()) / 3
@@ -230,9 +233,9 @@ def test_rrf_limits_each_branch_before_fusion(pg_schema):
     asyncio.run(run())
     with psycopg.connect(pg_schema) as db:
         prefix = SEARCH_SQL.rsplit('    SELECT index_state.present', 1)[0]
-        params = dict(profile=PROFILE, preparation=TEXT_PREPARATION_VERSION, role=ACTOR.role, team=ACTOR.team,
-                      query='VPN', bm25_k1=1.2, bm25_b=.75, candidates=10, vector=json.dumps(VECTOR),
-                      max_distance=.7, bm25_weight=1., vector_weight=1., rrf_k=60., limit=3)
+        params = {'profile': PROFILE, 'preparation': TEXT_PREPARATION_VERSION, 'role': ACTOR.role, 'team': ACTOR.team,
+                      'query': 'VPN', 'bm25_k1': 1.2, 'bm25_b': .75, 'candidates': 10, 'vector': json.dumps(VECTOR),
+                      'max_distance': .7, 'bm25_weight': 1., 'vector_weight': 1., 'rrf_k': 60., 'limit': 3}
         votes = dict(db.execute(prefix + 'SELECT id, score FROM votes', params).fetchall())
         assert len(votes) == 20
         assert 'lex-10' not in votes and 'vec-10' not in votes
@@ -333,9 +336,10 @@ def test_lexical_only_ranking_limits_and_technical_query_quality(pg_schema):
 def test_chat_with_real_postgres_returns_cited_lexical_answer_during_embedding_outage(pg_schema, monkeypatch, outage):
     import httpx
     from fastapi.testclient import TestClient
+    from test_chat import AUTH, answer, searched_model
+
     from ai_service.core.config import resolve_embedding_profile
     from ai_service.main import create_app
-    from test_chat import AUTH, answer, searched_model
 
     migrate(pg_schema)
     settings = Settings(service_token='chat-test-token', knowledge_db_dsn=pg_schema,

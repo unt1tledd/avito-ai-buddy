@@ -9,12 +9,11 @@ from uuid import uuid4
 
 from psycopg import AsyncConnection, sql
 from psycopg.conninfo import make_conninfo
+from test_rag import PROFILE, VECTOR, doc, migration_sql, pool_for
 
+from ai_service.core.text_preparation import TEXT_PREPARATION_VERSION
 from ai_service.repositories.knowledge import SEARCH_SQL, KnowledgeRepository
 from ai_service.schemas.contracts import Actor
-from ai_service.core.text_preparation import TEXT_PREPARATION_VERSION
-
-from test_rag import PROFILE, VECTOR, doc, migration_sql, pool_for
 
 
 async def benchmark() -> None:

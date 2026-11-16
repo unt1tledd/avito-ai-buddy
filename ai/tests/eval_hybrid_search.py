@@ -147,15 +147,17 @@ async def evaluate(args):
                             started = perf_counter()
                             if mode == 'current_vector':
                                 # Original SQL: ACL before nearest top-3 and cosine cutoff.
-                                from ai_service.repositories.knowledge import DOCUMENT_ACCESS_SQL
+                                from ai_service.repositories.queries import (
+                                    DOCUMENT_ACCESS_SQL,
+                                )
                                 baseline = f'''SELECT c.source_id AS id FROM document_chunks c
                                     JOIN documents d ON d.id=c.document_id
                                     WHERE c.embedding_profile=%(profile)s AND {DOCUMENT_ACCESS_SQL}
                                     AND c.embedding <=> %(vector)s::vector <= %(max_distance)s
                                     ORDER BY c.embedding <=> %(vector)s::vector, c.source_id COLLATE "C" LIMIT 3'''
                                 async with pool.connection() as db:
-                                    cursor = await db.execute(baseline, dict(profile=profile, role=actor.role, team=actor.team,
-                                                               vector=json.dumps(vector), max_distance=1-config.knowledge_min_similarity))
+                                    cursor = await db.execute(baseline, {'profile': profile, 'role': actor.role, 'team': actor.team,
+                                                               'vector': json.dumps(vector), 'max_distance': 1-config.knowledge_min_similarity})
                                     ids = [row['id'] for row in await cursor.fetchall()]
                             else:
                                 ids = [hit.id for hit in (await repo.search(vector, profile, actor, config.knowledge_min_similarity,

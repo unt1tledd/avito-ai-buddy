@@ -1,19 +1,27 @@
 """Free LLM answers in the mandatory RAG pipeline; semantics need live model evals."""
 
-import asyncio
 import json
 
 import pytest
 from fastapi.testclient import TestClient
+from test_chat import (
+    ACTOR,
+    AUTH,
+    ONBOARDING_TRACKS,
+    ScriptedModel,
+    answer,
+    ask,
+    call,
+    first_context,
+    mock_search_results,
+    previous_messages,
+    searched_model,
+)
 
 from ai_service.clients.llm import ModelError
 from ai_service.main import create_app
 from ai_service.repositories.knowledge import KnowledgeError
 from ai_service.schemas.contracts import SearchResult
-from test_chat import (
-    ACTOR, AUTH, ONBOARDING_TRACKS, ScriptedModel, answer, ask, call, first_context,
-    mock_search_results, previous_messages, searched_model, settings,
-)
 
 
 @pytest.mark.parametrize(("question", "kind", "text"), [
