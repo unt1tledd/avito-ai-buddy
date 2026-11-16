@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
           cache-dependency-path: |
@@ -48,7 +48,7 @@ jobs:
         run: bash infra/scripts/generate-proto.sh
 
       - name: Upload generated protobuf
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: generated-protobuf
           path: pkg/generated/
@@ -62,12 +62,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: generated-protobuf
           path: pkg/generated
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
           cache-dependency-path: |
@@ -150,7 +150,7 @@ jobs:
           PY
 
       - name: Upload Go coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-go
           path: ${{ runner.temp }}/go-coverage/*.xml
@@ -164,7 +164,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: generated-protobuf
           path: pkg/generated
@@ -192,7 +192,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: generated-protobuf
           path: pkg/generated
@@ -226,7 +226,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -247,7 +247,7 @@ jobs:
 
       - name: Run AI tests with coverage
         env:
-          AI_TEST_POSTGRES_DSN: "postgresql://postgres:ci-postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/ai_test"
+          AI_TEST_POSTGRES_DSN: "postgresql://postgres:ci-postgres@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/ai_test"
         run: >-
           uv run --locked --group dev pytest -ra
           --cov=src/ai_service
@@ -260,7 +260,7 @@ jobs:
           sed 's|^SF:src/|SF:ai/src/|' coverage.lcov > "$RUNNER_TEMP/ai.lcov"
 
       - name: Upload AI coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-ai
           path: ${{ runner.temp }}/ai.lcov
@@ -277,7 +277,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
@@ -301,7 +301,7 @@ jobs:
             > "$RUNNER_TEMP/frontend.lcov"
 
       - name: Upload frontend coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-frontend
           path: ${{ runner.temp }}/frontend.lcov
@@ -318,7 +318,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Download coverage reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: coverage-*
           path: coverage-reports

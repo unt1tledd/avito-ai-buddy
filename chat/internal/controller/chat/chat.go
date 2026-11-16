@@ -13,6 +13,7 @@ import (
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 
 	"avito-ai-buddy/pkg/observability"
+
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

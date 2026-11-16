@@ -43,7 +43,7 @@ func New() (*Config, error) {
 		return nil, errors.New("onboarding database URL and service token are required")
 	}
 	if strings.TrimSpace(cfg.Auth.BaseURL) == "" || strings.TrimSpace(cfg.Auth.ValidatePath) == "" {
-		return nil, errors.New("Auth URL and validation path are required")
+		return nil, errors.New("auth URL and validation path are required")
 	}
 	if cfg.Auth.Timeout <= 0 {
 		return nil, errors.New("AUTH_TIMEOUT must be positive")

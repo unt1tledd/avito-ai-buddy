@@ -6,14 +6,15 @@ import (
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 	taskpb "avito-ai-buddy/pkg/generated/task/v1"
 	"fmt"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func (s *suite) accessTask(t *testing.T) (string, *taskpb.AccessRequest) {

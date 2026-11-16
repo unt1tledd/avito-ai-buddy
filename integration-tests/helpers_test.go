@@ -18,6 +18,7 @@ import (
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 	taskpb "avito-ai-buddy/pkg/generated/task/v1"
 	userpb "avito-ai-buddy/pkg/generated/user/v1"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

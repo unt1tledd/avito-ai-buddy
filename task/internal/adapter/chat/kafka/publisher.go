@@ -50,7 +50,7 @@ func (p *Publisher) CheckTopics(topics ...string) func(context.Context) error {
 		}
 		for _, topic := range topics {
 			if !available[topic] {
-				return fmt.Errorf("Kafka topic %q is unavailable", topic)
+				return fmt.Errorf("topic %q is unavailable on Kafka", topic)
 			}
 		}
 		return nil

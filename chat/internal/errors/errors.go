@@ -7,7 +7,8 @@ var (
 	ErrInvalidToken           = errors.New("invalid or expired access token")
 	ErrMissingConfirmationIDs = errors.New("user and proposal IDs are required")
 	ErrProposalNotFound       = errors.New("proposal not found")
-	ErrProposalExpired        = errors.New("Срок предложения истёк. Попросите помощника создать новое")
+	//nolint:staticcheck // The gRPC API displays this message to the user.
+	ErrProposalExpired = errors.New("Срок предложения истёк. Попросите помощника создать новое")
 )
 
 var (

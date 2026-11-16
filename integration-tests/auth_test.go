@@ -4,10 +4,11 @@ package integration_test
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAuthLifecycle(t *testing.T) {
