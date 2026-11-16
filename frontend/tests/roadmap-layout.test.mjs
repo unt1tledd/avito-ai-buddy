@@ -20,7 +20,7 @@ test('legacy weekly preference still renders a flat plan in server order without
     assert.doesNotMatch(html,/По неделям|Вид Roadmap|roadmap-period|Откроем новый чат/);
     assert.match(html,/roadmap-timeline/);
     assert.ok(html.indexOf('Первый шаг')<html.indexOf('Второй шаг'));
-    assert.match(html,/Спросить бадди: Первый шаг/);
+    assert.doesNotMatch(html,/Спросить бадди: Первый шаг/);
     assert.match(html,/Спросить бадди: Второй шаг/);
   } finally {if(storage)Object.defineProperty(globalThis,'localStorage',storage);else delete globalThis.localStorage;}
 });
@@ -39,4 +39,19 @@ test('source cards remove checklist badges without dropping sources or demo labe
   assert.match(html,/Выпускной/);assert.match(html,/\[ДЕМО\] Документ/);
   assert.match(html,/href="https:\/\/example.com\/check"/);
   assert.equal((html.match(/<a /g)||[]).length,2);
+});
+
+
+test('roadmap shows no inline ask actions before selecting a step',()=>{
+  assert.doesNotMatch(render(),/class="roadmap-step-ask"/);
+});
+test('only the selected step receives an inline ask action',()=>{
+  const storage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>JSON.stringify({track:'common',step:'first'})}});
+  try {
+    const html=render();
+    assert.equal((html.match(/class="roadmap-step-ask"/g)||[]).length,1);
+    assert.match(html,/Спросить бадди: Первый шаг/);
+    assert.doesNotMatch(html,/Спросить бадди: Второй шаг/);
+  } finally {if(storage)Object.defineProperty(globalThis,'localStorage',storage);else delete globalThis.localStorage;}
 });

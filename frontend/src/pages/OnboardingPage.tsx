@@ -81,7 +81,7 @@ export function OnboardingPage({data,loading=false,error,onRetry,onToggleStep,on
         <span className="roadmap-step-meta">Шаг {number}{step.period?` · ${step.period}`:''}</span>
         <span className="roadmap-step-title">{step.title}</span>
         <span className="roadmap-step-status">{step.completed?'Выполнено':step.current?currentLabel(step):'Предстоит'}</span>
-      </button><button className="roadmap-step-ask" disabled={chatBusy} aria-label={`Спросить бадди: ${step.title}`} onClick={()=>onSelectStepQuestion(stepQuestion(step))}><RoadmapIcon kind="buddy"/>Спросить бадди</button></div>
+      </button>{selected?.step_id===step.step_id && <button className="roadmap-step-ask" disabled={chatBusy} aria-label={`Спросить бадди: ${step.title}`} onClick={()=>onSelectStepQuestion(stepQuestion(step))}><RoadmapIcon kind="buddy"/>Спросить у AI-buddy</button>}</div>
     </li>;
   };
   if(!data && loading)return <div className="roadmap-placeholder" role="status"><span className="roadmap-loading-mark"/><p>Загружаем Roadmap…</p></div>;
