@@ -277,3 +277,69 @@
 @media(max-width:760px) {
   .buddy-chat { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
 }
+
+/* Shared content insets keep headings aligned with the text inside cards. */
+.buddy-home .buddy-intro { padding-inline: 23px; }
+.roadmap-steps-heading { padding-inline: 19px; }
+.buddy-avatar { border: 1px solid #141414; }
+:root:not([data-theme='dark']) .proposal-card--waiting { --proposal-accent: #735014; --proposal-tint: #EFE0B6; --proposal-line: #C7AB65; }
+:root:not([data-theme='dark']) .proposal-card--approved { --proposal-accent: #245C38; --proposal-tint: #D5E8D9; --proposal-line: #8DB99A; }
+/* Fixed track cells avoid reflow when selection changes font weight or wrapping. */
+.roadmap-track-buttons { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)); align-items: stretch; }
+.roadmap-track-buttons button { min-height: 72px; font-size: 14px; font-weight: 500; line-height: 1.45; padding: 12px 16px; }
+.roadmap-track-buttons button.is-active { font-weight: 500; }
+.roadmap-progress > div:first-child { display: grid; grid-template-columns: minmax(0,1fr) 84px; align-items: start; gap: 16px; min-height: 76px; }
+.roadmap-progress > div:first-child > div { min-width: 0; }
+.roadmap-progress h3 { line-height: 1.45; min-height: 2.9em; overflow-wrap: anywhere; }
+.roadmap-progress strong { display: block; align-self: center; text-align: right; font-size: 27px; line-height: 1.4; padding-block: 4px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; background: none; overflow: visible; }
+.roadmap-progress .roadmap-finished { margin-top: 10px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.roadmap-progress .roadmap-finished svg { width: 16px; height: 16px; flex-shrink: 0; }
+.roadmap-step-main { min-width: 0; flex: 1; }
+.roadmap-step-ask { display: none; }
+.request-list .proposal-card { min-width: 0; max-width: 100%; }
+.request-list .proposal-card h3 { overflow-wrap: anywhere; line-height: 1.5; }
+.request-mobile-details { display: none; }
+/* Fade the scrolling navigation into the fixed brand and profile areas. */
+.buddy-navigation {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+}
+/* Drag uses frame-aligned DOM width updates; React commits the final value. */
+.buddy-workspace--resizing .buddy-sidebar,
+.buddy-workspace--resizing .buddy-brand,
+.buddy-workspace--resizing .buddy-navigation,
+.buddy-workspace--resizing .buddy-profile-link,
+.buddy-workspace--resizing .chat-feed-column,
+.buddy-workspace--resizing .chat-composer { transition: none !important; }
+@media(max-width:760px) {
+  .buddy-sidebar { width: 64px; --menu-width: min(264px,76vw); }
+  .buddy-main { margin-left: 64px; }
+  .buddy-brand { padding-inline: 13px; }
+  .buddy-navigation { padding-inline: 6px; }
+  .buddy-profile-link { width: calc(100% - 16px); margin-inline: 8px; padding-inline: 5px; }
+  .buddy-avatar--small { width: 36px; height: 36px; }
+  .buddy-workspace--menu-open .buddy-menu-backdrop { background: transparent; }
+  .buddy-home .buddy-intro { padding-inline: 17px; }
+  .roadmap-track-buttons { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .roadmap-track-buttons button { min-height: 72px; padding: 10px; font-size: 13px; }
+  .roadmap-progress { padding: 20px 16px; }
+  .roadmap-steps-heading { padding-inline: 17px; }
+  .roadmap-progress > div:first-child { grid-template-columns: minmax(0,1fr) 76px; gap: 12px; }
+  .roadmap-progress strong { font-size: 25px; }
+  .roadmap-detail { display: none; }
+  .roadmap-step-ask { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--roadmap-purple); padding: 10px 4px; font-size: 12px !important; }
+  .roadmap-step-ask svg { width: 16px; height: 16px; }
+  .request-list .proposal-card { padding: 16px; border-radius: 16px; }
+  .request-list :is(.request-resource,.requests-access,.proposal-progress,.proposal-feedback > p) { display: none; }
+  .request-list .proposal-feedback { border-top: 0; padding-top: 4px; margin-top: 8px; }
+  .request-list .proposal-feedback h4 { font-size: 14px; line-height: 1.5; }
+  .request-mobile-details { display: block; margin-top: 12px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+  .request-mobile-details summary { cursor: pointer; }
+  .request-mobile-details p { margin-top: 8px; }
+  .requests-page-heading h2 { font-size: 22px; }
+}
+@media(forced-colors:active) { .buddy-navigation { -webkit-mask-image: none; mask-image: none; } }
+
+.roadmap-completion-note { min-height: 40px; padding-top: 8px; }
+.roadmap-progress .roadmap-completion-note .roadmap-finished { margin: 0; line-height: 1.5; }
+.buddy-sidebar { contain: layout style; }

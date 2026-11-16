@@ -38,12 +38,16 @@ export function MessageText({text,assistant=false}:{text:string;assistant?:boole
   return <div className="message-text message-markdown" dangerouslySetInnerHTML={{__html:html}}/>;
 }
 
+export function sourceTitle(title:string):string {
+  return title.replace(/\[ЧЕК[\s-]*ЛИСТ\]\s*/giu,'').trim() || 'Материал базы знаний';
+}
+
 export function MessageSources({sources}:{sources:SourceLink[]}) {
   const unique=[...new Map(sources.map(source=>[source.id || source.url || source.title,source])).values()];
   if(!unique.length)return null;
   return <section className="message-sources" aria-label="Источники ответа"><span className="message-sources-heading">{unique.length===1?'Источник':'Источники'}</span><ul>{unique.map((source,index)=>{
     const url=httpUrl(source.url || '');
-    const content=<><span className="message-source-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Zm0 0v6h6M8 13h8M8 17h5"/></svg></span><span className="message-source-label"><span>{source.title || 'Материал базы знаний'}</span>{url && <small>{url.hostname}</small>}</span>{url && <span className="message-source-arrow" aria-hidden="true">↗</span>}</>;
+    const content=<><span className="message-source-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Zm0 0v6h6M8 13h8M8 17h5"/></svg></span><span className="message-source-label"><span>{sourceTitle(source.title || '')}</span>{url && <small>{url.hostname}</small>}</span>{url && <span className="message-source-arrow" aria-hidden="true">↗</span>}</>;
     return <li key={source.id || index}>{url?<a className="message-source-card" href={url.href} target="_blank" rel="noopener noreferrer">{content}</a>:<div className="message-source-card">{content}</div>}</li>;
   })}</ul></section>;
 }
