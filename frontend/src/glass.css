@@ -19,9 +19,9 @@
   --glass-shadow: 0 8px 28px -12px rgba(45, 44, 76, .18), 0 2px 6px -3px rgba(45, 44, 76, .1);
   --glass-float: 0 20px 65px -24px rgba(38, 32, 65, .28), 0 4px 14px -8px rgba(38, 32, 65, .15);
   --glass-modal-shadow: 0 36px 100px -24px rgba(25, 23, 47, .35), 0 10px 30px -12px rgba(25, 23, 47, .18);
-  --glass-violet: rgba(153, 105, 221, .23);
-  --glass-blue: rgba(109, 178, 236, .12);
-  --glass-mint: rgba(109, 206, 179, .035);
+  --glass-background:
+    linear-gradient(0deg, var(--glass-canvas), transparent 80%),
+    linear-gradient(115deg, #dfcff0 0%, #dfdef1 45%, #d8e7f4 100%);
   --glass-active: rgba(145, 94, 211, .21);
   --glass-focus: rgba(150, 94, 235, .24);
   --glass-composer: rgba(226, 224, 240, .64);
@@ -50,9 +50,9 @@
   --glass-shadow: 0 8px 28px -12px rgba(0, 0, 0, .5), 0 2px 6px -3px rgba(0, 0, 0, .3);
   --glass-float: 0 20px 65px -24px rgba(0, 0, 0, .65), 0 4px 14px -8px rgba(0, 0, 0, .4);
   --glass-modal-shadow: 0 36px 100px -24px rgba(0, 0, 0, .8), 0 10px 30px -12px rgba(0, 0, 0, .5);
-  --glass-violet: rgba(132, 88, 204, .14);
-  --glass-blue: rgba(71, 130, 196, .1);
-  --glass-mint: rgba(74, 151, 137, .06);
+  --glass-background:
+    linear-gradient(0deg, var(--glass-canvas), transparent 80%),
+    linear-gradient(115deg, #30263f 0%, #202537 45%, #1b2a36 100%);
   --glass-active: rgba(173, 132, 234, .18);
   --glass-focus: rgba(185, 145, 247, .3);
   --glass-composer: rgba(30, 30, 41, .65);
@@ -67,11 +67,11 @@
   --chat-assistant-background: #E5E5EF;
 }
 .app-root {
-  background:
-    radial-gradient(ellipse at 12% 4%, var(--glass-violet), transparent 50%),
-    radial-gradient(ellipse at 92% 18%, var(--glass-blue), transparent 48%),
-    radial-gradient(ellipse at 60% 100%, var(--glass-mint), transparent 50%),
-    var(--glass-canvas);
+  /* A static, repeating dither softens quantization without large blurred layers. */
+  background-color: var(--glass-canvas);
+  background-image: url('./assets/surface-noise.svg'), var(--glass-background);
+  background-size: 160px 160px, 100% 100%, 100% 100%;
+  background-repeat: repeat, no-repeat, no-repeat;
 }
 .buddy-workspace { --workspace-line: var(--glass-divider); }
 .buddy-main,.buddy-chat { background: transparent; }
@@ -221,6 +221,7 @@
 .buddy-workspace ::-webkit-scrollbar-thumb:hover,.requests-dialog::-webkit-scrollbar-thumb:hover,.buddy-help-dialog::-webkit-scrollbar-thumb:hover { background: var(--glass-scrollbar-hover); }
 .buddy-workspace ::-webkit-scrollbar-corner { background: transparent; }
 @media (forced-colors:active) {
+  .app-root { background: Canvas; }
   .buddy-workspace,.requests-dialog,.buddy-help-dialog { scrollbar-color: auto; scrollbar-width: auto; }
   .buddy-sidebar,.buddy-topbar,.app-header,.home-activity,.roadmap-progress,.roadmap-detail,.login-card,.chat-input-bar,.requests-dialog,.buddy-help-dialog,.home-activity-row,.roadmap-step-card,.roadmap-summary-track,.message-source-card,.buddy-action-button {
     background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none;

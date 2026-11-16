@@ -1,12 +1,9 @@
 import React from 'react';
 
 export function AppBrand() {
-  return <div className="app-brand" aria-label="Avito — AI Buddy">
-    <div className="app-brand-wordmark" aria-hidden="true">
-      <svg viewBox="0 0 40 40" className="app-brand-dots"><circle cx="10" cy="29" r="9" fill="#04E061"/><circle cx="28" cy="12" r="11" fill="#00AAFF"/><circle cx="9" cy="9" r="6" fill="#965EEB"/><circle cx="28" cy="31" r="6" fill="#FF4053"/></svg>
-      <span>Avito</span>
-    </div>
-    <span className="app-brand-caption">AI Buddy</span>
+  return <div className="app-brand" role="img" aria-label="Avito — AI Buddy">
+    <svg viewBox="0 0 40 40" className="app-brand-dots" aria-hidden="true"><circle cx="10" cy="29" r="9" fill="#04E061"/><circle cx="28" cy="12" r="11" fill="#00AAFF"/><circle cx="9" cy="9" r="6" fill="#965EEB"/><circle cx="28" cy="31" r="6" fill="#FF4053"/></svg>
+    <div className="app-brand-type" aria-hidden="true"><span className="app-brand-name">Avito</span><span className="app-brand-caption">AI Buddy</span></div>
   </div>;
 }
 
