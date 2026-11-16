@@ -36,6 +36,7 @@ const { default: App } = load('App.tsx', {
   './lib/api': api,
 });
 const { ResizableSidebar } = load('pages/ResizableSidebar.tsx');
+const { RequestList } = load('pages/RequestList.tsx');
 const cookies = load('lib/cookies.ts');
 
 const noop = () => {};
@@ -58,6 +59,47 @@ function* buttons(node) {
     yield* buttons(node.props.children);
   }
 }
+
+test('home request preview includes at most three requests regardless of status, while the full list retains all', () => {
+  const items = ['approved', 'pending_approval', 'failed', 'draft', 'rejected'].map((status, index) => ({
+    conversationId: `chat-${index}`,
+    proposal: { proposal_id: String(index), resource_label: `Ресурс ${index}`, access_level: 'Read', status },
+  }));
+  const { RequestsDialog: PreviewDialog } = load('pages/RequestsDialog.tsx', {
+    '../lib/useRequests': { useRequests: () => ({ items, loaded: true, loading: false, failed: 0, refresh: noop }) },
+  });
+  const preview = render(PreviewDialog, { userId: '42', onClose: noop, onChat: noop });
+  assert.equal((preview.match(/<article\b/g) || []).length, 3);
+  for (const index of [0, 1, 2]) assert.match(preview, new RegExp(`Ресурс ${index}`));
+  assert.doesNotMatch(preview, /Ресурс [34]/);
+  assert.equal((render(RequestList, { items }).match(/<article\b/g) || []).length, 5);
+  assert.doesNotMatch(render(RequestList, { items, limit: 0 }), /<article\b/);
+  assert.doesNotMatch(render(RequestList, { items: [] }), /<article\b/);
+});
+
+test('request refresh errors retain the previous cards and never claim that the list is empty', () => {
+  for (const items of [[], [{ conversationId: 'chat', proposal: { proposal_id: '1', resource_label: 'Git', access_level: 'Read', status: 'approved' } }]]) {
+    const { RequestsDialog: FailedDialog } = load('pages/RequestsDialog.tsx', {
+      '../lib/useRequests': { useRequests: () => ({ items, loaded: true, loading: false, failed: 1, refresh: noop }) },
+    });
+    const html = render(FailedDialog, { userId: '42', onClose: noop, onChat: noop });
+    assert.match(html, /role="alert"/);
+    assert.doesNotMatch(html, /Заявок пока нет/);
+    assert.equal((html.match(/<article\b/g) || []).length, items.length);
+    if (items.length) assert.match(html, /Git/);
+  }
+});
+
+test('request actions open the matching conversation and remain absent for tasks without a conversation', () => {
+  const onChat = test.mock.fn();
+  const proposal = { proposal_id: '1', resource_id: 'repo', access_level: 'Read', status: 'approved' };
+  const items = [{ conversationId: 'first', proposal }, { conversationId: '', proposal }, { conversationId: 'second', proposal }];
+  const actions = [...buttons(RequestList({ items, onChat }))];
+  assert.equal(actions.length, 2);
+  actions[1].props.onClick();
+  actions[0].props.onClick();
+  assert.deepEqual(onChat.mock.calls.map(call => call.arguments), [['second'], ['first']]);
+});
 
 test('tasks show the empty state and only pending requests offer approval', () => {
   const onApproveTask = test.mock.fn();
