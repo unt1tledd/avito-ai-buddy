@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { OnboardingRoadmap, OnboardingStep, fetchOnboardingRoadmap, stepQuestion, toggleStep } from '../lib/api';
 
-type ViewMode = 'stages' | 'weeks';
-type Selection = { track: string; step: string; view: ViewMode };
-const emptySelection:Selection = {track:'',step:'',view:'stages'};
+type Selection = { track: string; step: string };
+const emptySelection:Selection = {track:'',step:''};
 const ALL_TRACKS = '__all__';
 const errorText = (error:unknown) => error instanceof Error ? error.message : 'Не удалось загрузить план адаптации';
 
@@ -44,7 +43,7 @@ export function OnboardingPage({data,loading=false,error,onRetry,onToggleStep,on
   const [selection,setSelection]=useState<Selection>(()=>{
     try {
       const saved=JSON.parse(localStorage.getItem(`buddy-roadmap-${userId}`)||'null');
-      if(saved)return {track:typeof saved.track==='string'?saved.track:'',step:typeof saved.step==='string'?saved.step:'',view:saved.view==='weeks'?'weeks':'stages'};
+      if(saved)return {track:typeof saved.track==='string'?saved.track:'',step:typeof saved.step==='string'?saved.step:''};
     } catch { /* Preferences are optional. */ }
     return emptySelection;
   });
@@ -66,16 +65,9 @@ export function OnboardingPage({data,loading=false,error,onRetry,onToggleStep,on
   const selected=steps.find(step=>step.step_id===selection.step);
   const done=steps.filter(step=>step.completed).length;
   const percent=steps.length?Math.round(done/steps.length*100):0;
-  const groups=new Map<string,{title:string;steps:OnboardingStep[]}>();
-  for(const step of steps) {
-    const title=step.period.trim() || 'Без срока';
-    const key=title.toLocaleLowerCase('ru');
-    if(!groups.has(key))groups.set(key,{title,steps:[]});
-    groups.get(key)!.steps.push(step);
-  }
   const chooseStep=(step:OnboardingStep)=>{
     setSelection(prev=>({...prev,step:step.step_id}));
-    if(window.matchMedia('(max-width: 900px)').matches)requestAnimationFrame(()=>detail.current?.scrollIntoView({behavior:'smooth',block:'start'}));
+    if(window.matchMedia('(min-width: 761px) and (max-width: 900px)').matches)requestAnimationFrame(()=>detail.current?.scrollIntoView({behavior:'smooth',block:'start'}));
   };
   const renderStep=(step:OnboardingStep)=>{
     const number=steps.findIndex(item=>item.step_id===step.step_id)+1;
@@ -85,11 +77,11 @@ export function OnboardingPage({data,loading=false,error,onRetry,onToggleStep,on
         title={step.completed?'Снять отметку выполнения':'Отметить выполненным'} disabled={loading || Boolean(savingStep) || Boolean(error)} onClick={()=>onToggleStep(step)}>
         {savingStep===step.step_id?<span className="roadmap-check-spinner" aria-hidden="true"/>:<RoadmapIcon kind="check"/>}
       </button>
-      <button type="button" className={`roadmap-step-card${selected?.step_id===step.step_id?' is-selected':''}`} aria-pressed={selected?.step_id===step.step_id} onClick={()=>chooseStep(step)}>
+      <div className="roadmap-step-main"><button type="button" className={`roadmap-step-card${selected?.step_id===step.step_id?' is-selected':''}`} aria-pressed={selected?.step_id===step.step_id} onClick={()=>chooseStep(step)}>
         <span className="roadmap-step-meta">Шаг {number}{step.period?` · ${step.period}`:''}</span>
         <span className="roadmap-step-title">{step.title}</span>
         <span className="roadmap-step-status">{step.completed?'Выполнено':step.current?currentLabel(step):'Предстоит'}</span>
-      </button>
+      </button><button className="roadmap-step-ask" disabled={chatBusy} aria-label={`Спросить бадди: ${step.title}`} onClick={()=>onSelectStepQuestion(stepQuestion(step))}><RoadmapIcon kind="buddy"/>Спросить бадди</button></div>
     </li>;
   };
   if(!data && loading)return <div className="roadmap-placeholder" role="status"><span className="roadmap-loading-mark"/><p>Загружаем Roadmap…</p></div>;
@@ -99,12 +91,11 @@ export function OnboardingPage({data,loading=false,error,onRetry,onToggleStep,on
     <div className="roadmap-toolbar"><h2>Твой план адаптации</h2></div>
     {error && <div className="roadmap-error" role="alert"><span>{error}</span><button className="buddy-text-button" disabled={loading || Boolean(savingStep)} onClick={onRetry}>Повторить загрузку</button></div>}
     {data.groupingAvailable ? <div className="roadmap-track-picker"><p>Треки адаптации</p><div className="roadmap-track-buttons" role="group" aria-label="Назначенные треки адаптации">{options.map(track=><button type="button" key={track.track} className={activeTrack?.track===track.track?'is-active':''} aria-pressed={activeTrack?.track===track.track} onClick={()=>setSelection(prev=>({...prev,track:track.track,step:''}))}>{track.display_name}</button>)}</div></div> : <p className="roadmap-flat-note">Общие шаги и шаги твоего направления показаны вместе. Текущий шаг указан отдельно для каждого трека.</p>}
-    <section className="roadmap-progress" aria-label="Прогресс адаптации"><div><div><h3>{activeTrack?.display_name || 'План адаптации'}</h3><p>{done} из {steps.length} шагов выполнено</p></div><strong>{percent}%</strong></div><div className="roadmap-progress-track" role="progressbar" aria-label="Выполнено шагов" aria-valuemin={0} aria-valuemax={steps.length || 1} aria-valuenow={done}><span style={{width:`${percent}%`}}/></div></section>
-    {steps.length>0 && done===steps.length && <p className="roadmap-finished"><RoadmapIcon kind="check"/>Все шаги выполнены. Отличная работа!</p>}
-    <div className="roadmap-steps-heading"><h3>Шаги адаптации</h3><div className="roadmap-view-switch" role="group" aria-label="Вид Roadmap">{(['stages','weeks'] as const).map(view=><button key={view} aria-pressed={selection.view===view} onClick={()=>setSelection(prev=>({...prev,view}))}>{view==='stages'?'Этапы':'По неделям'}</button>)}</div></div>
-    {steps.length? <div className={`roadmap-columns${selected?'':' roadmap-columns--list-only'}`}><div className="roadmap-step-list">{selection.view==='stages'?<ol className="roadmap-timeline">{steps.map(renderStep)}</ol>:[...groups].map(([key,group])=><section className="roadmap-period" key={key}><h4>{group.title}</h4><ol className="roadmap-timeline">{group.steps.map(renderStep)}</ol></section>)}</div>
+    <section className="roadmap-progress" aria-label="Прогресс адаптации"><div><div><h3>{activeTrack?.display_name || 'План адаптации'}</h3><p>{done} из {steps.length} шагов выполнено</p><div className="roadmap-completion-note">{steps.length>0 && done===steps.length && <p className="roadmap-finished"><RoadmapIcon kind="check"/>Все шаги выполнены. Отличная работа!</p>}</div></div><strong>{percent}%</strong></div><div className="roadmap-progress-track" role="progressbar" aria-label="Выполнено шагов" aria-valuemin={0} aria-valuemax={steps.length || 1} aria-valuenow={done}><span style={{width:`${percent}%`}}/></div></section>
+    <div className="roadmap-steps-heading"><h3>Шаги адаптации</h3></div>
+    {steps.length? <div className={`roadmap-columns${selected?'':' roadmap-columns--list-only'}`}><div className="roadmap-step-list"><ol className="roadmap-timeline">{steps.map(renderStep)}</ol></div>
       {selected && <aside ref={detail} className="roadmap-detail" aria-label="Подробности шага">
-        <span className={`roadmap-detail-status${selected.completed?' is-done':selected.current?' is-current':''}`}>{selected.completed?'Выполнено':selected.current?currentLabel(selected):'Предстоит'}</span><h3>{selected.title}</h3>{selected.period && <p className="roadmap-detail-period">{selected.period}</p>}<div className="roadmap-description">{selected.description || 'Подробного описания пока нет. Уточни порядок выполнения у бадди или спроси AI-buddy.'}</div>{selected.resource_id && <dl className="roadmap-resource"><dt>Ресурс</dt><dd>{selected.resource_id}</dd></dl>}<div className="roadmap-detail-actions"><button className="roadmap-ask" disabled={chatBusy} onClick={()=>onSelectStepQuestion(stepQuestion(selected))}><RoadmapIcon kind="buddy"/>Спросить у AI-buddy</button><p>Откроем новый чат с вопросом об этом шаге.</p><p className="roadmap-check-hint">Отмечай выполнение галочкой слева от шага.</p></div>
+        <span className={`roadmap-detail-status${selected.completed?' is-done':selected.current?' is-current':''}`}>{selected.completed?'Выполнено':selected.current?currentLabel(selected):'Предстоит'}</span><h3>{selected.title}</h3>{selected.period && <p className="roadmap-detail-period">{selected.period}</p>}<div className="roadmap-description">{selected.description || 'Подробного описания пока нет. Уточни порядок выполнения у бадди или спроси AI-buddy.'}</div>{selected.resource_id && <dl className="roadmap-resource"><dt>Ресурс</dt><dd>{selected.resource_id}</dd></dl>}<div className="roadmap-detail-actions"><button className="roadmap-ask" disabled={chatBusy} onClick={()=>onSelectStepQuestion(stepQuestion(selected))}><RoadmapIcon kind="buddy"/>Спросить у AI-buddy</button><p className="roadmap-check-hint">Отмечай выполнение галочкой слева от шага.</p></div>
       </aside>}
     </div>:<p className="roadmap-no-steps">В этом треке пока нет шагов.</p>}
   </section>;

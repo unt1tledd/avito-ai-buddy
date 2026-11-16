@@ -66,7 +66,8 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     try { localStorage.setItem(`buddy-history-open-${userId}`,String(historyOpen)); } catch { /* Storage is optional. */ }
   },[historyOpen,userId]);
   const workspace=useRef<HTMLDivElement>(null);
-  const drag=useRef<{pointer:number;startX:number;startWidth:number}|null>(null);
+  const drag=useRef<{pointer:number;startX:number;startWidth:number;width:number}|null>(null);
+  const resizeFrame=useRef<number|null>(null);
   const [dragging,setDragging]=useState(false);
   const [maxMenuWidth,setMaxMenuWidth]=useState(()=>Math.max(240,Math.min(720,window.innerWidth-360)));
   const [menuWidth,setMenuWidth]=useState(()=>{
@@ -95,7 +96,12 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     return ()=>document.body.classList.remove('sidebar-resizing');
   },[dragging]);
   useEffect(()=>{drag.current=null;setDragging(false);},[menuOpen]);
-  const finishResize=()=>{drag.current=null;setDragging(false);};
+  useEffect(()=>()=>{if(resizeFrame.current!==null)cancelAnimationFrame(resizeFrame.current);},[]);
+  const finishResize=()=>{
+    if(resizeFrame.current!==null){cancelAnimationFrame(resizeFrame.current);resizeFrame.current=null;}
+    if(drag.current){const width=drag.current.width;workspace.current?.style.setProperty('--menu-width',`${width}px`);setMenuWidth(width);}
+    drag.current=null;setDragging(false);
+  };
   const helpDialog = useRef<HTMLDialogElement>(null);
   useEffect(()=>{
     const dialog=helpDialog.current;
@@ -285,8 +291,9 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
       <button className={`buddy-profile-link${screen==='profile'?' is-active':''}`} aria-label="Профиль" title="Профиль" onDoubleClick={()=>setMenuOpen(true)} aria-current={screen==='profile'?'page':undefined} onClick={()=>navigate('profile')}><span className="buddy-avatar buddy-avatar--small">{initials}</span><span><strong>Профиль</strong><small>{profile.name || 'Стажёр'}</small></span></button>
       {menuOpen && <div className="buddy-sidebar-resize" role="separator" tabIndex={0} aria-label="Ширина меню" aria-orientation="vertical" aria-valuemin={240} aria-valuemax={maxMenuWidth} aria-valuenow={displayedMenuWidth}
         title="Потяни, чтобы изменить ширину. Двойной клик — сброс."
-        onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);drag.current={pointer:e.pointerId,startX:e.clientX,startWidth:displayedMenuWidth};setDragging(true);}}
-        onPointerMove={e=>{const current=drag.current;if(!current || current.pointer!==e.pointerId)return;setMenuWidth(Math.max(240,Math.min(maxMenuWidth,current.startWidth+e.clientX-current.startX)));}}
+        onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);drag.current={pointer:e.pointerId,startX:e.clientX,startWidth:displayedMenuWidth,width:displayedMenuWidth};setDragging(true);}}
+        onPointerMove={e=>{const current=drag.current;if(!current || current.pointer!==e.pointerId)return;current.width=Math.max(240,Math.min(maxMenuWidth,current.startWidth+e.clientX-current.startX));
+          if(resizeFrame.current===null)resizeFrame.current=requestAnimationFrame(()=>{resizeFrame.current=null;if(drag.current)workspace.current?.style.setProperty('--menu-width',`${drag.current.width}px`);});}}
         onPointerUp={e=>{finishResize();if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}
         onPointerCancel={finishResize} onLostPointerCapture={finishResize} onDoubleClick={()=>setMenuWidth(280)}
         onKeyDown={e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();setMenuWidth(e.key==='Home'?240:e.key==='End'?maxMenuWidth:Math.max(240,Math.min(maxMenuWidth,displayedMenuWidth+(e.key==='ArrowRight'?20:-20))));}}/>}
@@ -299,7 +306,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
         <ThemeToggle dark={dark} onToggle={onToggleTheme}/>
       </header>
       {screen==='home' && <HomePage userId={userId} name={profile.name} chats={chats} busy={busy || restoring} onChat={id=>void selectChat(id)} onQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}} onRequests={()=>navigate('requests')} onRoadmap={step=>{
-        if(step)try { const key=`buddy-roadmap-${userId}`;let saved;try{saved=JSON.parse(localStorage.getItem(key)||'null');}catch{/* Invalid preferences can be replaced. */}localStorage.setItem(key,JSON.stringify({track:step.track || '',step:step.step_id,view:saved?.view==='weeks'?'weeks':'stages'})); } catch { /* Storage is optional. */ }
+        if(step)try { const key=`buddy-roadmap-${userId}`;localStorage.setItem(key,JSON.stringify({track:step.track || '',step:step.step_id})); } catch { /* Storage is optional. */ }
         navigate('roadmap');
       }}/>}
       {screen==='roadmap' && <main className="buddy-page roadmap-page"><RoadmapPage userId={userId} chatBusy={busy || restoring} refreshVersion={roadmapVersion} onSelectStepQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}}/></main>}
