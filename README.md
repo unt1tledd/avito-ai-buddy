@@ -3,11 +3,15 @@
 [![Maintainability](https://qlty.sh/badges/eb487b1e-5fae-4258-bb78-019e12c8b95f/maintainability.svg)](https://qlty.sh/gh/unt1tledd/projects/avito-ai-buddy)
 
 # Команда "План-капкан"
-Гргорович Софья Андреевна - бэкенд тимлид
+Гргорович Софья Андреевна - бэкенд + тимлид
+
 Сорокин Александр - бэкенд
+
 Фарук Джафаров - фронтенд + бэкенд
-Андрей Екимов - Мл-инжинер
-Ямщиков Герман - devops-инжинео
+
+Андрей Екимов - МЛ-инжинер + бэкенд
+
+Ямщиков Герман - devops-инженер + qa
 # Avito AI Buddy
 
 https://disk.yandex.ru/i/dBHLAOncAqDorQ
