@@ -9,7 +9,7 @@ from ai_service.core.config import EMBEDDING_DIMENSIONS, Settings
 from ai_service.rag import chunking
 from ai_service.rag import import_documents as importer
 from ai_service.repositories.knowledge import KnowledgeRepository
-from ai_service.schemas.contracts import Document, DocumentChunk, MAX_CHUNK_TEXT
+from ai_service.schemas.contracts import MAX_CHUNK_TEXT, Document, DocumentChunk
 
 
 def document(text, id="vpn"):

@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ..core.config import validate_base_url, validate_bearer_token
 from ..core.diagnostics import UpstreamError, operation
 
-
 MAX_MODEL_OUTPUT_TOKENS = 1500
 
 
@@ -95,7 +94,7 @@ class ResponsesModel:
         validate_base_url("LLM_BASE_URL", base_url)
         validate_bearer_token("LLM_API_KEY", api_key)
         self.http = http
-        self.url = f"{base_url.rstrip("/")}/responses"
+        self.url = f"{base_url.rstrip('/')}/responses"
         self.api_key = api_key
         self.model = model
 

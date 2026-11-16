@@ -293,6 +293,14 @@ services:
       - alloy_data:/var/lib/alloy
     depends_on: [loki]
 
+  blackbox:
+    image: prom/blackbox-exporter:v0.27.0
+    profiles: [observability]
+    command: ["--config.file=/etc/blackbox_exporter/blackbox.yml"]
+    volumes:
+      - ./infra/prometheus/blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+
+
   prometheus:
     image: prom/prometheus:v3.5.0
     profiles: [observability]

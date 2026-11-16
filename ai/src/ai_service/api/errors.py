@@ -3,7 +3,6 @@
 from ..clients.embeddings import EmbeddingError
 from ..core.diagnostics import UpstreamError
 
-
 DEFAULT_MESSAGES = {
     "model": "Модель временно недоступна.",
     "embeddings": "Не удалось получить эмбеддинги.",

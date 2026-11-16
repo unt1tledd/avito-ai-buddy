@@ -6,6 +6,16 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from test_chat import (
+    ACTOR,
+    EMBEDDING,
+    QUESTION,
+    ScriptedModel,
+    answer,
+    ask,
+    searched_model,
+)
+from test_rag import VECTOR, migrate
 
 from ai_service.api.errors import public_error_message
 from ai_service.clients.embeddings import Embeddings
@@ -17,10 +27,11 @@ from ai_service.main import create_app
 from ai_service.repositories.knowledge import KnowledgeError, KnowledgeRepository
 from ai_service.schemas.citations import SOURCE_REFERENCE
 from ai_service.schemas.contracts import AccessPolicy, Document, SearchHit, SearchResult
-from ai_service.services.chat_service import LEXICAL_FALLBACK_NOTICE, MAX_EXCERPT_CHARS, lexical_answer
-from test_chat import ACTOR, QUESTION, EMBEDDING, ScriptedModel, answer, ask, searched_model, settings
-from test_rag import pg_schema, migrate, VECTOR
-
+from ai_service.services.chat_service import (
+    LEXICAL_FALLBACK_NOTICE,
+    MAX_EXCERPT_CHARS,
+    lexical_answer,
+)
 
 POLICY = AccessPolicy(repository_host='git.example.test', resource_label='Git', access_levels=['Developer'])
 HIT = SearchHit(id='lexical-guide', title='Инструкция', text='Настройте VPN по инструкции.', access_policies=[POLICY])

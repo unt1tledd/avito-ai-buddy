@@ -2,8 +2,14 @@ import json
 
 from pydantic import Field, field_validator
 
-from ..schemas.contracts import ChatActor, Identifier, Message, MessageText, OnboardingPlan, Payload
-
+from ..schemas.contracts import (
+    ChatActor,
+    Identifier,
+    Message,
+    MessageText,
+    OnboardingPlan,
+    Payload,
+)
 
 MAX_ONBOARDING_PLANS = 128
 MAX_ONBOARDING_CONTEXT_BYTES = 128 * 1024

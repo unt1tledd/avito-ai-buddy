@@ -2,14 +2,20 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ..agents.agent import Agent, MAX_SOURCE_BYTES, json_size
+from ..agents.agent import MAX_SOURCE_BYTES, Agent, json_size
 from ..clients.resilient_llm import ModelUnavailable
 from ..core.diagnostics import logger, operation
 from ..schemas.contracts import (
-    Actor, ChatActor, ChatResponse, CitedSource, MAX_RESPONSE_SOURCES, Message, OnboardingPlan, SearchResult,
+    MAX_RESPONSE_SOURCES,
+    Actor,
+    ChatActor,
+    ChatResponse,
+    CitedSource,
+    Message,
+    OnboardingPlan,
+    SearchResult,
 )
 from ..schemas.support import IMMEDIATE_SAFETY_ANSWER, needs_safety_fallback
-
 
 LEXICAL_NO_KNOWLEDGE = (
     "В доступных материалах недостаточно сведений, чтобы ответить на вопрос. "

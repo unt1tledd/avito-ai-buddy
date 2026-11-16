@@ -29,6 +29,7 @@ func TestAuthorizeRequests(t *testing.T) {
 	const serviceToken = "test-service-token"
 	const validOwner = `{"is_valid":true,"user_id":7}`
 
+	assignPlan := planpb.PlanService_AssignPlan_FullMethodName
 	getPlan := planpb.PlanService_GetPlan_FullMethodName
 	getPlanContext := planpb.PlanService_GetPlanContext_FullMethodName
 	completeStep := steppb.StepService_CompleteStep_FullMethodName
@@ -44,7 +45,10 @@ func TestAuthorizeRequests(t *testing.T) {
 		authBody   string
 		want       codes.Code
 	}{
-		{"assign own plan", planpb.PlanService_AssignPlan_FullMethodName, &planpb.AssignPlanRequest{UserId: 7}, accessToken, http.StatusOK, validOwner, codes.OK},
+		{"service assigns plan", assignPlan, &planpb.AssignPlanRequest{UserId: 7}, serviceToken, 0, "", codes.OK},
+		{"intern cannot assign own plan", assignPlan, &planpb.AssignPlanRequest{UserId: 7}, accessToken, 0, "", codes.Unauthenticated},
+		{"intern cannot assign another user's plan", assignPlan, &planpb.AssignPlanRequest{UserId: 8}, accessToken, 0, "", codes.Unauthenticated},
+		{"assignment requires a token", assignPlan, &planpb.AssignPlanRequest{UserId: 7}, "", 0, "", codes.Unauthenticated},
 		{"read own plan", getPlan, &planpb.GetPlanRequest{UserId: 7}, accessToken, http.StatusOK, validOwner, codes.OK},
 		{"read own plan context", getPlanContext, &planpb.GetPlanContextRequest{UserId: 7}, accessToken, http.StatusOK, validOwner, codes.OK},
 		{"cannot read another user's plan context", getPlanContext, &planpb.GetPlanContextRequest{UserId: 8}, accessToken, http.StatusOK, validOwner, codes.PermissionDenied},

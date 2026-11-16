@@ -20,7 +20,6 @@ from .rag.retriever import Retriever
 from .repositories.knowledge import KnowledgeRepository
 from .services.chat_service import ChatService
 
-
 HTTP_CLIENT_TIMEOUT_SECONDS = 60
 DB_POOL_TIMEOUT_SECONDS = 2
 DB_POOL_MAX_SIZE = 4

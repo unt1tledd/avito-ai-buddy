@@ -98,8 +98,12 @@ func TestConfirmProposalEnqueuesAccessRequest(t *testing.T) {
 					var payload port.CreateAccessRequest
 					if message.IdempotencyKey != "42" ||
 						message.Kind != entity.OutboxKindCreateAccessRequest ||
-						json.Unmarshal(message.Data, &payload) != nil || payload != wantPayload {
+						json.Unmarshal(message.Data, &payload) != nil || payload.DispatchID == "" {
 						t.Errorf("unexpected outbox message: %+v", message)
+					}
+					payload.DispatchID = ""
+					if payload != wantPayload {
+						t.Errorf("unexpected command: %+v", payload)
 					}
 					if tc.outboxErr == nil {
 						queued = &message
@@ -277,7 +281,40 @@ func TestConfirmProposalRequeuesFailedDispatch(t *testing.T) {
 	if resetKey != "42" {
 		t.Fatalf("reset key = %q, want 42", resetKey)
 	}
-	if sent {
-		t.Error("SendOutboxMessage() called on re-confirmation: the message must be reset, not re-inserted")
+	if !sent {
+		t.Error("re-confirmation must replace the command's dispatch ID")
+	}
+}
+
+func TestRetryAfterTaskFailureReplacesDispatchAttempt(t *testing.T) {
+	request := entity.AccessRequest{Status: "failed"}
+	proposal := &entity.Action{ID: 42, ResourceID: "wiki", AccessLevel: "read", CreatedAt: time.Now(), AccessRequest: &request}
+	var command port.CreateAccessRequest
+	var resets int
+	actions := &fakeActions{
+		getByID:    func(context.Context, int64, int64) (*entity.Action, error) { return proposal, nil },
+		saveAccess: func(_ context.Context, _ int64, value entity.AccessRequest) error { request = value; return nil },
+	}
+	outbox := &fakeOutbox{
+		getStatus: func(context.Context, string) (string, int32, error) { return entity.OutboxStatusSuccess, 0, nil },
+		reset:     func(context.Context, string) error { resets++; return nil },
+		send: func(_ context.Context, message entity.OutboxMessage) error {
+			return json.Unmarshal(message.Data, &command)
+		},
+	}
+	service := NewService(actions, outbox, validatorFunc(func(context.Context, string) (int64, error) { return 7, nil }), transactorFunc(func(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }), testProposalTTL)
+	if _, err := service.ConfirmProposal(t.Context(), "session", "42"); err != nil {
+		t.Fatal(err)
+	}
+	first := command.DispatchID
+	if first == "" || request.Status != "pending_dispatch" || resets != 1 {
+		t.Fatalf("command=%+v, request=%+v, resets=%d", command, request, resets)
+	}
+	request.Status = "failed"
+	if _, err := service.ConfirmProposal(t.Context(), "session", "42"); err != nil {
+		t.Fatal(err)
+	}
+	if command.DispatchID == first || command.ProposalID != 42 || resets != 2 {
+		t.Fatalf("retry=%+v, resets=%d", command, resets)
 	}
 }

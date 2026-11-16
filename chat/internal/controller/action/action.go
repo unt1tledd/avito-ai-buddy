@@ -11,8 +11,8 @@ import (
 	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
-
 	"avito-ai-buddy/pkg/observability"
+
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -7,7 +7,14 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..schemas.contracts import AccessLevel, AccessProposal, Identifier, Message, ProposalText, SearchHit
+from ..schemas.contracts import (
+    AccessLevel,
+    AccessProposal,
+    Identifier,
+    Message,
+    ProposalText,
+    SearchHit,
+)
 
 
 def repository_url(value: str) -> str | None:

@@ -6,7 +6,7 @@ VALUES (
            'CREATED'::chat.outbox_status,
            sqlc.arg(kind)
        )
-ON CONFLICT (idempotency_key) DO NOTHING;
+ON CONFLICT (idempotency_key) DO UPDATE SET data = EXCLUDED.data;
 
 -- name: GetOutboxMessage :one
 SELECT status, attempts

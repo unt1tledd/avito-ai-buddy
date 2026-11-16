@@ -1,8 +1,17 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, field_validator, model_serializer, model_validator
-
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    StringConstraints,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 MAX_CHAT_MESSAGE_LENGTH = 4000
 MAX_DOCUMENT_TEXT = 4000

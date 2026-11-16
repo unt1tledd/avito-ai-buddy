@@ -130,7 +130,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
 	})
 	group.Go(func() error {
 		return kafkaconsumer.RunConsumer(ctx, logger, cfg.Brokers(), cfg.TaskCommandsTopic, cfg.KafkaConsumer, cfg.KafkaWriter,
-			kafkaconsumer.NewCreateHandler(service))
+			kafkaconsumer.NewCreateHandler(service, publisher))
 	})
 	group.Go(func() error {
 		outboxWorker.Start(ctx)

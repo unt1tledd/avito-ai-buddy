@@ -8,8 +8,11 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .text_preparation import CONTEXT_PROMPT, CONTEXT_PROMPT_VERSION, TEXT_PREPARATION_VERSION
-
+from .text_preparation import (
+    CONTEXT_PROMPT,
+    CONTEXT_PROMPT_VERSION,
+    TEXT_PREPARATION_VERSION,
+)
 
 DEFAULT_KNOWLEDGE_MIN_SIMILARITY = 0.3
 # Chat's HTTP client waits 30 seconds. Include body reception and leave room

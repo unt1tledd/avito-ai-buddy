@@ -5,6 +5,7 @@ package action
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
@@ -96,9 +97,27 @@ func (r *PostgresRepository) SaveAccessRequest(ctx context.Context, proposalID i
 // ApplyTaskStatus returns the ID of the visible conversation to notify.
 // A missing proposal or deleted conversation has no notification target.
 func (r *PostgresRepository) ApplyTaskStatus(ctx context.Context, userID int64, event port.TaskEvent) (int64, error) {
-	row, err := r.getQueries(ctx).ApplyTaskStatus(ctx, sqlc.ApplyTaskStatusParams{
+	queries := r.getQueries(ctx)
+	if event.Status == entity.TaskPending || event.Status == entity.TaskFailed {
+		tx, err := transactor.ExtractTx(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("lifecycle status requires a transaction: %w", err)
+		}
+		queries = sqlc.New(tx)
+		// Serialize with ConfirmProposal before reading the dispatch ID. A separate
+		// statement gets a fresh read-committed snapshot after a concurrent retry,
+		// instead of comparing with an old outbox snapshot while waiting on UPDATE.
+		if _, err := queries.GetByID(ctx, sqlc.GetByIDParams{ID: event.ProposalID, UserID: userID}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return 0, nil
+			}
+			return 0, err
+		}
+	}
+	row, err := queries.ApplyTaskStatus(ctx, sqlc.ApplyTaskStatusParams{
 		UserID: userID, ProposalID: event.ProposalID, TaskID: event.TaskID,
-		ExternalRequestID: event.ExternalRequestID, Status: event.Status,
+		ExternalRequestID: event.ExternalRequestID, Status: string(event.Status),
+		DispatchID: event.DispatchID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil

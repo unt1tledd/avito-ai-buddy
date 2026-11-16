@@ -4,6 +4,7 @@ package action
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -76,7 +77,7 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 			if err != nil {
 				return fmt.Errorf("load outbox message: %w", err)
 			}
-			if status != entity.OutboxStatusFailed {
+			if status != entity.OutboxStatusFailed && request.Status != "failed" {
 				// Already dispatched successfully or still in progress:
 				// return the saved request without dispatching again.
 				return nil
@@ -84,16 +85,10 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 			if !time.Now().Before(expiresAt) {
 				return xerrors.ErrProposalExpired
 			}
-			// The dispatch failed after all retries: re-confirmation resets
-			// the outbox message so the worker tries again.
-			request.Status = "pending_dispatch"
-			if err := s.actions.SaveAccessRequest(txCtx, actionID, request); err != nil {
-				return fmt.Errorf("save request status: %w", err)
-			}
+			// Also retry commands accepted by Kafka but rejected by Task.
 			if err := s.outbox.ResetMessage(txCtx, idempotencyKey); err != nil {
 				return fmt.Errorf("re-enqueue access request: %w", err)
 			}
-			return nil
 		}
 
 		if !time.Now().Before(expiresAt) {
@@ -108,6 +103,7 @@ func (s *actionService) ConfirmProposal(ctx context.Context, token, proposalID s
 			ProposalID:  actionID,
 			ResourceID:  proposal.ResourceID,
 			AccessLevel: proposal.AccessLevel,
+			DispatchID:  rand.Text(),
 		})
 		if err != nil {
 			return fmt.Errorf("encode access request: %w", err)

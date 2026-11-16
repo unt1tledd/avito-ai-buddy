@@ -2,7 +2,11 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from ..rag.retriever import Retriever
-from ..rag.tools import FIND_INSTRUCTION_DESCRIPTION, FIND_INSTRUCTION_NAME, InstructionQuery
+from ..rag.tools import (
+    FIND_INSTRUCTION_DESCRIPTION,
+    FIND_INSTRUCTION_NAME,
+    InstructionQuery,
+)
 from ..repositories.knowledge import KnowledgeError
 from ..schemas.contracts import Actor, SearchResult
 

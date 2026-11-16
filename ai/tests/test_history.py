@@ -2,11 +2,10 @@ import asyncio
 import json
 
 import pytest
+from conversation_examples import CLARIFICATION_QUESTIONS
 
 from ai_service.rag.history import MAX_HISTORY_BYTES, history_message, prepare_history
-from conversation_examples import CLARIFICATION_QUESTIONS
 from ai_service.schemas.contracts import Actor, Message
-
 
 ACTOR = Actor(user_id="42", role="intern", team="51")
 

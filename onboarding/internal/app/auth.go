@@ -37,12 +37,12 @@ func authorizeRequests(auth tokenValidator, serviceToken string) grpc.UnaryServe
 		isServiceToken := serviceToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(serviceToken)) == 1
 
 		switch info.FullMethod {
-		case steppb.StepService_UpdateStepTemplate_FullMethodName:
+		case planpb.PlanService_AssignPlan_FullMethodName,
+			steppb.StepService_UpdateStepTemplate_FullMethodName:
 			if !isServiceToken {
 				return nil, status.Error(codes.Unauthenticated, "valid service token required")
 			}
-		case planpb.PlanService_AssignPlan_FullMethodName,
-			planpb.PlanService_GetPlan_FullMethodName,
+		case planpb.PlanService_GetPlan_FullMethodName,
 			planpb.PlanService_GetPlanContext_FullMethodName,
 			steppb.StepService_GetCurrentStep_FullMethodName,
 			steppb.StepService_CompleteStep_FullMethodName,

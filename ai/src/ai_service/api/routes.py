@@ -11,8 +11,8 @@ from pydantic import BaseModel
 from ..core.diagnostics import UpstreamError, logger, request_id
 from ..schemas.contracts import ChatResponse
 from ..services.chat_service import ChatService, ChatUnavailable, InvalidChat
-from .schemas import ChatRequest
 from .errors import public_error_message
+from .schemas import ChatRequest
 
 
 class Readiness(BaseModel):

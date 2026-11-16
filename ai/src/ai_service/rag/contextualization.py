@@ -11,7 +11,11 @@ from ..clients.llm import LanguageModel, ModelError
 from ..core.config import Settings
 from ..core.diagnostics import UpstreamError
 from ..core.text_preparation import CONTEXT_PROMPT, MAX_GENERATED_CONTEXT
-from ..repositories.queries import CONTEXT_CACHE_CREATE_SQL, CONTEXT_CACHE_GET_SQL, CONTEXT_CACHE_PUT_SQL
+from ..repositories.queries import (
+    CONTEXT_CACHE_CREATE_SQL,
+    CONTEXT_CACHE_GET_SQL,
+    CONTEXT_CACHE_PUT_SQL,
+)
 from ..schemas.contracts import DocumentChunk
 from .import_retry import retry_import_request
 

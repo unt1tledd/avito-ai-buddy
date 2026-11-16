@@ -1,17 +1,16 @@
 import json
 import logging
 import math
-from datetime import UTC, datetime
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, fields
-from enum import StrEnum
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from enum import StrEnum
 from time import monotonic
 from typing import Self
 
 import httpx
-
 
 request_id: ContextVar[str] = ContextVar("request_id", default="-")
 logger = logging.getLogger("uvicorn.error.ai_service.operations")

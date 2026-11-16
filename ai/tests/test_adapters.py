@@ -6,8 +6,12 @@ import pytest
 
 from ai_service.clients.embeddings import EmbeddingError, Embeddings
 from ai_service.clients.llm import ModelError, ResponsesModel
-from ai_service.core.config import EMBEDDING_DIMENSIONS, SILICONFLOW_DIMENSIONS, Settings, resolve_embedding_profile
-
+from ai_service.core.config import (
+    EMBEDDING_DIMENSIONS,
+    SILICONFLOW_DIMENSIONS,
+    Settings,
+    resolve_embedding_profile,
+)
 
 FIRST_VECTOR = [1, 0] + [0] * (EMBEDDING_DIMENSIONS - 2)
 SECOND_VECTOR = [0, 1] + [0] * (EMBEDDING_DIMENSIONS - 2)

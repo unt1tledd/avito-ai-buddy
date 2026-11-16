@@ -10,6 +10,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from test_chat import EMBEDDING, QUESTION, ScriptedModel, ask, call
 
 from ai_service.clients.embeddings import Embeddings
 from ai_service.clients.llm import ModelError
@@ -21,8 +22,6 @@ from ai_service.rag.import_retry import retry_import_request
 from ai_service.repositories.knowledge import KnowledgeRepository
 from ai_service.schemas.contracts import SearchHit, SearchResult
 from ai_service.schemas.support import IMMEDIATE_SAFETY_ANSWER, needs_safety_fallback
-from test_chat import EMBEDDING, QUESTION, ScriptedModel, ask, call, settings  # noqa: F401
-
 
 HIT = SearchHit(id="vpn-guide", title="VPN", text="Настройте VPN по инструкции.")
 

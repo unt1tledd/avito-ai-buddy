@@ -4,14 +4,19 @@ import logging
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from test_chat import ScriptedModel, ask
 
 from ai_service.clients.embeddings import EmbeddingError
 from ai_service.clients.llm import ModelError
 from ai_service.clients.resilient_llm import is_unavailable
-from ai_service.core.diagnostics import FailureKind, JSONFormatter, UpstreamError, request_id
+from ai_service.core.diagnostics import (
+    FailureKind,
+    JSONFormatter,
+    UpstreamError,
+    request_id,
+)
 from ai_service.main import create_app
 from ai_service.repositories.knowledge import KnowledgeError
-from test_chat import ScriptedModel, ask, settings  # noqa: F401
 
 
 def test_json_log_preserves_fields_and_omits_undeclared_data():

@@ -6,8 +6,18 @@ import pytest
 from pydantic import ValidationError
 
 from ai_service.rag.chunking import chunk_documents
-from ai_service.rag.proposals import AccessSelection, ProposalValidationError, confirmed_proposal
-from ai_service.schemas.contracts import AccessPolicy, AccessProposal, Document, Message, SearchHit
+from ai_service.rag.proposals import (
+    AccessSelection,
+    ProposalValidationError,
+    confirmed_proposal,
+)
+from ai_service.schemas.contracts import (
+    AccessPolicy,
+    AccessProposal,
+    Document,
+    Message,
+    SearchHit,
+)
 
 REPO = "https://git.example.test/platform/service"
 POLICY = AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"])

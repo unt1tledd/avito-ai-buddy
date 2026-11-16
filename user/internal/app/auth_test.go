@@ -1,19 +1,21 @@
 package app
 
 import (
+	"context"
+	"net"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
 	userpb "avito-ai-buddy/pkg/generated/user/v1"
 	"avito-ai-buddy/user/internal/entity"
-	"context"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
-	"net"
-	"net/http/httptest"
-	"strings"
-	"testing"
 )
 
 type validatorStub struct{}
@@ -74,7 +76,7 @@ func (profileServer) GetMetadata(context.Context, *userpb.GetMetadataRequest) (*
 
 func TestGatewayAuthorization(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	server := grpc.NewServer(grpc.UnaryInterceptor(authorizeRequests(validatorStub{}, "internal")))
 	userpb.RegisterUserServiceServer(server, profileServer{})
 	defer server.Stop()
@@ -83,7 +85,7 @@ func TestGatewayAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	mux, err := newGateway(t.Context(), conn, func(context.Context) error { return nil })
 	if err != nil {
 		t.Fatal(err)

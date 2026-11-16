@@ -315,7 +315,7 @@ func notifyWithRetry(
 			zap.Int("attempt", attempt),
 			zap.String("user_id", event.UserID),
 			zap.String("task_id", event.TaskID),
-			zap.String("status", event.Status),
+			zap.String("status", string(event.Status)),
 		)
 
 		if attempt >= maxAttempts(cfg) {

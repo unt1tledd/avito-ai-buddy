@@ -18,8 +18,15 @@ import httpx
 from ai_service.agents.agent import Agent
 from ai_service.clients.llm import ResponsesModel
 from ai_service.core.config import Settings
-from ai_service.schemas.contracts import AccessPolicy, Actor, Message, OnboardingPlan, SearchHit, SearchResult
-
+from ai_service.core.diagnostics import UpstreamError
+from ai_service.schemas.contracts import (
+    AccessPolicy,
+    Actor,
+    Message,
+    OnboardingPlan,
+    SearchHit,
+    SearchResult,
+)
 
 REPOSITORY = "https://git.example.test/team/repo"
 REPOSITORY_POLICY = AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"])
@@ -207,7 +214,7 @@ async def evaluate(case, settings, http, prompt):
                     problems.append("missing_query_term:" + term)
         result.update(passed=not problems, problems=problems, answer=response.answer,
                       proposal=response.proposal.model_dump() if response.proposal else None)
-    except Exception as error:
+    except (UpstreamError, TimeoutError) as error:
         # Do not print provider response bodies, connection strings or credentials.
         result.update(error=type(error).__name__, reason=getattr(error, "reason", "failed"))
     result.update(queries=retriever.queries, llm_calls=model.calls, duration_ms=round((monotonic() - started) * 1000))

@@ -50,7 +50,7 @@ func (p *Publisher) CheckTopics(topics ...string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		deadline, ok := ctx.Deadline()
 		if !ok {
-			return errors.New("Kafka readiness check requires a deadline")
+			return errors.New("readiness check for Kafka requires a deadline")
 		}
 		timeout := int(time.Until(deadline).Milliseconds())
 		if timeout <= 0 || ctx.Err() != nil {
@@ -63,11 +63,11 @@ func (p *Publisher) CheckTopics(topics ...string) func(context.Context) error {
 		for _, name := range topics {
 			topic, found := metadata.Topics[name]
 			if !found || topic.Error.Code() != ckafka.ErrNoError || len(topic.Partitions) == 0 {
-				return fmt.Errorf("Kafka topic %q is unavailable", name)
+				return fmt.Errorf("topic %q is unavailable on Kafka", name)
 			}
 			for _, partition := range topic.Partitions {
 				if partition.Error.Code() != ckafka.ErrNoError || partition.Leader < 0 {
-					return fmt.Errorf("Kafka topic %q partition %d is unavailable", name, partition.ID)
+					return fmt.Errorf("topic %q partition %d is unavailable on Kafka", name, partition.ID)
 				}
 			}
 		}
@@ -80,6 +80,7 @@ type createAccessRequestPayload struct {
 	ProposalID  string `json:"proposal_id"`
 	ResourceID  string `json:"resource_id"`
 	AccessLevel string `json:"access_level"`
+	DispatchID  string `json:"dispatch_id,omitempty"`
 }
 
 // PublishCreateAccessRequest sends the confirmed access request keyed by the
@@ -91,6 +92,7 @@ func (p *Publisher) PublishCreateAccessRequest(ctx context.Context, request port
 		ProposalID:  proposalID,
 		ResourceID:  request.ResourceID,
 		AccessLevel: request.AccessLevel,
+		DispatchID:  request.DispatchID,
 	})
 	if err != nil {
 		return fmt.Errorf("encode access request: %w", err)

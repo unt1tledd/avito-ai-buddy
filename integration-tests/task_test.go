@@ -6,14 +6,15 @@ import (
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 	taskpb "avito-ai-buddy/pkg/generated/task/v1"
 	"fmt"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func (s *suite) accessTask(t *testing.T) (string, *taskpb.AccessRequest) {
@@ -35,6 +36,20 @@ func (s *suite) accessTask(t *testing.T) (string, *taskpb.AccessRequest) {
 	require.Equal(t, "integration-wiki", task.ResourceId)
 	require.Equal(t, "read", task.AccessLevel)
 	require.Equal(t, taskpb.AccessRequestStatus_ACCESS_REQUEST_STATUS_PENDING, task.Status)
+	require.Eventually(t, func() bool {
+		history, err := s.chat.GetHistory(rpcContext(t, token), &chatpb.GetHistoryRequest{PageSize: 100})
+		if err != nil {
+			return false
+		}
+		for _, message := range history.Messages {
+			proposal := message.GetProposal()
+			if proposal.GetId() == msg.Proposal.Id {
+				request := proposal.GetAccessRequest()
+				return request.GetStatus() == "pending" && request.GetTaskId() == fmt.Sprint(task.TaskId)
+			}
+		}
+		return false
+	}, 30*time.Second, 100*time.Millisecond, "Chat must learn that Task persisted the request before a decision")
 	// Reconfirm after dispatch and read the persisted task through the HTTP gateway.
 	_, err = s.actions.ConfirmProposal(rpcContext(t, token), &chatpb.ConfirmProposalRequest{ProposalId: msg.Proposal.Id})
 	require.NoError(t, err)

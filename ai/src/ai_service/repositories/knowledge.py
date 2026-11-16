@@ -7,16 +7,27 @@ from psycopg_pool import AsyncConnectionPool, PoolTimeout, TooManyRequests
 from pydantic import ValidationError
 
 from ..core.config import Settings
-from ..core.text_preparation import TEXT_PREPARATION_VERSION
 from ..core.diagnostics import UpstreamError, operation
-from ..schemas.contracts import Actor, Document, DocumentChunk, MAX_CHUNK_TEXT, SearchHit, SearchResult
-
-from .queries import (
-    ACCESSIBLE_SOURCES_SQL, DELETE_DOCUMENTS_SQL, DOCUMENT_ACCESS_SQL, INSERT_DOCUMENT_SQL,
-    LEXICAL_SEARCH_SQL, LOCK_DOCUMENTS_SQL, READINESS_SCHEMA_SQL, READINESS_STATE_SQL,
-    SEARCH_SQL, UPDATE_TOKEN_COUNTS_SQL,
+from ..core.text_preparation import TEXT_PREPARATION_VERSION
+from ..schemas.contracts import (
+    MAX_CHUNK_TEXT,
+    Actor,
+    Document,
+    DocumentChunk,
+    SearchHit,
+    SearchResult,
 )
-
+from .queries import (
+    ACCESSIBLE_SOURCES_SQL,
+    DELETE_DOCUMENTS_SQL,
+    INSERT_DOCUMENT_SQL,
+    LEXICAL_SEARCH_SQL,
+    LOCK_DOCUMENTS_SQL,
+    READINESS_SCHEMA_SQL,
+    READINESS_STATE_SQL,
+    SEARCH_SQL,
+    UPDATE_TOKEN_COUNTS_SQL,
+)
 
 SEARCH_DB_TIMEOUT_SECONDS = 3
 MAX_SEARCH_HITS = 3

@@ -31,6 +31,14 @@ func NewService(repo repository, users userClient) *Service {
 	return &Service{repository: repo, users: users}
 }
 
+// GetByProposal reconciles a command after an ambiguous create/publish error.
+func (s *Service) GetByProposal(ctx context.Context, proposalID int64) (entity.AccessRequest, error) {
+	if proposalID <= 0 {
+		return entity.AccessRequest{}, taskerrors.ErrInvalidInput
+	}
+	return s.repository.GetByProposal(ctx, proposalID)
+}
+
 func (s *Service) Create(ctx context.Context, request entity.CreateRequest) (entity.AccessRequest, error) {
 	request.ResourceID = strings.TrimSpace(request.ResourceID)
 	request.AccessLevel = strings.TrimSpace(request.AccessLevel)

@@ -10,7 +10,6 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..core.diagnostics import logger, request_id
 
-
 MAX_CHAT_BODY_BYTES = 1024 * 1024
 CHAT_PATHS = {"/api/v1/answer", "/api/v1/get_answer", "/api/v1/chat", "/v1/chat"}
 
@@ -62,11 +61,15 @@ class RequestBoundary:
                     return message
 
                 for name, length in scope["headers"]:
-                    if name == b"content-length" and length.isdigit() and len(length) < 20:
-                        if int(length) > MAX_CHAT_BODY_BYTES:
-                            response = JSONResponse({"detail": "Тело запроса превышает 1 МиБ."}, status_code=413)
-                            await response(scope, receive, send_with_id)
-                            return
+                    if (
+                        name == b"content-length"
+                        and length.isdigit()
+                        and len(length) < 20
+                        and int(length) > MAX_CHAT_BODY_BYTES
+                    ):
+                        response = JSONResponse({"detail": "Тело запроса превышает 1 МиБ."}, status_code=413)
+                        await response(scope, receive, send_with_id)
+                        return
                 await self.app(scope, bounded_receive, send_with_id)
             else:
                 await self.app(scope, receive, send_with_id)

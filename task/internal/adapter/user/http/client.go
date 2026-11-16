@@ -44,7 +44,7 @@ func (c *Client) GetTeamID(ctx context.Context, userID int64) (int64, error) {
 		return 0, fmt.Errorf("%w: user %d has no internship", taskerrors.ErrInvalidInput, userID)
 	}
 	if response.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("User metadata returned HTTP %d", response.StatusCode)
+		return 0, fmt.Errorf("user metadata returned HTTP %d", response.StatusCode)
 	}
 	var metadata struct {
 		Team struct {
@@ -55,7 +55,7 @@ func (c *Client) GetTeamID(ctx context.Context, userID int64) (int64, error) {
 		return 0, fmt.Errorf("decode User metadata: %w", err)
 	}
 	if metadata.Team.ID <= 0 {
-		return 0, errors.New("User metadata has no team")
+		return 0, errors.New("user metadata has no team")
 	}
 	return metadata.Team.ID, nil
 }

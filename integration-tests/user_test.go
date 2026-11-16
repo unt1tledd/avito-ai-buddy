@@ -5,11 +5,12 @@ package integration_test
 import (
 	userpb "avito-ai-buddy/pkg/generated/user/v1"
 	"fmt"
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"testing"
 )
 
 func TestUserPersistsAcrossGRPCAndHTTP(t *testing.T) {

@@ -7,7 +7,6 @@ from typing import TypeVar
 
 from ..core.diagnostics import UpstreamError, logger
 
-
 T = TypeVar("T")
 IMPORT_MAX_ATTEMPTS = 3
 TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
