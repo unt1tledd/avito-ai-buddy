@@ -1,6 +1,11 @@
 /* Material layer. Layout and interaction rules remain in index.css. */
 :root {
   --glass-canvas: #eeedf5;
+  --message-user-shadow: 0 5px 14px -4px rgba(112, 68, 166, .22), 0 14px 30px -18px rgba(93, 56, 140, .28);
+  --message-assistant-shadow: 0 5px 14px -5px rgba(62, 57, 90, .14), 0 14px 30px -18px rgba(62, 57, 90, .2);
+  --roadmap-green: #159452;
+  --roadmap-green-hover: #117B44;
+  --roadmap-purple: #8C61C7;
   --glass-scrollbar: rgba(119, 98, 159, .32);
   --glass-scrollbar-hover: rgba(119, 98, 159, .52);
   --glass-panel: rgba(255, 255, 255, .62);
@@ -20,12 +25,18 @@
   --glass-active: rgba(145, 94, 211, .21);
   --glass-focus: rgba(150, 94, 235, .24);
   --glass-composer: rgba(226, 224, 240, .64);
+  --glass-composer-underlay: #CEC4E4;
   --glass-composer-focus: rgba(234, 231, 246, .84);
   --glass-composer-edge: rgba(123, 104, 164, .2);
   --glass-composer-shadow: 0 7px 24px -14px rgba(62, 47, 100, .2);
 }
 [data-theme='dark'] {
   --glass-canvas: #15161d;
+  --message-user-shadow: 0 5px 16px -4px rgba(0, 0, 0, .35), 0 14px 32px -18px rgba(120, 74, 182, .28);
+  --message-assistant-shadow: 0 5px 16px -4px rgba(0, 0, 0, .32), 0 14px 30px -18px rgba(0, 0, 0, .48);
+  --roadmap-green: #179958;
+  --roadmap-green-hover: #12834A;
+  --roadmap-purple: #B492E5;
   --glass-scrollbar: rgba(184, 168, 214, .28);
   --glass-scrollbar-hover: rgba(184, 168, 214, .48);
   --glass-panel: rgba(33, 34, 44, .72);
@@ -45,6 +56,7 @@
   --glass-active: rgba(173, 132, 234, .18);
   --glass-focus: rgba(185, 145, 247, .3);
   --glass-composer: rgba(30, 30, 41, .65);
+  --glass-composer-underlay: #17151F;
   --glass-composer-focus: rgba(37, 36, 50, .85);
   --glass-composer-edge: rgba(180, 166, 208, .15);
   --glass-composer-shadow: 0 8px 26px -16px rgba(0, 0, 0, .5);
@@ -63,7 +75,7 @@
 }
 .buddy-workspace { --workspace-line: var(--glass-divider); }
 .buddy-main,.buddy-chat { background: transparent; }
-/* The old solid footer mask made a visible horizontal stripe over the glass canvas. */
+/* No external footer strip: the gradient is clipped inside the input itself. */
 .buddy-chat .chat-composer::after { content: none; }
 .buddy-sidebar,.buddy-topbar,.app-header {
   background: var(--glass-panel);
@@ -108,14 +120,18 @@
 }
 .roadmap-step-card.is-selected { background: var(--glass-active); border-color: var(--avito-purple); }
 .chat-input-bar {
-  background: var(--glass-composer);
+  background:
+    linear-gradient(var(--glass-composer), var(--glass-composer)),
+    linear-gradient(to top, var(--glass-composer-underlay), transparent 28px);
   border: 1px solid var(--glass-composer-edge);
   box-shadow: inset 0 1px 0 var(--glass-shine), var(--glass-composer-shadow);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   backdrop-filter: blur(20px) saturate(140%);
 }
 .chat-input-bar:focus-within {
-  background: var(--glass-composer-focus);
+  background:
+    linear-gradient(var(--glass-composer-focus), var(--glass-composer-focus)),
+    linear-gradient(to top, var(--glass-composer-underlay), transparent 28px);
   border-color: color-mix(in srgb, var(--avito-purple) 50%, var(--glass-edge));
   box-shadow: 0 0 0 3px var(--glass-focus), inset 0 1px 0 var(--glass-shine), var(--glass-composer-shadow);
 }
@@ -124,9 +140,12 @@
   background: linear-gradient(145deg, color-mix(in srgb, var(--chat-user-background) 97%, white), var(--chat-user-background));
   box-shadow: inset 0 1px 0 var(--glass-shine), 0 4px 14px -9px rgba(93, 56, 140, .28);
 }
+.chat-message > .user-msg-bubble {
+  box-shadow: inset 0 1px 0 var(--glass-shine), var(--message-user-shadow);
+}
 .chat-message > .assistant-msg-card {
   background: linear-gradient(145deg, color-mix(in srgb, var(--chat-assistant-background) 93%, white), var(--chat-assistant-background));
-  box-shadow: inset 0 1px 0 var(--glass-shine), 0 4px 14px -10px rgba(35, 34, 50, .2);
+  box-shadow: inset 0 1px 0 var(--glass-shine), var(--message-assistant-shadow);
 }
 .chat-message > .assistant-msg-card--send-error { border-color: var(--glass-divider); }
 .buddy-action-button,.roadmap-ask,.login-card button:not(.password-visibility) {
@@ -158,6 +177,21 @@
 [data-theme='dark'] .requests-dialog::backdrop,[data-theme='dark'] .buddy-help-dialog::backdrop { background: rgba(4, 5, 12, .48); }
 .requests-header,.requests-footer { border-color: var(--glass-divider); }
 .message-copy-tooltip { background: var(--glass-solid); border-color: var(--glass-edge); box-shadow: var(--glass-shadow); }
+/* Assigned tracks share the violet accent; completion stays green. */
+.roadmap-track-buttons button {
+  background: var(--glass-control);
+  border-color: var(--glass-divider);
+}
+.roadmap-track-buttons button.is-active {
+  background: linear-gradient(135deg, var(--glass-control), var(--glass-active));
+  border-color: var(--roadmap-purple);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 3px 12px -6px var(--glass-focus);
+}
+.roadmap-content :is(button,select):focus-visible { outline-color: var(--roadmap-purple); }
+.roadmap-progress-track > span { background: var(--roadmap-green); }
+.roadmap-step.is-done .roadmap-step-marker { background: var(--roadmap-green); border-color: var(--roadmap-green); }
+.roadmap-step.is-done .roadmap-step-marker:hover:not(:disabled) { background: var(--roadmap-green-hover); border-color: var(--roadmap-green-hover); }
 /* Blur is limited to the shell and large surfaces, not every message or row. */
 @media (max-width:760px) {
   .buddy-sidebar,.buddy-topbar,.app-header,.home-activity,.roadmap-progress,.roadmap-detail,.login-card,.chat-input-bar {
@@ -192,4 +226,54 @@
     background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none;
     -webkit-backdrop-filter: none; backdrop-filter: none;
   }
+}
+
+:root {
+  --message-user-shadow: 0 6px 18px -4px rgba(107, 63, 163, .28), 0 16px 32px -18px rgba(93, 56, 140, .34);
+  --message-assistant-shadow: 0 6px 18px -5px rgba(58, 52, 86, .2), 0 16px 32px -18px rgba(58, 52, 86, .28);
+}
+[data-theme='dark'] {
+  --message-user-shadow: 0 6px 18px -4px rgba(0, 0, 0, .42), 0 16px 32px -18px rgba(120, 74, 182, .34);
+  --message-assistant-shadow: 0 6px 18px -4px rgba(0, 0, 0, .4), 0 16px 32px -18px rgba(0, 0, 0, .55);
+}
+.chat-feed-column article > .message-markdown { white-space: normal; line-height: 1.65; }
+.chat-feed-column .message-markdown > :first-child { margin-top: 0; }
+.chat-feed-column .message-markdown > :last-child { margin-bottom: 0; }
+.chat-feed-column .message-markdown p { margin: 0 0 10px; }
+.message-markdown :is(h1,h2,h3,h4,h5,h6) { font-size: 1.15em; font-weight: 600; line-height: 1.4; margin: 18px 0 10px; }
+.message-markdown h1 { font-size: 1.35em; }
+.message-markdown :is(ul,ol) { margin: 10px 0; padding-left: 24px; }
+.message-markdown li { margin: 4px 0; }
+.message-markdown blockquote { border-left: 3px solid var(--roadmap-purple); padding-left: 14px; margin: 12px 0; color: inherit; }
+.message-markdown code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .88em; background: color-mix(in srgb,var(--text-primary) 7%,transparent); border-radius: 5px; padding: 2px 5px; }
+.message-markdown pre { max-width: 100%; overflow-x: auto; padding: 14px; margin: 12px 0; border: 1px solid var(--glass-divider); border-radius: 12px; background: color-mix(in srgb,var(--glass-solid) 75%,transparent); }
+.message-markdown pre code { background: none; padding: 0; white-space: pre; overflow-wrap: normal; word-break: normal; }
+.message-markdown hr { margin: 16px 0; border: 0; border-top: 1px solid var(--glass-divider); }
+.message-table-scroll { max-width: 100%; overflow-x: auto; margin: 12px 0; }
+.message-markdown table { border-collapse: collapse; font-size: .9em; }
+.message-markdown :is(th,td) { border: 1px solid var(--glass-divider); padding: 8px 12px; text-align: left; min-width: 90px; }
+.message-markdown th { background: var(--glass-control); font-weight: 600; }
+.request-list { display: grid; gap: 16px; min-width: 0; }
+.request-list .proposal-card { margin: 0; }
+.requests-page-content { max-width: 1050px; margin: 0 auto; }
+.requests-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 28px; }
+.requests-page-heading h2 { font-size: 25px; letter-spacing: -.03em; }
+.requests-page-heading p { color: var(--text-secondary); font-size: 14px; margin-top: 10px; }
+.requests-page-empty { min-height: 45vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 18px; }
+.requests-empty-icon { display: grid; place-items: center; color: var(--text-secondary); }
+.requests-empty-icon svg { width: 40px; height: 40px; }
+.requests-page-empty h3 { font-size: 28px; letter-spacing: -.03em; }
+.requests-page-empty p { max-width: 430px; color: var(--text-secondary); font-size: 15px; line-height: 1.7; }
+@media(max-width:760px) {
+  .requests-page { padding: 28px 18px; }
+  .requests-page-heading { align-items: flex-start; flex-wrap: wrap; }
+}
+
+
+/* The composer is wider than the feed; message column dimensions stay intact. */
+.buddy-chat { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.buddy-chat .chat-composer { width: min(100%, 850px); }
+.buddy-chat .suggestion-list { width: min(100%, 820px); align-self: center; }
+@media(max-width:760px) {
+  .buddy-chat { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
 }

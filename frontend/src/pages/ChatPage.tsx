@@ -5,16 +5,18 @@ import { LogoutDialog } from './LogoutDialog';
 import { AccessProposalCard } from './AccessProposalCard';
 import { MessageText, MessageSources } from './MessageContent';
 import { AppBrand, ThemeToggle } from './AppChrome';
+import { RequestsPage } from './RequestsPage';
 import { HomePage } from './HomePage';
 import { RoadmapPage } from './OnboardingPage';
 import { historyRefreshQueue, shouldRefreshHistory, mergeChatMessages, reconcileProposal } from '../lib/chatEvents';
 import { ProfileDialog, readMenuOpen, saveMenuOpen, readProfileDialog, saveProfileDialog } from '../lib/uiPreferences';
-type Screen = 'home' | 'roadmap' | 'chat' | 'profile';
+type Screen = 'home' | 'roadmap' | 'requests' | 'chat' | 'profile';
 type IconName = Screen | 'panel' | 'chevron' | 'plus' | 'help' | 'logout' | 'close' | 'sun' | 'moon' | 'trash';
 function Icon({name}: {name: IconName}) {
   const paths: Record<IconName, React.ReactNode> = {
     home: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></>,
     roadmap: <><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v6a4 4 0 0 0 4 4h4a4 4 0 0 0 0-8h-1m-3 0h.01M18 15v2"/></>,
+    requests: <><path d="M14 3H5v18h14V8Z M14 3v5h5M8 12h8M8 16h5"/></>,
     chat: <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z"/>,
     profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></>,
     panel: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></>,
@@ -29,7 +31,7 @@ function Icon({name}: {name: IconName}) {
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
-const screenTitles: Record<Screen, string> = {home:'Главная', roadmap:'Roadmap', chat:'Чат AI-buddy', profile:'Профиль'};
+const screenTitles: Record<Screen, string> = {home:'Главная', roadmap:'Roadmap', requests:'Заявки', chat:'Чат AI-buddy', profile:'Профиль'};
 
 const errorText = friendlyError;
 export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:string;onLogout:()=>Promise<void>;dark:boolean;onToggleTheme:()=>void;profile:{name:string;email:string;team?:string;track?:string}}) {
@@ -263,6 +265,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
       <nav className="buddy-navigation">
         <button className={`buddy-nav-item${screen==='home'?' is-active':''}`} aria-label="Главная" title="Главная" aria-current={screen==='home'?'page':undefined} onDoubleClick={()=>setMenuOpen(true)} onClick={()=>navigate('home')}><Icon name="home"/><span>Главная</span></button>
         <button className={`buddy-nav-item${screen==='roadmap'?' is-active':''}`} aria-label="Roadmap" title="Roadmap" aria-current={screen==='roadmap'?'page':undefined} onDoubleClick={()=>setMenuOpen(true)} onClick={()=>navigate('roadmap')}><Icon name="roadmap"/><span>Roadmap</span></button>
+        <button className={`buddy-nav-item${screen==='requests'?' is-active':''}`} aria-label="Заявки" title="Заявки" aria-current={screen==='requests'?'page':undefined} onDoubleClick={()=>setMenuOpen(true)} onClick={()=>navigate('requests')}><Icon name="requests"/><span>Заявки</span></button>
         <div className={`buddy-chat-nav${screen==='chat'?' is-active':''}`}>
           <button className="buddy-nav-item" aria-label="Чат AI-buddy" title="Чат AI-buddy" onDoubleClick={()=>setMenuOpen(true)} aria-current={screen==='chat'?'page':undefined} disabled={busy || restoring} onClick={()=>{navigate('chat');setHistoryOpen(true);if(!activeRef.current && chats[0])void selectChat(chats[0].id);}}><Icon name="chat"/><span>Чат AI-buddy</span></button>
           <button className="buddy-icon-button buddy-history-toggle" tabIndex={menuOpen?0:-1} aria-hidden={!menuOpen} aria-label={historyOpen?'Свернуть историю чатов':'Развернуть историю чатов'} aria-expanded={historyOpen && menuOpen} aria-controls="buddy-chat-history" onClick={()=>setHistoryOpen(open=>!open)}><span className={`buddy-chevron${historyOpen?' is-open':''}`}><Icon name="chevron"/></span></button>
@@ -295,11 +298,12 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
         <h1>{screenTitles[screen]}</h1>
         <ThemeToggle dark={dark} onToggle={onToggleTheme}/>
       </header>
-      {screen==='home' && <HomePage userId={userId} name={profile.name} chats={chats} busy={busy || restoring} onChat={id=>void selectChat(id)} onQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}} onRoadmap={step=>{
+      {screen==='home' && <HomePage userId={userId} name={profile.name} chats={chats} busy={busy || restoring} onChat={id=>void selectChat(id)} onQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}} onRequests={()=>navigate('requests')} onRoadmap={step=>{
         if(step)try { const key=`buddy-roadmap-${userId}`;let saved;try{saved=JSON.parse(localStorage.getItem(key)||'null');}catch{/* Invalid preferences can be replaced. */}localStorage.setItem(key,JSON.stringify({track:step.track || '',step:step.step_id,view:saved?.view==='weeks'?'weeks':'stages'})); } catch { /* Storage is optional. */ }
         navigate('roadmap');
       }}/>}
       {screen==='roadmap' && <main className="buddy-page roadmap-page"><RoadmapPage userId={userId} chatBusy={busy || restoring} refreshVersion={roadmapVersion} onSelectStepQuestion={question=>{if(sending.current || restoring)return;newChat();setHistoryOpen(true);setInput(question);requestAnimationFrame(()=>textarea.current?.focus());}}/></main>}
+      {screen==='requests' && <RequestsPage userId={userId} onChat={id=>void selectChat(id)}/>}
       {screen==='profile' && <main className="buddy-page buddy-profile"><div className="buddy-profile-card"><span className="buddy-avatar buddy-avatar--large">{initials}</span><h2>{profile.name || 'Стажёр'}</h2><p className="buddy-profile-caption">Твой профиль стажировки</p><dl className="buddy-profile-details"><div><dt>Почта</dt><dd>{profile.email || 'Войди повторно, чтобы отобразить почту'}</dd></div><div><dt>Команда</dt><dd>{profile.team || 'Не указана'}</dd></div><div><dt>Направление</dt><dd>{profile.track || 'Не указано'}</dd></div></dl></div><footer className="buddy-profile-actions"><button className="buddy-action-button buddy-logout" onClick={()=>changeProfileDialog('logout')}><Icon name="logout"/>Выйти из аккаунта</button><button className="buddy-action-button" onClick={()=>changeProfileDialog('help')}><Icon name="help"/>Помощь</button></footer></main>}
       <main ref={main} hidden={screen!=='chat'} className="chat-main buddy-chat" aria-label="Переписка с AI-buddy">
       <div className="chat-scroll-area"><div className="chat-feed-column">

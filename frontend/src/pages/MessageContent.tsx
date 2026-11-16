@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import MarkdownIt from 'markdown-it';
 import type { SourceLink } from '../lib/api';
 
 export function assistantDisplayText(text:string):string {
@@ -18,33 +19,23 @@ export function MessageLink({value}:{value:string}) {
   return url?<a className="message-inline-link" href={url.href} target="_blank" rel="noopener noreferrer">{value}</a>:<>{value}</>;
 }
 
-function trimUrl(value:string):string {
-  let url=value.replace(/[.,;:!?]+$/,'');
-  for(const [open,close] of [['(',')'],['[',']']]) {
-    while(url.endsWith(close) && url.split(close).length>url.split(open).length)url=url.slice(0,-1);
-  }
-  return url;
-}
+// Raw HTML stays text. Only HTTP(S) links are rendered as clickable URLs.
+const markdown=new MarkdownIt({html:false,linkify:true,breaks:true});
+markdown.validateLink=value=>httpUrl(value)!==null;
+markdown.disable('image');
+markdown.renderer.rules.link_open=(tokens,index,options,_env,renderer)=>{
+  tokens[index].attrSet('target','_blank');
+  tokens[index].attrSet('rel','noopener noreferrer');
+  tokens[index].attrJoin('class','message-inline-link');
+  return renderer.renderToken(tokens,index,options);
+};
+markdown.renderer.rules.table_open=()=>'<div class="message-table-scroll"><table>';
+markdown.renderer.rules.table_close=()=>'</table></div>';
 
 export function MessageText({text,assistant=false}:{text:string;assistant?:boolean}) {
   const display=assistant?assistantDisplayText(text):text;
-  if(!assistant)return <p className="message-text">{display}</p>;
-  const parts:React.ReactNode[]=[];
-  // Render plain URLs and ordinary Markdown links as links, without treating
-  // server text as HTML or accepting script/data URL protocols.
-  const links=/\[([^\]\r\n]+)\]\((https?:\/\/[^\s<>]+?)\)|(https?:\/\/[^\s<>"']+)/gi;
-  let cursor=0;
-  for(const match of display.matchAll(links)) {
-    const start=match.index!;
-    parts.push(display.slice(cursor,start));
-    const value=match[2] || trimUrl(match[3]);
-    const url=httpUrl(value);
-    parts.push(url?<a key={start} className="message-inline-link" href={url.href} target="_blank" rel="noopener noreferrer">{match[1] || value}</a>:match[0]);
-    if(!match[2] && url)parts.push(match[3].slice(value.length));
-    cursor=start+match[0].length;
-  }
-  parts.push(display.slice(cursor));
-  return <p className="message-text">{parts}</p>;
+  const html=useMemo(()=>markdown.render(display),[display]);
+  return <div className="message-text message-markdown" dangerouslySetInnerHTML={{__html:html}}/>;
 }
 
 export function MessageSources({sources}:{sources:SourceLink[]}) {
