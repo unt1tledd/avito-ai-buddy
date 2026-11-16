@@ -7,4 +7,15 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: 'Cannot scrape {{ $labels.job }} at {{ $labels.instance }}'
+          summary: "Cannot scrape {{ $labels.job }} at {{ $labels.instance }}"
+
+  - name: application-readiness
+    rules:
+      - alert: AINotReady
+        expr: probe_success{job="ai-readiness"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI не готов отвечать на вопросы"
+          description: "Проверка {{ $labels.instance }} не проходит не менее двух минут."
