@@ -60,7 +60,7 @@
 
 ### Requirement: История с курсором
 
-Сервис Chat SHALL предоставлять `GET /v1/chat/messages` / `GetHistory` с `page_size` и `page_token`. Страницы идут от новых сообщений к старым, сообщения внутри страницы возвращаются в хронологическом порядке. Курсор ограничен выбранным диалогом; чтение истории не вызывает AI.
+Сервис Chat SHALL предоставлять `GET /v1/chat/messages` / `GetHistory` с `page_size` и `page_token`. Страницы идут от новых сообщений к старым, сообщения внутри страницы возвращаются в хронологическом порядке. Курсор применяется только к сообщениям выбранного диалога; чтение истории не вызывает AI. Нулевой или отсутствующий размер использует `CHAT_HISTORY_PAGE_SIZE` (по умолчанию 30); отрицательный размер отклоняется как `InvalidArgument`.
 
 #### Scenario: Чтение по страницам
 - **WHEN** клиент последовательно передаёт возвращаемый `next_page_token`
@@ -69,6 +69,20 @@
 #### Scenario: История другого пользователя
 - **WHEN** другой пользователь читает свой диалог, в котором ещё нет сообщений
 - **THEN** возвращается пустая история без сообщений первого пользователя
+
+#### Scenario: Размер страницы не указан
+- **WHEN** авторизованный клиент не передаёт `page_size` либо передаёт 0
+- **THEN** применяется положительный серверный размер страницы, по умолчанию 30
+- **AND** положительный явно заданный размер используется для этой страницы
+
+#### Scenario: Отрицательный размер страницы
+- **WHEN** клиент передаёт `page_size < 0`
+- **THEN** возвращается `InvalidArgument` без выдачи истории и вызова AI
+
+#### Scenario: Некорректный курсор
+- **WHEN** непустой `page_token` не разбирается как положительный десятичный int64
+- **THEN** текущий совместимый контракт возвращает пустую страницу и пустой `next_page_token`
+- **AND** чтение не изменяет сообщения и не вызывает AI
 
 ### Requirement: Проверенная сессия и актуальный контекст AI
 
@@ -118,7 +132,7 @@
 - **Личные диалоги.** [chat.proto](../../../chat/api/chat/v1/chat.proto), [ConversationController](../../../chat/internal/controller/conversation/conversation.go), [repository](../../../chat/internal/repository/conversation/postgres.go), [тесты](../../../chat/internal/controller/conversation/conversation_test.go).
 - **Отправка вопроса и сохранение ответа.** [контракт](../../../chat/api/chat/v1/chat.proto), [usecase](../../../chat/internal/usecase/message/message.go), [config](../../../chat/internal/config/config.go), [интеграционные тесты](../../../integration-tests/chat_test.go).
 - **Идемпотентность отправки.** [MessageService](../../../chat/internal/usecase/message/message.go), [SQL claims](../../../chat/internal/repository/message/queries.sql), [тесты конкурентности](../../../integration-tests/chat_test.go).
-- **История с курсором.** [SQL](../../../chat/internal/repository/message/queries.sql), [repository](../../../chat/internal/repository/message/postgres.go), [проверка страниц](../../../integration-tests/chat_test.go).
+- **История с курсором.** [SQL](../../../chat/internal/repository/message/queries.sql), [repository](../../../chat/internal/repository/message/postgres.go), [контракт](../../../chat/api/chat/v1/chat.proto), [размер по умолчанию](../../../chat/internal/config/config.go), [применение конфигурации](../../../chat/internal/app/app.go), [валидация размера](../../../chat/internal/controller/chat/chat_test.go), [проверка страниц](../../../integration-tests/chat_test.go).
 - **Проверенная сессия и актуальный контекст AI.** [MessageService](../../../chat/internal/usecase/message/message.go), [User adapter](../../../chat/internal/adapter/user/grpc/client.go), [Onboarding adapter](../../../chat/internal/adapter/onboarding/grpc/client.go), [AI adapter](../../../chat/internal/adapter/ai/http/client.go). Политика доступности контекста и происхождения старой истории — в [review](../../../docs/spec-review.md).
 - **Удаление диалогов.** [контроллер](../../../chat/internal/controller/conversation/conversation.go), [SQL](../../../chat/internal/repository/conversation/queries.sql).
 - **Уведомления и восстановление состояния.** [handler](../../../chat/internal/controller/events/handler.go), [subscription tests](../../../chat/internal/controller/events/subscription_test.go), [ChatPage](../../../frontend/src/pages/ChatPage.tsx), [chatEvents](../../../frontend/src/lib/chatEvents.ts).

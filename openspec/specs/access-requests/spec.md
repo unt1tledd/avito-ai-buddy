@@ -89,7 +89,7 @@ Chat SHALL сохранять терминальный `FAILED` outbox посл�
 
 ### Requirement: Чтение заявок владельцем и tracker
 
-Сервис Task SHALL предоставлять владельцу `GET /v1/tasks/{user_id}` по его пользовательскому access-токену и tracker — список ожидающих `GET /internal/v1/tasks` по tracker credentials с фильтром `team_id`. Поддержаны `after_id >= 0` и `limit` от 1 до 100; записи идут по возрастанию ID, пустая HTTP-выдача — `[]`. HTTP-поля Task используют protobuf snake_case; представление несовместимого frontend не является частью этого контракта.
+Сервис Task SHALL предоставлять владельцу `GET /v1/tasks/{user_id}` по его пользовательскому access-токену и tracker — список ожидающих `GET /internal/v1/tasks` по tracker credentials с фильтром `team_id`. Поддержаны `after_id >= 0` и `limit` от 1 до 100; записи идут по возрастанию ID, пустая HTTP-выдача — `[]`. HTTP-поля Task используют protobuf snake_case.
 
 #### Scenario: Собственные заявки
 - **WHEN** пользователь читает собственный список с допустимым курсором
@@ -104,6 +104,29 @@ Chat SHALL сохранять терминальный `FAILED` outbox посл�
 #### Scenario: Ошибки параметров
 - **WHEN** `team_id` или `user_id` неположителен, `after_id` отрицателен либо явно заданный `limit` вне диапазона
 - **THEN** запрос отклоняется как `InvalidArgument`
+
+### Requirement: Список заявок в интерфейсе
+
+Frontend SHALL загружать собственные заявки из Task по страницам до конца списка, сохранять точность строковых int64 ID и показывать ресурс, уровень доступа, номер и статус в порядке от новых к старым. Клиент поддерживает snake_case и совместимый camelCase с приоритетом snake_case. Пустой список отличается от ошибки загрузки; интерфейс пользователя не предоставляет полномочий tracker.
+
+#### Scenario: Реквизиты и статусы из Task
+- **WHEN** Task возвращает допустимый список собственных заявок
+- **THEN** карточки показывают ресурс, уровень и внешний номер либо ID Task при его отсутствии; дата создания используется для сортировки
+- **AND** статусы pending, approved и rejected отображаются соответственно как ожидание решения, одобрение и отказ; черновики Chat в этот список не добавляются
+
+#### Scenario: Несколько страниц и большие ID
+- **WHEN** страница содержит 100 записей, включая ID `9007199254740993`
+- **THEN** следующая страница запрашивается с точным ID последней записи в `after_id` без преобразования в JavaScript Number
+- **AND** загрузка продолжается до страницы короче 100 записей, после чего объединённый список сортируется по дате от новых к старым
+
+#### Scenario: Пустой список
+- **WHEN** успешная загрузка всех страниц не вернула заявок
+- **THEN** показывается состояние отсутствия заявок, а не ошибка
+
+#### Scenario: Ошибка загрузки или курсора
+- **WHEN** запрос страницы завершился ошибкой, ответ не является массивом либо следующему курсору нельзя придать положительное продвижение
+- **THEN** загрузка завершается ошибкой без бесконечного обхода страниц, интерфейс показывает ошибку и действие обновления
+- **AND** ранее загруженный список при неудачном обновлении сохраняется; частичный результат нового обхода не выдаётся за успешно обновлённый список
 
 ### Requirement: Решение доверенного tracker
 
@@ -123,6 +146,11 @@ Chat SHALL сохранять терминальный `FAILED` outbox посл�
 - **WHEN** заявка не относится к указанной команде
 - **THEN** возвращается `NotFound`
 - **AND** статус, отличный от approved/rejected, отклоняется как `InvalidArgument`
+
+#### Scenario: Внешний номер уже принадлежит другой заявке
+- **WHEN** tracker передаёт непустой `external_request_id`, уже сохранённый у другой заявки
+- **THEN** возвращается `AlreadyExists`, исходная заявка сохраняет прежний статус и реквизиты
+- **AND** событие нового решения не сохраняется, а другая заявка не изменяется
 
 ### Requirement: Сохранение результата в исходной переписке
 
@@ -147,4 +175,6 @@ Chat SHALL сохранять терминальный `FAILED` outbox посл�
 - **Повтор после сбоя доставки.** [worker](../../../chat/internal/outbox/worker.go), [повтор API](../../../chat/internal/usecase/action/action.go), [проверка попытки](../../../chat/internal/repository/action/queries.sql), [action tests](../../../chat/internal/usecase/action/action_test.go), [frontend test](../../../frontend/tests/onboarding.test.mjs). Ограничения выполнения интеграционных проверок описаны в [review](../../../docs/spec-review.md).
 - **Чтение заявок владельцем и tracker.** [task.proto](../../../task/api/task/v1/task.proto), [controller](../../../task/internal/controller/task/task.go), [marshaler](../../../task/internal/app/app.go), [SQL](../../../task/internal/repository/task/queries.sql), [тесты](../../../integration-tests/task_test.go).
 - **Решение доверенного tracker.** [Task controller](../../../task/internal/controller/task/task.go), [usecase](../../../task/internal/usecase/task/task.go), [транзакция](../../../task/internal/repository/task/postgres.go), [тесты гонки](../../../integration-tests/task_test.go).
+- **Список заявок в интерфейсе.** [преобразование и пагинация](../../../frontend/src/lib/api.ts), [загрузка и обновление](../../../frontend/src/lib/useRequests.ts), [страница](../../../frontend/src/pages/RequestsPage.tsx), [карточки](../../../frontend/src/pages/RequestList.tsx), [проверки формата и больших ID](../../../frontend/tests/onboarding.test.mjs).
+- **Конфликт внешнего номера.** [уникальный индекс](../../../task/migrations/migrations/000001_create_task.sql), [откат транзакции](../../../task/internal/repository/task/postgres.go), [отображение ошибки](../../../task/internal/controller/task/task.go). Отдельный выполненный интеграционный тест этого конфликта не подтверждён.
 - **Сохранение результата в исходной переписке.** [inbox](../../../chat/internal/inbox/inbox.go), [TaskStatus](../../../chat/internal/usecase/taskstatus/taskstatus.go), [SQL](../../../chat/internal/repository/action/queries.sql), [интеграционные тесты](../../../integration-tests/task_test.go).
