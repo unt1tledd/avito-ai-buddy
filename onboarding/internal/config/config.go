@@ -9,7 +9,8 @@ import (
 )
 
 type Config struct {
-	Clients struct {
+	UserServiceToken string `env:"USER_SERVICE_TOKEN"`
+	Clients          struct {
 		UserGRPCAddr string        `env:"USER_GRPC_ADDR" envDefault:"user:9090"`
 		UserTimeout  time.Duration `env:"ONBOARDING_USER_TIMEOUT" envDefault:"5s"`
 	}
@@ -42,7 +43,7 @@ func New() (*Config, error) {
 		return nil, errors.New("onboarding database URL and service token are required")
 	}
 	if strings.TrimSpace(cfg.Auth.BaseURL) == "" || strings.TrimSpace(cfg.Auth.ValidatePath) == "" {
-		return nil, errors.New("Auth URL and validation path are required")
+		return nil, errors.New("auth URL and validation path are required")
 	}
 	if cfg.Auth.Timeout <= 0 {
 		return nil, errors.New("AUTH_TIMEOUT must be positive")

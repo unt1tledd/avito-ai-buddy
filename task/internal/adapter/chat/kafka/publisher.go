@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
+
+	"avito-ai-buddy/task/internal/config"
 
 	kafkago "github.com/segmentio/kafka-go"
 )
@@ -13,15 +14,15 @@ type Publisher struct {
 	writer *kafkago.Writer
 }
 
-func NewPublisher(brokers []string, topic string) *Publisher {
+func NewPublisher(brokers []string, topic string, cfg config.KafkaWriterConfig) *Publisher {
 	return &Publisher{writer: &kafkago.Writer{
 		Addr:         kafkago.TCP(brokers...),
 		Topic:        topic,
 		Balancer:     &kafkago.Hash{},
 		RequiredAcks: kafkago.RequireAll,
-		BatchTimeout: 10 * time.Millisecond,
-		WriteTimeout: 5 * time.Second,
-		MaxAttempts:  1,
+		BatchTimeout: cfg.BatchTimeout,
+		WriteTimeout: cfg.WriteTimeout,
+		MaxAttempts:  cfg.MaxAttempts,
 	}}
 }
 
@@ -49,7 +50,7 @@ func (p *Publisher) CheckTopics(topics ...string) func(context.Context) error {
 		}
 		for _, topic := range topics {
 			if !available[topic] {
-				return fmt.Errorf("Kafka topic %q is unavailable", topic)
+				return fmt.Errorf("topic %q is unavailable on Kafka", topic)
 			}
 		}
 		return nil

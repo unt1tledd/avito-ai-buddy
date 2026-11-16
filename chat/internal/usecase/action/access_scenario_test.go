@@ -40,7 +40,7 @@ func TestInternCannotConfirmAnotherInternsProposal(t *testing.T) {
 	})
 	tx := transactorFunc(func(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) })
 
-	service := NewService(actions, outbox, auth, tx)
+	service := NewService(actions, outbox, auth, tx, testProposalTTL)
 	_, err := service.ConfirmProposal(ctx, "intern-8-session", "42")
 	if !errors.Is(err, chaterrors.ErrProposalNotFound) {
 		t.Fatalf("ConfirmProposal() error = %v, want %v", err, chaterrors.ErrProposalNotFound)

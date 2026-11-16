@@ -10,15 +10,19 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  go-and-docker:
-    name: Go tests and Docker builds
+  protobuf:
+    name: Generate protobuf
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
           cache-dependency-path: |
@@ -43,6 +47,33 @@ jobs:
       - name: Generate User, Chat, Onboarding and Task protobuf code
         run: bash infra/scripts/generate-proto.sh
 
+      - name: Upload generated protobuf
+        uses: actions/upload-artifact@v6
+        with:
+          name: generated-protobuf
+          path: pkg/generated/
+          if-no-files-found: error
+
+  go-tests:
+    name: Go tests and lint
+    needs: protobuf
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: generated-protobuf
+          path: pkg/generated
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
       - name: Generate Go test mocks
         run: |
           export GOBIN="$RUNNER_TEMP/mock-bin"
@@ -54,6 +85,16 @@ jobs:
             (cd "$module" && GOWORK=off go generate ./...)
           done
 
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          install-only: true
+
+      - name: Run Go lint
+        continue-on-error: true
+        run: make lint
+
       - name: Run Go tests
         run: |
           for module in auth user chat onboarding task pkg; do
@@ -62,13 +103,78 @@ jobs:
           done
 
       - name: Go coverage
+        env:
+          COVERAGE_PROFILE_DIR: ${{ runner.temp }}/go-coverprofiles
         run: bash infra/scripts/coverage.sh auth user chat onboarding task pkg
+
+      - name: Convert Go profiles to Cobertura
+        run: |
+          mkdir -p "$RUNNER_TEMP/go-coverage"
+
+          for module in auth user chat onboarding task pkg; do
+            profile="$RUNNER_TEMP/go-coverprofiles/$module.out"
+            test -s "$profile"
+            printf '\n=== Convert Go coverage: %s ===\n' "$module"
+
+            (
+              cd "$module"
+              GOWORK="$GITHUB_WORKSPACE/go.work" \
+                go run github.com/boumenot/gocover-cobertura@v1.5.0 \
+                  -by-files -ignore-gen-files -ignore-non-code-lines < "$profile"
+            ) > "$RUNNER_TEMP/go-coverage/$module.xml"
+          done
+
+          python3 - "$RUNNER_TEMP/go-coverage" <<'PY'
+          from pathlib import Path
+          import sys
+          import xml.etree.ElementTree as ET
+
+          for report in Path(sys.argv[1]).glob("*.xml"):
+              tree = ET.parse(report)
+              classes = tree.findall(".//class")
+              if not classes:
+                  raise SystemExit(f"Empty Go coverage report: {report.name}")
+
+              for entry in classes:
+                  path = Path(report.stem) / entry.attrib["filename"]
+                  if not path.is_file():
+                      raise SystemExit(f"Missing coverage source: {path}")
+                  entry.set("filename", path.as_posix())
+
+              sources = tree.getroot().find("sources")
+              if sources is not None:
+                  sources.clear()
+                  ET.SubElement(sources, "source").text = "."
+
+              tree.write(report, encoding="utf-8", xml_declaration=True)
+          PY
+
+      - name: Upload Go coverage
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-go
+          path: ${{ runner.temp }}/go-coverage/*.xml
+          if-no-files-found: error
+
+  docker-build:
+    name: Docker builds
+    needs: protobuf
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: generated-protobuf
+          path: pkg/generated
 
       - name: Validate Compose and build images
         env:
           POSTGRES_PASSWORD: ci-postgres
           AI_DB_PASSWORD: ci-ai
           USER_DB_PASSWORD: ci-user
+          USER_SERVICE_TOKEN: ci-user-service-token
           AUTH_DB_PASSWORD: ci-auth
           CHAT_DB_PASSWORD: ci-chat
           ONBOARDING_DB_PASSWORD: ci-onboarding
@@ -78,11 +184,24 @@ jobs:
           docker compose --profile tools --profile observability config --quiet
           docker compose build auth user chat onboarding ai task frontend
 
+  backend-integration:
+    name: Backend integration tests
+    needs: protobuf
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: generated-protobuf
+          path: pkg/generated
+
       - name: Run backend integration tests
         run: bash integration-tests/run.sh
 
   ai-tests:
-    name: AI tests
+    name: AI tests and lint
     runs-on: ubuntu-latest
 
     services:
@@ -107,20 +226,48 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install uv
         run: python -m pip install uv==0.12.17
 
-      - name: Run AI tests
+      - name: Run Ruff
+        continue-on-error: true
+        run: uv run --locked --group dev ruff check src tests
+
+      - name: Enable pgvector in the test database
         env:
-          AI_TEST_POSTGRES_DSN: "postgresql://postgres:ci-postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/ai_test"
-        run: uv run --locked pytest -ra
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          docker exec -e PGPASSWORD=ci-postgres "$POSTGRES_CONTAINER_ID" \
+            psql -X -h 127.0.0.1 -U postgres -d ai_test -v ON_ERROR_STOP=1 \
+            -c 'CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public'
+
+      - name: Run AI tests with coverage
+        env:
+          AI_TEST_POSTGRES_DSN: "postgresql://postgres:ci-postgres@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/ai_test"
+        run: >-
+          uv run --locked --group dev pytest -ra
+          --cov=src/ai_service
+          --cov-report=term
+          --cov-report=lcov:coverage.lcov
+
+      - name: Prepare AI coverage
+        run: |
+          grep -q '^SF:src/' coverage.lcov
+          sed 's|^SF:src/|SF:ai/src/|' coverage.lcov > "$RUNNER_TEMP/ai.lcov"
+
+      - name: Upload AI coverage
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-ai
+          path: ${{ runner.temp }}/ai.lcov
+          if-no-files-found: error
 
   frontend-tests:
-    name: Frontend tests
+    name: Frontend tests and lint
     runs-on: ubuntu-latest
 
     defaults:
@@ -130,7 +277,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
@@ -139,5 +286,48 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run frontend tests
-        run: npm test
+      - name: Run frontend lint
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Run frontend tests with coverage
+        run: npm run test:coverage
+
+      - name: Prepare frontend coverage
+        run: |
+          grep -q '^SF:src/' coverage/lcov.info
+          grep -qE '^DA:[0-9]+,[1-9][0-9]*(,|$)' coverage/lcov.info
+          sed 's|^SF:src/|SF:frontend/src/|' coverage/lcov.info \
+            > "$RUNNER_TEMP/frontend.lcov"
+
+      - name: Upload frontend coverage
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-frontend
+          path: ${{ runner.temp }}/frontend.lcov
+          if-no-files-found: error
+
+  coverage:
+    name: Publish combined coverage
+    needs: [go-tests, ai-tests, frontend-tests]
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v7
+        with:
+          pattern: coverage-*
+          path: coverage-reports
+
+      - name: Publish coverage to Qlty
+        uses: qltysh/qlty-action/coverage@v2
+        with:
+          token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+          files: |
+            coverage-reports/coverage-go/*.xml
+            coverage-reports/coverage-ai/ai.lcov
+            coverage-reports/coverage-frontend/frontend.lcov

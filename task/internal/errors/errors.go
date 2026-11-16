@@ -3,6 +3,8 @@ package errors
 import "errors"
 
 var (
+	ErrInvalidToken     = errors.New("invalid or expired access token")
+	ErrAuthUnavailable  = errors.New("auth service unavailable")
 	ErrInvalidInput     = errors.New("invalid task input")
 	ErrNotFound         = errors.New("access request not found")
 	ErrProposalConflict = errors.New("proposal already used for a different access request")

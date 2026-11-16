@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"avito-ai-buddy/pkg/observability"
+
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -69,7 +70,7 @@ func Run(ctx context.Context, logger *zap.Logger, cfg *config.Config) error {
 	}
 	defer func() { _ = userConn.Close() }()
 	userServiceClient := userpb.NewUserServiceClient(userConn)
-	userClient := useradapter.NewUserClient(userServiceClient, cfg.Clients.UserTimeout)
+	userClient := useradapter.NewUserClient(userServiceClient, cfg.Clients.UserTimeout, cfg.UserServiceToken)
 
 	planRepository := planrepo.NewPlanRepository(plansqlc.New(db), transactor.NewTransactor(db))
 	stepRepository := steprepo.NewStepRepository(stepsqlc.New(db))

@@ -6,14 +6,15 @@ import (
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 	taskpb "avito-ai-buddy/pkg/generated/task/v1"
 	"fmt"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func (s *suite) accessTask(t *testing.T) (string, *taskpb.AccessRequest) {
@@ -55,6 +56,31 @@ func (s *suite) accessTask(t *testing.T) (string, *taskpb.AccessRequest) {
 
 func decision(task *taskpb.AccessRequest, state taskpb.AccessRequestStatus) *taskpb.DecideRequest {
 	return &taskpb.DecideRequest{TaskId: task.TaskId, Decision: &taskpb.Decision{TeamId: teamID, DecidedByUserId: 910001, Status: state, Comment: "integration decision", ExternalRequestId: fmt.Sprintf("it-%d", task.TaskId)}}
+}
+
+func TestGetUserTasks(t *testing.T) {
+	s := setup(t)
+	token, task := s.accessTask(t)
+	otherID, otherToken := s.intern(t)
+	ownerURL := fmt.Sprintf("%s/v1/tasks/%d", s.taskURL, task.UserId)
+	otherURL := fmt.Sprintf("%s/v1/tasks/%d", s.taskURL, otherID)
+
+	s.call(t, "GET", ownerURL, otherToken, nil, 403)
+	s.call(t, "GET", ownerURL, trackerToken, nil, 401)
+	empty := s.call(t, "GET", otherURL, otherToken, nil, 200)
+	require.JSONEq(t, "[]", string(empty.body))
+
+	approved, err := s.tasks.Decide(rpcContext(t, trackerToken),
+		decision(task, taskpb.AccessRequestStatus_ACCESS_REQUEST_STATUS_APPROVED))
+	require.NoError(t, err)
+	r := s.call(t, "GET", ownerURL+"?limit=1", token, nil, 200)
+	var response taskpb.GetUserTasksResponse
+	decode(t, append(append([]byte(`{"tasks":`), r.body...), '}'), &response)
+	require.Len(t, response.GetTasks(), 1)
+	require.True(t, proto.Equal(approved, response.GetTasks()[0]))
+
+	empty = s.call(t, "GET", fmt.Sprintf("%s?after_id=%d", ownerURL, task.TaskId), token, nil, 200)
+	require.JSONEq(t, "[]", string(empty.body))
 }
 
 func TestAccessRequestLifecycle(t *testing.T) {

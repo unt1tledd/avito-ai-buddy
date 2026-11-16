@@ -11,7 +11,8 @@ import (
 // Config aggregates every configurable knob of the chat service, parsed
 // from the environment.
 type Config struct {
-	Clients struct {
+	UserServiceToken string `env:"USER_SERVICE_TOKEN"`
+	Clients          struct {
 		UserGRPCAddr         string        `env:"USER_GRPC_ADDR" envDefault:"user:50051"`
 		OnboardingGRPCAddr   string        `env:"ONBOARDING_GRPC_ADDR" envDefault:"onboarding:50051"`
 		AIBaseURL            string        `env:"AI_BASE_URL" envDefault:"http://ai:8080"`
@@ -58,6 +59,10 @@ type Config struct {
 	App struct {
 		HistoryPageSize int32 `env:"CHAT_HISTORY_PAGE_SIZE" envDefault:"30"`
 	}
+
+	Proposal struct {
+		TTL time.Duration `env:"CHAT_PROPOSAL_TTL" envDefault:"24h"`
+	}
 }
 
 type KafkaConfig struct {
@@ -102,6 +107,9 @@ func New() (*Config, error) {
 	}
 	if cfg.App.HistoryPageSize <= 0 {
 		return nil, errors.New("CHAT_HISTORY_PAGE_SIZE must be positive")
+	}
+	if cfg.Proposal.TTL <= 0 {
+		return nil, errors.New("CHAT_PROPOSAL_TTL must be positive")
 	}
 	if cfg.Outbox.BatchSize <= 0 {
 		return nil, errors.New("CHAT_OUTBOX_BATCH_SIZE must be positive")

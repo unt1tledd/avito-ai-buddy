@@ -1,423 +1,156 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { OnboardingStep, stepQuestion } from '../lib/api';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { OnboardingRoadmap, OnboardingStep, fetchOnboardingRoadmap, stepQuestion, toggleStep } from '../lib/api';
+
+type ViewMode = 'stages' | 'weeks';
+type Selection = { track: string; step: string; view: ViewMode };
+const emptySelection:Selection = {track:'',step:'',view:'stages'};
+const ALL_TRACKS = '__all__';
+const errorText = (error:unknown) => error instanceof Error ? error.message : 'Не удалось загрузить план адаптации';
+
+// Advance only the selected step that was just completed, and only to the
+// current step of that same track explicitly returned by the server.
+export function nextRoadmapStep(before:OnboardingRoadmap|null, after:OnboardingRoadmap|null, selectedId:string):string {
+  const previous=before?.steps.find(step=>step.step_id===selectedId);
+  const saved=after?.steps.find(step=>step.step_id===selectedId);
+  if(!previous || previous.completed || !saved?.completed)return selectedId;
+  const track=previous.track || before?.tracks.find(item=>item.current_step_id===selectedId)?.track;
+  const next=track?after?.tracks.find(item=>item.track===track)?.current_step_id:undefined;
+  return next && after?.steps.some(step=>step.step_id===next)?next:selectedId;
+}
+
+function RoadmapIcon({kind='route'}:{kind?:'route'|'refresh'|'chevron'|'buddy'|'check'}) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {kind==='route'?<><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v6a4 4 0 0 0 4 4h4a4 4 0 0 0 0-8h-3M18 15v2"/></>
+      :kind==='refresh'?<><path d="M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 13-2l2 2M4 17l2 2a8 8 0 0 0 13-2"/></>
+      :kind==='chevron'?<path d="m6 9 6 6 6-6"/>
+      :kind==='check'?<path d="m5 12 4 4L19 6"/>
+      :<><rect x="4" y="6" width="16" height="14" rx="5"/><path d="M12 3v3M8 12h.01M16 12h.01M9 16h6"/></>}
+  </svg>;
+}
 
 interface OnboardingPageProps {
-  steps: OnboardingStep[];
+  data: OnboardingRoadmap | null;
   loading?: boolean;
   error?: string;
   onRetry: () => void;
+  onToggleStep: (step:OnboardingStep) => void;
+  onSelectStepQuestion: (question:string) => void;
+  savingStep?: string;
   chatBusy?: boolean;
-  isClosing: boolean;
-  onAnimationEnd?: React.AnimationEventHandler<HTMLElement>;
-  onClose: () => void;
-  onToggleStep: (stepId: string) => void;
-  savingSteps?: string[];
-  onSelectStepQuestion: (question: string) => void;
+  userId: string;
 }
 
-export const OnboardingPage: React.FC<OnboardingPageProps> = ({
-  steps,
-  loading = false,
-  error,
-  onRetry,
-  chatBusy = false,
-  isClosing,
-  onAnimationEnd,
-  onClose,
-  onToggleStep,
-  savingSteps = [],
-  onSelectStepQuestion,
-}) => {
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('1 неделя');
-  const [viewMode, setViewMode] = useState<'graph' | 'cards'>('graph');
+export function OnboardingPage({data,loading=false,error,onRetry,onToggleStep,onSelectStepQuestion,savingStep='',chatBusy=false,userId}:OnboardingPageProps) {
+  const [selection,setSelection]=useState<Selection>(()=>{
+    try {
+      const saved=JSON.parse(localStorage.getItem(`buddy-roadmap-${userId}`)||'null');
+      if(saved)return {track:typeof saved.track==='string'?saved.track:'',step:typeof saved.step==='string'?saved.step:'',view:saved.view==='weeks'?'weeks':'stages'};
+    } catch { /* Preferences are optional. */ }
+    return emptySelection;
+  });
+  const detail=useRef<HTMLElement>(null);
+  const previousData=useRef(data);
+  useEffect(()=>{
+    const next=nextRoadmapStep(previousData.current,data,selection.step);
+    previousData.current=data;
+    if(next!==selection.step)setSelection(previous=>({...previous,step:next}));
+  },[data,selection.step]);
+  useEffect(()=>{
+    try { localStorage.setItem(`buddy-roadmap-${userId}`,JSON.stringify(selection)); } catch { /* Preferences are optional. */ }
+  },[selection,userId]);
+  const assignedName=data?.tracks.find(track=>track.track===data.assignedTrack)?.display_name || data?.assignedTrack;
+  const options = data?.groupingAvailable ? data.tracks : [{track:ALL_TRACKS,display_name:assignedName?`План адаптации · ${assignedName}`:'Назначенный план'}];
+  const currentLabel=(step:OnboardingStep)=>step.current_track_name?`Текущий шаг · ${step.current_track_name}`:'Текущий шаг';
+  const activeTrack=options.find(track=>track.track===selection.track) || options[0];
+  const steps=(data?.steps || []).filter(step=>!data?.groupingAvailable || step.track===activeTrack?.track);
+  const selected=steps.find(step=>step.step_id===selection.step);
+  const done=steps.filter(step=>step.completed).length;
+  const percent=steps.length?Math.round(done/steps.length*100):0;
+  const groups=new Map<string,{title:string;steps:OnboardingStep[]}>();
+  for(const step of steps) {
+    const title=step.period.trim() || 'Без срока';
+    const key=title.toLocaleLowerCase('ru');
+    if(!groups.has(key))groups.set(key,{title,steps:[]});
+    groups.get(key)!.steps.push(step);
+  }
+  const chooseStep=(step:OnboardingStep)=>{
+    setSelection(prev=>({...prev,step:step.step_id}));
+    if(window.matchMedia('(max-width: 900px)').matches)requestAnimationFrame(()=>detail.current?.scrollIntoView({behavior:'smooth',block:'start'}));
+  };
+  const renderStep=(step:OnboardingStep)=>{
+    const number=steps.findIndex(item=>item.step_id===step.step_id)+1;
+    return <li key={step.step_id} className={`roadmap-step${step.completed?' is-done':''}${step.current && !step.completed?' is-current':''}`}>
+      <button type="button" role="checkbox" className="roadmap-step-marker" aria-checked={step.completed} aria-busy={savingStep===step.step_id}
+        aria-label={`${step.completed?'Снять отметку':'Отметить выполненным'}: ${step.title}`}
+        title={step.completed?'Снять отметку выполнения':'Отметить выполненным'} disabled={loading || Boolean(savingStep) || Boolean(error)} onClick={()=>onToggleStep(step)}>
+        {savingStep===step.step_id?<span className="roadmap-check-spinner" aria-hidden="true"/>:<RoadmapIcon kind="check"/>}
+      </button>
+      <button type="button" className={`roadmap-step-card${selected?.step_id===step.step_id?' is-selected':''}`} aria-pressed={selected?.step_id===step.step_id} onClick={()=>chooseStep(step)}>
+        <span className="roadmap-step-meta">Шаг {number}{step.period?` · ${step.period}`:''}</span>
+        <span className="roadmap-step-title">{step.title}</span>
+        <span className="roadmap-step-status">{step.completed?'Выполнено':step.current?currentLabel(step):'Предстоит'}</span>
+      </button>
+    </li>;
+  };
+  if(!data && loading)return <div className="roadmap-placeholder" role="status"><span className="roadmap-loading-mark"/><p>Загружаем Roadmap…</p></div>;
+  if(!data && error)return <div className="roadmap-placeholder" role="alert"><h2>Не удалось загрузить Roadmap</h2><p>{error}</p><button className="buddy-action-button" onClick={onRetry}>Повторить</button></div>;
+  if(!data || !data.assigned)return <div className="roadmap-placeholder"><span className="buddy-state-icon"><RoadmapIcon/></span><h2>Твой путь скоро начнётся</h2><p>Бадди назначит треки, и здесь появится твой план адаптации</p><button className="buddy-action-button" disabled={loading} onClick={onRetry}>Проверить назначение</button>{error && <p role="alert">{error}</p>}</div>;
+  return <section className="roadmap-content" aria-label="План адаптации" aria-busy={loading}>
+    <div className="roadmap-toolbar"><h2>Твой план адаптации</h2></div>
+    {error && <div className="roadmap-error" role="alert"><span>{error}</span><button className="buddy-text-button" disabled={loading || Boolean(savingStep)} onClick={onRetry}>Повторить загрузку</button></div>}
+    {data.groupingAvailable ? <div className="roadmap-track-picker"><p>Треки адаптации</p><div className="roadmap-track-buttons" role="group" aria-label="Назначенные треки адаптации">{options.map(track=><button type="button" key={track.track} className={activeTrack?.track===track.track?'is-active':''} aria-pressed={activeTrack?.track===track.track} onClick={()=>setSelection(prev=>({...prev,track:track.track,step:''}))}>{track.display_name}</button>)}</div></div> : <p className="roadmap-flat-note">Общие шаги и шаги твоего направления показаны вместе. Текущий шаг указан отдельно для каждого трека.</p>}
+    <section className="roadmap-progress" aria-label="Прогресс адаптации"><div><div><h3>{activeTrack?.display_name || 'План адаптации'}</h3><p>{done} из {steps.length} шагов выполнено</p></div><strong>{percent}%</strong></div><div className="roadmap-progress-track" role="progressbar" aria-label="Выполнено шагов" aria-valuemin={0} aria-valuemax={steps.length || 1} aria-valuenow={done}><span style={{width:`${percent}%`}}/></div></section>
+    {steps.length>0 && done===steps.length && <p className="roadmap-finished"><RoadmapIcon kind="check"/>Все шаги выполнены. Отличная работа!</p>}
+    <div className="roadmap-steps-heading"><h3>Шаги адаптации</h3><div className="roadmap-view-switch" role="group" aria-label="Вид Roadmap">{(['stages','weeks'] as const).map(view=><button key={view} aria-pressed={selection.view===view} onClick={()=>setSelection(prev=>({...prev,view}))}>{view==='stages'?'Этапы':'По неделям'}</button>)}</div></div>
+    {steps.length? <div className={`roadmap-columns${selected?'':' roadmap-columns--list-only'}`}><div className="roadmap-step-list">{selection.view==='stages'?<ol className="roadmap-timeline">{steps.map(renderStep)}</ol>:[...groups].map(([key,group])=><section className="roadmap-period" key={key}><h4>{group.title}</h4><ol className="roadmap-timeline">{group.steps.map(renderStep)}</ol></section>)}</div>
+      {selected && <aside ref={detail} className="roadmap-detail" aria-label="Подробности шага">
+        <span className={`roadmap-detail-status${selected.completed?' is-done':selected.current?' is-current':''}`}>{selected.completed?'Выполнено':selected.current?currentLabel(selected):'Предстоит'}</span><h3>{selected.title}</h3>{selected.period && <p className="roadmap-detail-period">{selected.period}</p>}<div className="roadmap-description">{selected.description || 'Подробного описания пока нет. Уточни порядок выполнения у бадди или спроси AI-buddy.'}</div>{selected.resource_id && <dl className="roadmap-resource"><dt>Ресурс</dt><dd>{selected.resource_id}</dd></dl>}<div className="roadmap-detail-actions"><button className="roadmap-ask" disabled={chatBusy} onClick={()=>onSelectStepQuestion(stepQuestion(selected))}><RoadmapIcon kind="buddy"/>Спросить у AI-buddy</button><p>Откроем новый чат с вопросом об этом шаге.</p><p className="roadmap-check-hint">Отмечай выполнение галочкой слева от шага.</p></div>
+      </aside>}
+    </div>:<p className="roadmap-no-steps">В этом треке пока нет шагов.</p>}
+  </section>;
+}
 
-  const periods = [...new Set(steps.map(step => step.period))];
-  const activePeriod = periods.includes(selectedPeriod) ? selectedPeriod : periods[0];
-
-  const isStepCompleted = useCallback((step: OnboardingStep) => step.completed, []);
-
-  const { completedCount, percent } = useMemo(() => {
-    const done = steps.filter((s) => isStepCompleted(s)).length;
-    return {
-      completedCount: done,
-      percent: steps.length > 0 ? Math.round((done / steps.length) * 100) : 0,
-    };
-  }, [steps, isStepCompleted]);
-
-  const filteredSteps = useMemo(
-    () => steps.filter((s) => s.period === activePeriod),
-    [steps, activePeriod]
-  );
-
-  return (
-    <aside
-      className={`drawer-panel${isClosing ? ' drawer-panel--closed' : ''}`}
-      onAnimationEnd={onAnimationEnd}
-      style={{ width: '390px', minWidth: '390px' }}
-    >
-      <div className="drawer-header">
-        <div className="drawer-header-title">
-          <h2>Roadmap</h2>
-        </div>
-
-        <button
-          type="button"
-          className="ui-icon-circle"
-          onClick={onClose}
-          title="Закрыть Roadmap"
-          aria-label="Закрыть Roadmap"
-        >
-          ✕
-        </button>
-      </div>
-
-      {loading ? <p role="status">Загружаем Roadmap…</p> : error ? (
-        <div role="alert">{error}<button className="ui-btn" onClick={onRetry}>Повторить</button></div>
-      ) : !steps.length ? (
-        <div className="roadmap-empty" role="status">
-          <h3>Твой путь скоро появится</h3>
-          <p>Бадди назначит треки, и здесь появится твой план адаптации.</p>
-        </div>
-      ) : <>
-      {/* Блок прогресса */}
-      <div
-        style={{
-          border: '2px solid var(--border-color)',
-          borderRadius: '14px',
-          padding: '12px 14px',
-          marginBottom: '12px',
-          background: 'var(--bg-surface)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: '13px',
-            fontWeight: 700,
-            marginBottom: '8px',
-          }}
-        >
-          <span>
-            Выполнено {completedCount} из {steps.length} шагов
-          </span>
-          <span>{percent}%</span>
-        </div>
-        <div
-          style={{
-            width: '100%',
-            height: '12px',
-            border: '1.5px solid var(--border-color)',
-            borderRadius: '999px',
-            overflow: 'hidden',
-            background: 'var(--bg-muted)',
-          }}
-        >
-          <div
-            style={{
-              width: `${percent}%`,
-              height: '100%',
-              background: '#04E061',
-              transition: 'width 0.3s ease',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Переключатель вида: Этапы / По неделям */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
-        {(['graph', 'cards'] as const).map((mode) => {
-          const isActive = viewMode === mode;
-          return (
-            <button
-              key={mode}
-              type="button"
-              className={isActive ? 'ui-btn-dark' : 'ui-btn'}
-              onClick={() => setViewMode(mode)}
-              style={{
-                flex: 1,
-                padding: '7px 10px',
-                borderRadius: '8px',
-                border: '2px solid var(--border-color)',
-                background: isActive ? 'var(--btn-primary-bg)' : 'var(--bg-surface)',
-                color: isActive ? 'var(--btn-primary-text)' : 'var(--text-primary)',
-                fontSize: '12px',
-                fontWeight: 700,
-              }}
-            >
-              {mode === 'graph' ? 'Этапы' : 'По неделям'}
-            </button>
-          );
-        })}
-      </div>
-
-      {viewMode === 'cards' && (
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
-          {periods.map((period) => {
-            const isSelected = activePeriod === period;
-            return (
-              <button
-                key={period}
-                type="button"
-                className={isSelected ? 'ui-btn-dark' : 'ui-btn'}
-                onClick={() => setSelectedPeriod(period)}
-                style={{
-                  flex: 1,
-                  padding: '6px 4px',
-                  borderRadius: '8px',
-                  border: '1.5px solid var(--border-color)',
-                  background: isSelected ? 'var(--btn-primary-bg)' : 'var(--bg-surface)',
-                  color: isSelected ? 'var(--btn-primary-text)' : 'var(--text-primary)',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                }}
-              >
-                {period}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Отображение Этапов */}
-      {viewMode === 'graph' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '4px' }}>
-          {steps.map((step, idx) => {
-            const isDone = isStepCompleted(step);
-            const prevStep = idx > 0 ? steps[idx - 1] : undefined;
-            const nextStep = idx < steps.length - 1 ? steps[idx + 1] : undefined;
-            const isPrevDone = prevStep ? isStepCompleted(prevStep) : false;
-            const isNextDone = nextStep ? isStepCompleted(nextStep) : false;
-
-            const isTopConnectorGreen = isPrevDone && isDone;
-            const isBottomConnectorGreen = isDone && isNextDone;
-            const isCurrent = !isDone && step.current;
-
-            const toggleLabel = isDone
-              ? `Снять отметку с шага ${step.step_number}`
-              : `Отметить шаг ${step.step_number} выполненным`;
-
-            return (
-              <div
-                key={step.step_id}
-                style={{ display: 'flex', alignItems: 'stretch', gap: '14px' }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    width: '34px',
-                    flexShrink: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '3px',
-                      flex: 1,
-                      minHeight: '10px',
-                      background:
-                        idx === 0
-                          ? 'transparent'
-                          : isTopConnectorGreen
-                          ? '#04E061'
-                          : 'var(--line-color)',
-                      transition: 'background-color 0.25s ease',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className={`roadmap-check-circle${isDone ? ' roadmap-check-circle--done' : ''}`}
-                    disabled={savingSteps.includes(step.step_id)}
-                      aria-pressed={isDone}
-                      onClick={() => onToggleStep(step.step_id)}
-                    title={toggleLabel}
-                    aria-label={toggleLabel}
-                  >
-                    <span className="roadmap-check-icon">✓</span>
-                  </button>
-                  <div
-                    style={{
-                      width: '3px',
-                      flex: 1,
-                      minHeight: '10px',
-                      background:
-                        idx === steps.length - 1
-                          ? 'transparent'
-                          : isBottomConnectorGreen
-                          ? '#04E061'
-                          : 'var(--line-color)',
-                      transition: 'background-color 0.25s ease',
-                    }}
-                  />
-                </div>
-
-                <div
-                  style={{
-                    flex: 1,
-                    border: '2px solid var(--border-color)',
-                    borderRadius: '12px',
-                    padding: '10px 12px',
-                    margin: '6px 0',
-                    background: isDone
-                      ? 'var(--bg-surface)'
-                      : isCurrent
-                      ? 'var(--bg-active-card)'
-                      : 'var(--bg-subtle)',
-                    transition: 'background-color 0.25s ease, border-color 0.25s ease',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: '4px',
-                      gap: '6px',
-                    }}
-                  >
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                      ШАГ {step.step_number} • {step.period.toUpperCase()}
-                    </span>
-                    <span
-                      className="status-badge"
-                      style={{
-                        background: isDone
-                          ? '#C9FFBF'
-                          : isCurrent
-                          ? '#BADAFB'
-                          : '#F3F4F6',
-                      }}
-                    >
-                      {isDone
-                        ? '✓ Выполнено'
-                        : isCurrent
-                        ? 'Текущий шаг'
-                        : 'Следующий'}
-                    </span>
-                  </div>
-
-                  <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>
-                    {step.title}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
-                    {step.description}
-                  </div>
-
-                  {!isDone && (isCurrent || step.action_type === 'access_request') && (
-                    <button
-                      type="button"
-                      className="ui-btn"
-                      disabled={chatBusy}
-                      onClick={() => onSelectStepQuestion(stepQuestion(step))}
-                      style={{
-                        marginTop: '8px',
-                        width: '100%',
-                        padding: '6px 10px',
-                        borderRadius: '8px',
-                        border: '1.5px solid var(--border-color)',
-                        background: 'var(--bg-surface)',
-                        color: 'var(--text-primary)',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        textAlign: 'left',
-                      }}
-                    >
-                      Спросить у AI-buddy →
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {filteredSteps.map((step) => {
-            const isDone = isStepCompleted(step);
-            const isCurrent = !isDone && step.current;
-
-            return (
-              <div
-                key={step.step_id}
-                style={{
-                  border: '2px solid var(--border-color)',
-                  borderRadius: '14px',
-                  padding: '14px',
-                  background: isCurrent ? 'var(--bg-active-card)' : 'var(--bg-surface)',
-                  transition: 'background-color 0.25s ease, border-color 0.25s ease',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '8px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <button
-                      type="button"
-                      className={`roadmap-check-circle${isDone ? ' roadmap-check-circle--done' : ''}`}
-                      disabled={savingSteps.includes(step.step_id)}
-                      aria-pressed={isDone}
-                      onClick={() => onToggleStep(step.step_id)}
-                      style={{ width: '28px', height: '28px', fontSize: '14px' }}
-                      title={
-                        isDone
-                          ? `Снять отметку с шага ${step.step_number}`
-                          : `Отметить шаг ${step.step_number} выполненным`
-                      }
-                    >
-                      <span className="roadmap-check-icon">✓</span>
-                    </button>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                      ШАГ {step.step_number}
-                    </span>
-                  </div>
-                  <span
-                    className="status-badge"
-                    style={{
-                      padding: '3px 10px',
-                      background: isDone ? '#C9FFBF' : isCurrent ? '#BADAFB' : '#F3F4F6',
-                    }}
-                  >
-                    {isDone ? '✓ Выполнено' : isCurrent ? 'Текущий шаг' : 'Предстоит'}
-                  </span>
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px' }}>
-                  {step.title}
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  {step.description}
-                </div>
-                {!isDone && (isCurrent || step.action_type === 'access_request') && (
-                  <button
-                    type="button"
-                    className="ui-btn"
-                    disabled={chatBusy}
-                      onClick={() => onSelectStepQuestion(stepQuestion(step))}
-                    style={{
-                      marginTop: '10px',
-                      padding: '7px 12px',
-                      borderRadius: '8px',
-                      border: '1.5px solid var(--border-color)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Спросить у AI-buddy →
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-      </>}
-    </aside>
-  );
-};
+// Owns loading and writes; OnboardingPage only renders the server snapshot.
+export function RoadmapPage({userId,chatBusy,onSelectStepQuestion,refreshVersion=0}:{userId:string;chatBusy:boolean;onSelectStepQuestion:(question:string)=>void;refreshVersion?:number}) {
+  const [data,setData]=useState<OnboardingRoadmap|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [savingStep,setSavingStep]=useState('');
+  const mounted=useRef(false);
+  const revision=useRef({value:0});
+  const saving=useRef(false);
+  const refresh=useCallback(async(force=false)=>{
+    if(saving.current && !force)return;
+    const requestRevision=++revision.current.value;
+    setLoading(true);
+    try {
+      const snapshot=await fetchOnboardingRoadmap(userId);
+      if(mounted.current && requestRevision===revision.current.value){setData(snapshot);setError('');}
+    } catch(reason) {
+      if(mounted.current && requestRevision===revision.current.value)setError(errorText(reason));
+    } finally {if(mounted.current && requestRevision===revision.current.value)setLoading(false);}
+  },[userId]);
+  useEffect(()=>{
+    const requestRevision=revision.current;
+    mounted.current=true;
+    return ()=>{mounted.current=false;requestRevision.value++;};
+  },[]);
+  useEffect(()=>{void refresh();},[refresh,refreshVersion]);
+  useEffect(()=>{
+    const resume=()=>{if(document.visibilityState==='visible' && !saving.current)void refresh();};
+    window.addEventListener('focus',resume);
+    document.addEventListener('visibilitychange',resume);
+    const poll=setInterval(resume,60000);
+    return ()=>{clearInterval(poll);window.removeEventListener('focus',resume);document.removeEventListener('visibilitychange',resume);};
+  },[refresh]);
+  const toggle=async(step:OnboardingStep)=>{
+    if(saving.current)return;
+    saving.current=true;revision.current.value++;setLoading(false);setSavingStep(step.step_id);setError('');
+    try {
+      await toggleStep(userId,step);
+      if(mounted.current)await refresh(true);
+    } catch(reason) {if(mounted.current)setError(`Не удалось сохранить шаг: ${errorText(reason)}. Обнови план, чтобы проверить его состояние.`);}
+    finally {saving.current=false;if(mounted.current)setSavingStep('');}
+  };
+  return <OnboardingPage userId={userId} data={data} loading={loading} error={error} savingStep={savingStep} chatBusy={chatBusy} onRetry={()=>void refresh()} onToggleStep={step=>void toggle(step)} onSelectStepQuestion={onSelectStepQuestion}/>;
+}

@@ -18,6 +18,7 @@ import (
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
 	taskpb "avito-ai-buddy/pkg/generated/task/v1"
 	userpb "avito-ai-buddy/pkg/generated/user/v1"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -173,7 +174,7 @@ func profile(id int64) *userpb.CreateRequest {
 func (s *suite) intern(t *testing.T) (int64, string) {
 	t.Helper()
 	id, token, _ := s.account(t)
-	_, err := s.users.Create(rpcContext(t, ""), profile(id))
+	_, err := s.users.Create(rpcContext(t, token), profile(id))
 	require.NoError(t, err)
 	return id, token
 }

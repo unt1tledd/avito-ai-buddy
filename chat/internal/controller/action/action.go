@@ -11,8 +11,8 @@ import (
 	"avito-ai-buddy/chat/internal/entity"
 	chaterrors "avito-ai-buddy/chat/internal/errors"
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
-
 	"avito-ai-buddy/pkg/observability"
+
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -52,6 +52,8 @@ func (s *actionServer) ConfirmProposal(ctx context.Context, req *chatpb.ConfirmP
 			return nil, status.Error(codes.InvalidArgument, chaterrors.ErrMissingConfirmationIDs.Error())
 		case errors.Is(err, chaterrors.ErrProposalNotFound):
 			return nil, status.Error(codes.NotFound, chaterrors.ErrProposalNotFound.Error())
+		case errors.Is(err, chaterrors.ErrProposalExpired):
+			return nil, status.Error(codes.FailedPrecondition, chaterrors.ErrProposalExpired.Error())
 		case errors.Is(err, errors.ErrUnsupported):
 			return nil, status.Error(codes.Unimplemented, "confirm proposal is not implemented")
 		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

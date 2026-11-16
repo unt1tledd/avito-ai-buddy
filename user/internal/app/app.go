@@ -13,6 +13,7 @@ import (
 
 	userv1 "avito-ai-buddy/pkg/generated/user/v1"
 	"avito-ai-buddy/pkg/health"
+	authhttp "avito-ai-buddy/user/internal/adapter/auth/http"
 	"avito-ai-buddy/user/internal/config"
 	"avito-ai-buddy/user/internal/controller"
 	userrepo "avito-ai-buddy/user/internal/repository/user"
@@ -20,6 +21,7 @@ import (
 	"avito-ai-buddy/user/migrations"
 
 	"avito-ai-buddy/pkg/observability"
+
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -128,7 +130,8 @@ func runGrpc(ctx context.Context, logger *zap.Logger, cfg *config.Config, ctrl *
 	}
 	defer func() { _ = listener.Close() }()
 
-	server := grpc.NewServer(grpc.UnaryInterceptor(observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
+	auth := authhttp.NewClient(&http.Client{Timeout: 5 * time.Second}, cfg.AuthBaseURL, "/v1/auth/validate")
+	server := grpc.NewServer(grpc.ChainUnaryInterceptor(authorizeRequests(auth, cfg.UserServiceToken), observability.RPC(func(ctx context.Context, method string, code codes.Code, elapsed time.Duration) {
 		log := logger.Info
 		switch code {
 		case codes.Internal, codes.Unavailable, codes.Unknown:

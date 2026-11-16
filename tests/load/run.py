@@ -74,11 +74,11 @@ def sql(db, statement):
     ).stdout.strip()
 
 
-def api(url, payload=None, statuses=(200,)):
+def api(url, payload=None, statuses=(200,), token=None):
     data = None if payload is None else json.dumps(payload).encode()
     try:
         with urlopen(
-            Request(url, data, {"Content-Type": "application/json"}), timeout=15
+            Request(url, data, {"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})}), timeout=15
         ) as response:
             if response.status not in statuses:
                 raise RuntimeError(f"{url}: unexpected HTTP {response.status}")
@@ -101,6 +101,7 @@ def fixtures(prefix, group, count, start, team):
         if type(user_id) is not int or user_id <= 0:
             raise RuntimeError("Auth returned an invalid user_id")
         if group != "history":
+            token = api("http://127.0.0.1:8081/v1/auth/login", {"email": email, "password": password})["access_token"]
             today = date.today()
             api(
                 "http://127.0.0.1:8084/v1/user",
@@ -114,6 +115,7 @@ def fixtures(prefix, group, count, start, team):
                     "plannedEndDate": (today + timedelta(days=90)).isoformat(),
                 },
                 (200, 201),
+                token=token,
             )
         result.append(
             {
@@ -368,7 +370,20 @@ def run_k6(mode, prefix, stage, config):
     compact_metrics(stage / "metrics.json", config["seconds"])
 
     if status:
-        print(f"  k6: FAIL (код {status}). Журнал: {stage / 'k6.log'}", flush=True)
+        log_path = stage / "k6.log"
+        print(f"  k6: FAIL (код {status}). Журнал: {log_path}", flush=True)
+
+        with log_path.open(encoding="utf-8", errors="replace") as log:
+            first_error = next(
+                (
+                    line.strip()
+                    for line in log
+                    if "level=error" in line or line.lstrip().startswith("ERRO[")
+                ),
+                None,
+            )
+        if first_error:
+            print(f"  Первая ошибка k6: {first_error}", flush=True)
     else:
         print("  k6: PASS", flush=True)
 

@@ -13,6 +13,7 @@ for module in "$@"; do
   packages=$(cd "$module" && go list ./...)
   selected=$(printf '%s\n' "$packages" | awk '
     NF &&
+    $0 !~ /(^|\/)pkg\/generated(\/|$)/ &&
     $0 !~ /\/(mock|mocks|sqlc|entity|errors|port|adapter|adapters|config|migrations)(\/|$)/ &&
     $0 !~ /\/(cmd\/app|internal\/(app|controller|controller\/converter))$/
   ')
@@ -25,6 +26,11 @@ for module in "$@"; do
   mapfile -t package_list <<< "$selected"
   profile="$profile_dir/coverage.out"
   (cd "$module" && go test -race -count=1 -coverprofile="$profile" "${package_list[@]}")
+
+  if [[ -n "${COVERAGE_PROFILE_DIR:-}" ]]; then
+    mkdir -p -- "$COVERAGE_PROFILE_DIR"
+    cp -- "$profile" "$COVERAGE_PROFILE_DIR/$module.out"
+  fi
 
   counts=$(awk '
     NR > 1 && NF == 3 {

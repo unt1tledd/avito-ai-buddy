@@ -28,15 +28,15 @@ type dlqWriter interface {
 	WriteMessages(context.Context, ...kafkago.Message) error
 }
 
-func RunConsumer(ctx context.Context, logger *slog.Logger, brokers []string, topic string, cfg config.KafkaConsumerConfig, handler createHandler) error {
+func RunConsumer(ctx context.Context, logger *slog.Logger, brokers []string, topic string, cfg config.KafkaConsumerConfig, writerConfig config.KafkaWriterConfig, handler createHandler) error {
 	reader := kafkago.NewReader(kafkago.ReaderConfig{
 		Brokers: brokers, Topic: topic, GroupID: cfg.GroupID, StartOffset: kafkago.FirstOffset,
 	})
 	defer func() { _ = reader.Close() }()
 	dlq := &kafkago.Writer{
 		Addr: kafkago.TCP(brokers...), Topic: cfg.DLQTopic, Balancer: &kafkago.Hash{},
-		RequiredAcks: kafkago.RequireAll, BatchTimeout: 10 * time.Millisecond,
-		WriteTimeout: 5 * time.Second, MaxAttempts: 1,
+		RequiredAcks: kafkago.RequireAll, BatchTimeout: writerConfig.BatchTimeout,
+		WriteTimeout: writerConfig.WriteTimeout, MaxAttempts: writerConfig.MaxAttempts,
 	}
 	defer func() { _ = dlq.Close() }()
 
@@ -63,7 +63,7 @@ func consume(ctx context.Context, logger *slog.Logger, reader commandReader, dlq
 			dead := deadLetter(message, cause)
 			// Keep the original offset uncommitted until Kafka acknowledges the DLQ write.
 			if !retryKafka(ctx, log, cfg, "publish task command to DLQ", func() error {
-				publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				publishCtx, cancel := context.WithTimeout(ctx, cfg.DLQPublishTimeout)
 				defer cancel()
 				return dlq.WriteMessages(publishCtx, dead)
 			}) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	onboardingerrors "avito-ai-buddy/onboarding/internal/errors"
@@ -14,18 +15,24 @@ import (
 )
 
 type UserClient struct {
+	serviceToken      string
 	userServiceClient userpb.UserServiceClient
 	timeout           time.Duration
 }
 
-func NewUserClient(userServiceClient userpb.UserServiceClient, timeout time.Duration) *UserClient {
-	return &UserClient{userServiceClient: userServiceClient, timeout: timeout}
+func NewUserClient(userServiceClient userpb.UserServiceClient, timeout time.Duration, serviceTokens ...string) *UserClient {
+	var token string
+	if len(serviceTokens) > 0 {
+		token = serviceTokens[0]
+	}
+	return &UserClient{serviceToken: token, userServiceClient: userServiceClient, timeout: timeout}
 }
 
 func (c *UserClient) GetTrack(ctx context.Context, userID int64) (string, error) {
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
+	callCtx = metadata.AppendToOutgoingContext(callCtx, "authorization", "Bearer "+c.serviceToken)
 	metadata, err := c.userServiceClient.GetMetadata(callCtx, &userpb.GetMetadataRequest{UserId: userID})
 	if err != nil {
 		if ctx.Err() != nil {

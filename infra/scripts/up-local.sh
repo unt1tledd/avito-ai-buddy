@@ -82,6 +82,7 @@ run_docker compose ps -a
 printf '\nFrontend: http://127.0.0.1:8085/\n'
 if ! run_docker compose exec -T ai /app/.venv/bin/python - <<'PY'
 import time
+import json
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -93,7 +94,15 @@ for attempt in range(10):
             print(f"AI readiness: HTTP {response.status} {response.read().decode()}")
         break
     except HTTPError as error:
-        print(f"AI readiness: HTTP {error.code} {error.read().decode()}")
+        body = error.read().decode()
+        print(f"AI readiness: HTTP {error.code} {body}")
+        try:
+            reason = json.loads(body).get("reason")
+        except (ValueError, AttributeError):
+            reason = None
+        if error.code == 503 and reason == "profile_missing":
+            print("Для активного профиля AI нет индекса базы знаний.")
+            print("Запусти make local-up-new с тем же DOCKER_USE_SUDO для импорта.")
         break
     except (URLError, TimeoutError):
         if attempt == 9:

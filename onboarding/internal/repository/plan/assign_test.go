@@ -114,7 +114,7 @@ func newAssignmentPool(t *testing.T, replies []planDBReply) *pgxpool.Pool {
 	client, server := net.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		defer server.Close()
+		defer func() { _ = server.Close() }()
 		_ = server.SetDeadline(time.Now().Add(5 * time.Second))
 		done <- serveAssignmentQueries(server, replies)
 	}()

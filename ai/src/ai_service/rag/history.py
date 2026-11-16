@@ -2,9 +2,7 @@ import json
 from collections.abc import Sequence
 
 from ..schemas.citations import SOURCE_REFERENCE
-from ..schemas.clarifications import CLARIFICATION_QUESTIONS
 from ..schemas.contracts import Actor, Message
-from ..schemas.support import SOURCE_FREE_TEXTS
 from .retriever import Retriever
 
 
@@ -25,9 +23,10 @@ async def prepare_history(history: Sequence[Message], actor: Actor, knowledge: R
     candidates = []
     for message in history[-MAX_HISTORY_MESSAGES:]:
         if message.role == "assistant":
-            if not message.source_ids and (
-                message.content in CLARIFICATION_QUESTIONS or message.content in SOURCE_FREE_TEXTS
-            ):
+            # Chat supplies stored conversation history over the authenticated service API.
+            # Source-free replies are conversational context, never evidence of facts or rights.
+            # A citation marker without metadata must not bypass source access checks.
+            if not message.source_ids and "[source:" not in message.content:
                 candidates.append(message)
                 continue
             references = SOURCE_REFERENCE.findall(message.content)
