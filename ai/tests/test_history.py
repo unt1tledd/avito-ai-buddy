@@ -4,7 +4,7 @@ import json
 import pytest
 
 from ai_service.rag.history import MAX_HISTORY_BYTES, history_message, prepare_history
-from ai_service.schemas.clarifications import CLARIFICATION_QUESTIONS
+from conversation_examples import CLARIFICATION_QUESTIONS
 from ai_service.schemas.contracts import Actor, Message
 
 
@@ -55,7 +55,7 @@ def test_assistant_replies_require_all_declared_sources_and_consistent_citations
     ]
     access = Access(["public"])
     selected = asyncio.run(prepare_history(history, ACTOR, access))
-    assert selected == [history[0], history[2]]
+    assert selected == [history[0], history[1], history[2]]
     assert access.calls == [({"public", "closed", "deleted"}, ACTOR)]
     assert len(history) == 7
 
@@ -68,7 +68,7 @@ def test_service_questions_are_kept_without_source_metadata(question):
     assert access.calls == []
 
 
-def test_clarification_exception_does_not_bypass_acl_or_allow_extra_text():
+def test_source_free_context_does_not_bypass_declared_acl_or_citation_metadata():
     question = "Уточните: VPN или офисный пропуск?"
     history = [
         Message(role="assistant", content=question),
@@ -79,7 +79,7 @@ def test_clarification_exception_does_not_bypass_acl_or_allow_extra_text():
         Message(role="assistant", content="Закрытый ответ. [source:closed]", source_ids=["closed"]),
     ]
     access = Access(["public"])
-    assert asyncio.run(prepare_history(history, ACTOR, access)) == [history[0], history[4]]
+    assert asyncio.run(prepare_history(history, ACTOR, access)) == [history[0], history[2], history[4]]
     assert access.calls == [({"closed", "public"}, ACTOR)]
 
 

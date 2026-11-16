@@ -4,7 +4,7 @@ import { Conversation, OnboardingRoadmap, OnboardingStep, fetchOnboardingRoadmap
 import { RoadmapSummaryDialog } from './RoadmapSummaryDialog';
 import { RequestsDialog } from './RequestsDialog';
 
-export function HomePage({userId,name,chats,busy,onChat,onQuestion,onRoadmap}:{userId:string;name:string;chats:Conversation[];busy:boolean;onChat:(id:string)=>void;onQuestion:(question:string)=>void;onRoadmap:(step?:OnboardingStep)=>void}) {
+export function HomePage({userId,name,chats,busy,onChat,onQuestion,onRoadmap,onRequests}:{userId:string;name:string;chats:Conversation[];busy:boolean;onChat:(id:string)=>void;onQuestion:(question:string)=>void;onRoadmap:(step?:OnboardingStep)=>void;onRequests:()=>void}) {
   const [opened,setOpened]=useState<string>(()=>{try{return sessionStorage.getItem(`buddy-home-dialog-${userId}`)||'';}catch{return '';}});
   const setDialog=(value:string)=>{setOpened(value);try{sessionStorage.setItem(`buddy-home-dialog-${userId}`,value);}catch{/* Storage is optional. */}};
   const [data,setData]=useState<OnboardingRoadmap|null>(null);
@@ -43,7 +43,7 @@ export function HomePage({userId,name,chats,busy,onChat,onQuestion,onRoadmap}:{u
       </button>
       {error && <button className="home-text-button" onClick={()=>setVersion(v=>v+1)}>Повторить загрузку плана</button>}
     </section>
-    {opened==='requests' && <RequestsDialog chats={chats} onClose={()=>setDialog('')} onChat={onChat}/>}
+    {opened==='requests' && <RequestsDialog userId={userId} onClose={()=>setDialog('')} onChat={onChat} onOpenAll={onRequests}/>}
     {opened==='roadmap' && <RoadmapSummaryDialog data={data} loading={loading} error={error} onRetry={()=>setVersion(v=>v+1)} onClose={()=>setDialog('')} onOpen={step=>{setDialog('');onRoadmap(step);}}/>}
   </main>;
 }

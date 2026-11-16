@@ -1,0 +1,779 @@
+{
+  "version": "1",
+  "corpus_version": "1.3.2",
+  "updated_on": "2026-11-16",
+  "origin": "project_demo_configuration",
+  "notice": "Явная конфигурация правил учебного приложения. Не извлечена из Excel и не утверждена как корпоративная политика.",
+  "resource_id_origin": "cluster-space взят из onboarding/migrations/demo.sql; остальные ID — явные демоидентификаторы учебного проекта, заданные этим каталогом.",
+  "section": {
+    "id": "project-access",
+    "title": "Доступы учебного приложения"
+  },
+  "documents": [
+    {
+      "id": "project-cluster-space-access",
+      "title": "[ДЕМО] Заявка на доступ в пространство кластера или команды",
+      "url": null,
+      "text": "Правило учебного приложения AI-buddy; не утверждённая политика Авито и не факт из исходного Excel.\n\nДля шага «Запроси доступ в пространство своего кластера и/или команды» (common-06) в проекте используется ресурс cluster-space — пространство кластера/команды текущего стажёра. Разрешён единственный уровень read: чтение материалов пространства.\n\nЧтобы запросить доступ, попросите buddy подготовить заявку на пространство своего кластера или команды. Если уровень не указан, в черновике предлагается read. Для явно запрошенных write или admin эта политика не подходит: нужно объяснить ограничение и уточнить, согласен ли пользователь на read. Отрицание уровня не означает согласие на другой уровень.\n\nПроверьте ресурс и уровень в черновике и подтвердите заявку в чате. Запрос направляется на согласование по команде текущего пользователя. Название кластера и ссылка на Git-репозиторий для этого ресурса не требуются. Подтверждение заявки не означает, что доступ уже выдан. Доступ к чужому кластеру этой политикой не описан.",
+      "roles": [
+        "intern",
+        "mentor"
+      ],
+      "teams": [],
+      "keywords": [
+        "доступ в пространство кластера",
+        "доступ в пространство команды",
+        "cluster-space",
+        "common-06",
+        "пространство своего кластера",
+        "заявка на доступ",
+        "чтение материалов пространства"
+      ],
+      "access_policies": [
+        {
+          "resource_id": "cluster-space",
+          "resource_label": "Пространство кластера/команды",
+          "access_levels": [
+            "read"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-vpn-access",
+      "title": "[ДЕМО] Заявка на доступ: VPN для удалённой работы",
+      "url": null,
+      "text": "Правило учебного приложения AI-buddy; не утверждённая политика Авито и не факт из исходного Excel. ID и уровни ниже заданы для демопроекта.\n\nРесурс vpn — VPN для удалённой работы. Подключение к внутренней сети с управляемого рабочего ноутбука; use означает использование VPN, а не администрирование сети. Разрешённые уровни: use.\n\nЕсли уровень не указан, предложите единственный разрешённый use для подтверждения. Явно неподдерживаемый или отрицаемый уровень не заменяйте другим без нового выбора пользователя.\n\nДоступ не заменяет отдельные права в Wiki, Jira, Git и других системах. Пароли, одноразовые коды и закрытые ключи в заявку не включаются. Черновик подтверждается пользователем в Chat и направляется на согласование по его команде. Отправка заявки не означает выдачу доступа. Реальные URL, сроки и персональные назначения эта демополитика не определяет.",
+      "roles": [
+        "intern",
+        "mentor"
+      ],
+      "teams": [],
+      "keywords": [
+        "VPN",
+        "ВПН",
+        "випиэн",
+        "удалённая работа",
+        "Avito Connect"
+      ],
+      "access_policies": [
+        {
+          "resource_id": "vpn",
+          "resource_label": "VPN для удалённой работы",
+          "access_levels": [
+            "use"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-wiki-access",
+      "title": "[ДЕМО] Заявка на доступ: Wiki / Confluence команды",
+      "url": null,
+      "text": "Правило учебного приложения AI-buddy; не утверждённая политика Авито и не факт из исходного Excel. ID и уровни ниже заданы для демопроекта.\n\nРесурс wiki — Wiki / Confluence команды. Доступ к документации своей команды в Wiki (Confluence). read — чтение; write — чтение и редактирование страниц команды. Разрешённые уровни: read, write.\n\nЕсли уровень не указан, уточните выбор между read, write; не выбирайте уровень автоматически. Явно неподдерживаемый или отрицаемый уровень не заменяйте другим без нового выбора пользователя.\n\nЭто отдельный ресурс wiki. Для шага common-06 и явного пространства своего кластера применяется cluster-space. Доступ к чужим пространствам и администрирование Confluence не предусмотрены. Черновик подтверждается пользователем в Chat и направляется на согласование по его команде. Отправка заявки не означает выдачу доступа. Реальные URL, сроки и персональные назначения эта демополитика не определяет.",
+      "roles": [
+        "intern",
+        "mentor"
+      ],
+      "teams": [],
+      "keywords": [
+        "Wiki",
+        "Confluence",
+        "вики",
+        "конфлюенс",
+        "документация команды"
+      ],
+      "access_policies": [
+        {
+          "resource_id": "wiki",
+          "resource_label": "Wiki / Confluence команды",
+          "access_levels": [
+            "read",
+            "write"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-jira-access",
+      "title": "[ДЕМО] Заявка на доступ: Jira команды",
+      "url": null,
+      "text": "Правило учебного приложения AI-buddy; не утверждённая политика Авито и не факт из исходного Excel. ID и уровни ниже заданы для демопроекта.\n\nРесурс jira — Jira команды. Доступ к задачам своей команды в Jira. read — просмотр задач; write — создание и изменение задач своей команды. Разрешённые уровни: read, write.\n\nЕсли уровень не указан, уточните выбор между read, write; не выбирайте уровень автоматически. Явно неподдерживаемый или отрицаемый уровень не заменяйте другим без нового выбора пользователя.\n\nПрава на администрирование Jira, управление пользователями и чужими проектами не входят в политику. Черновик подтверждается пользователем в Chat и направляется на согласование по его команде. Отправка заявки не означает выдачу доступа. Реальные URL, сроки и персональные назначения эта демополитика не определяет.",
+      "roles": [
+        "intern",
+        "mentor"
+      ],
+      "teams": [],
+      "keywords": [
+        "Jira",
+        "Джира",
+        "джиру",
+        "трекер задач",
+        "задачи команды"
+      ],
+      "access_policies": [
+        {
+          "resource_id": "jira",
+          "resource_label": "Jira команды",
+          "access_levels": [
+            "read",
+            "write"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-grafana-access",
+      "title": "[ДЕМО] Заявка на доступ: Grafana команды",
+      "url": null,
+      "text": "Правило учебного приложения AI-buddy; не утверждённая политика Авито и не факт из исходного Excel. ID и уровни ниже заданы для демопроекта.\n\nРесурс grafana — Grafana команды. Просмотр дашбордов и метрик своей команды в Grafana. Viewer — только просмотр существующих дашбордов. Разрешённые уровни: Viewer.\n\nЕсли уровень не указан, предложите единственный разрешённый Viewer для подтверждения. Явно неподдерживаемый или отрицаемый уровень не заменяйте другим без нового выбора пользователя.\n\nИзменение дашбордов, источников данных, алертов и администрирование не разрешены. Доступ к Grafana не выдаёт прямой доступ к базе данных. Черновик подтверждается пользователем в Chat и направляется на согласование по его команде. Отправка заявки не означает выдачу доступа. Реальные URL, сроки и персональные назначения эта демополитика не определяет.",
+      "roles": [
+        "intern",
+        "mentor"
+      ],
+      "teams": [],
+      "keywords": [
+        "Grafana",
+        "Графана",
+        "дашборды",
+        "метрики команды"
+      ],
+      "access_policies": [
+        {
+          "resource_id": "grafana",
+          "resource_label": "Grafana команды",
+          "access_levels": [
+            "Viewer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-sentry-access",
+      "title": "[ДЕМО] Заявка на доступ: Sentry команды",
+      "url": null,
+      "text": "Правило учебного приложения AI-buddy; не утверждённая политика Авито и не факт из исходного Excel. ID и уровни ниже заданы для демопроекта.\n\nРесурс sentry — Sentry команды. Просмотр ошибок и событий приложений своей команды в Sentry. read — просмотр, без изменения настроек проектов. Разрешённые уровни: read.\n\nЕсли уровень не указан, предложите единственный разрешённый read для подтверждения. Явно неподдерживаемый или отрицаемый уровень не заменяйте другим без нового выбора пользователя.\n\nИзменение проектов, интеграций и управление участниками не входят в политику. Доступ не разрешает выгружать персональные данные из событий. Черновик подтверждается пользователем в Chat и направляется на согласование по его команде. Отправка заявки не означает выдачу доступа. Реальные URL, сроки и персональные назначения эта демополитика не определяет.",
+      "roles": [
+        "intern",
+        "mentor"
+      ],
+      "teams": [],
+      "keywords": [
+        "Sentry",
+        "Сентри",
+        "ошибки приложений",
+        "события команды"
+      ],
+      "access_policies": [
+        {
+          "resource_id": "sentry",
+          "resource_label": "Sentry команды",
+          "access_levels": [
+            "read"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-redash-access",
+      "title": "[ДЕМО] Заявка на доступ: Redash команды",
+      "url": null,
+      "text": "Правило учебного приложения AI-buddy; не утверждённая политика Авито и не факт из исходного Excel. ID и уровни ниже заданы для демопроекта.\n\nРесурс redash — Redash команды. Просмотр сохранённых запросов и результатов своей команды в Redash. read — только просмотр разрешённых отчётов. Разрешённые уровни: read.\n\nЕсли уровень не указан, предложите единственный разрешённый read для подтверждения. Явно неподдерживаемый или отрицаемый уровень не заменяйте другим без нового выбора пользователя.\n\nВыполнение произвольного SQL, создание запросов и подключение источников не входят в этот уровень. Прямой доступ к production-БД и чужим отчётам не предоставляется. Черновик подтверждается пользователем в Chat и направляется на согласование по его команде. Отправка заявки не означает выдачу доступа. Реальные URL, сроки и персональные назначения эта демополитика не определяет.",
+      "roles": [
+        "intern",
+        "mentor"
+      ],
+      "teams": [],
+      "keywords": [
+        "Redash",
+        "Редаш",
+        "редэш",
+        "аналитические отчёты",
+        "сохранённые запросы"
+      ],
+      "access_policies": [
+        {
+          "resource_id": "redash",
+          "resource_label": "Redash команды",
+          "access_levels": [
+            "read"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-learning-platform-access",
+      "title": "[ДЕМО] Заявка на доступ: Учебная платформа",
+      "url": null,
+      "text": "Правило учебного приложения AI-buddy; не утверждённая политика Авито и не факт из исходного Excel. ID и уровни ниже заданы для демопроекта.\n\nРесурс learning-platform — Учебная платформа. Участие в учебных курсах и решение тренировочных задач на учебной платформе. learner — учётная запись учащегося со своими результатами. Разрешённые уровни: learner.\n\nЕсли уровень не указан, предложите единственный разрешённый learner для подтверждения. Явно неподдерживаемый или отрицаемый уровень не заменяйте другим без нового выбора пользователя.\n\nСоздание курсов, просмотр чужих результатов и права преподавателя или администратора не предусмотрены. Заявка не означает прохождения курса или выполнения шага плана. Черновик подтверждается пользователем в Chat и направляется на согласование по его команде. Отправка заявки не означает выдачу доступа. Реальные URL, сроки и персональные назначения эта демополитика не определяет.",
+      "roles": [
+        "intern",
+        "mentor"
+      ],
+      "teams": [],
+      "keywords": [
+        "учебная платформа",
+        "обучающая платформа",
+        "тренировочные задачи",
+        "доступ к курсам"
+      ],
+      "access_policies": [
+        {
+          "resource_id": "learning-platform",
+          "resource_label": "Учебная платформа",
+          "access_levels": [
+            "learner"
+          ]
+        }
+      ]
+    }
+  ],
+  "evaluation_cases": [
+    {
+      "id": "qa-project-access-cluster",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен доступ в пространство моего кластера",
+      "expected_source_ids": [
+        "project-cluster-space-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Подготовить черновик для cluster-space с уровнем read и предложить подтвердить в чате. Не утверждать, что доступ выдан.",
+      "evaluation_note": "Правило учебного приложения, не действующая политика компании. Проверять структуру proposal отдельно от текста ответа."
+    },
+    {
+      "id": "qa-project-access-team",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Помоги запросить доступ в пространство моей команды",
+      "expected_source_ids": [
+        "project-cluster-space-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить заявку на пространство кластера/команды текущего пользователя, ресурс cluster-space, уровень read.",
+      "evaluation_note": "Правило учебного приложения, не действующая политика компании. Проверять структуру proposal отдельно от текста ответа."
+    },
+    {
+      "id": "qa-project-access-unsupported",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Можно запросить admin для пространства своего кластера?",
+      "expected_source_ids": [
+        "project-cluster-space-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Объяснить, что учебная политика допускает только read. Не заменять явно запрошенный admin автоматически и не создавать заявку без нового выбора пользователя.",
+      "evaluation_note": "Правило учебного приложения, не действующая политика компании. Проверять структуру proposal отдельно от текста ответа."
+    },
+    {
+      "id": "qa-project-access-vpn-unspecified",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Подготовь заявку на VPN.",
+      "expected_source_ids": [
+        "project-vpn-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик vpn/use для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-vpn-explicit",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен use для VPN.",
+      "expected_source_ids": [
+        "project-vpn-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик vpn/use для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-vpn-unsupported",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу admin для ресурса VPN для удалённой работы.",
+      "expected_source_ids": [
+        "project-vpn-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "admin не разрешён для vpn; объяснить доступные уровни use и уточнить выбор. Не создавать proposal и не заменять уровень автоматически. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-vpn-negated",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу доступ к ресурсу VPN для удалённой работы, только не use.",
+      "expected_source_ids": [
+        "project-vpn-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не предлагать отвергнутый use. Уточнить доступный вариант, без proposal до нового выбора. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-wiki-unspecified",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен доступ в Wiki.",
+      "expected_source_ids": [
+        "project-wiki-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Уточнить выбор уровня: read, write. Без выбора proposal отсутствует. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-wiki-explicit",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен read для Wiki.",
+      "expected_source_ids": [
+        "project-wiki-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик wiki/read для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-wiki-unsupported",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу admin для ресурса Wiki / Confluence команды.",
+      "expected_source_ids": [
+        "project-wiki-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "admin не разрешён для wiki; объяснить доступные уровни read, write и уточнить выбор. Не создавать proposal и не заменять уровень автоматически. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-wiki-negated",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу доступ к ресурсу Wiki / Confluence команды, только не read.",
+      "expected_source_ids": [
+        "project-wiki-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не предлагать отвергнутый read. Уточнить доступный вариант, без proposal до нового выбора. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-jira-unspecified",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен доступ в Jira.",
+      "expected_source_ids": [
+        "project-jira-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Уточнить выбор уровня: read, write. Без выбора proposal отсутствует. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-jira-explicit",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Подготовь заявку на write в Jira.",
+      "expected_source_ids": [
+        "project-jira-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик jira/write для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-jira-unsupported",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу admin для ресурса Jira команды.",
+      "expected_source_ids": [
+        "project-jira-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "admin не разрешён для jira; объяснить доступные уровни read, write и уточнить выбор. Не создавать proposal и не заменять уровень автоматически. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-jira-negated",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу доступ к ресурсу Jira команды, только не read.",
+      "expected_source_ids": [
+        "project-jira-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не предлагать отвергнутый read. Уточнить доступный вариант, без proposal до нового выбора. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-grafana-unspecified",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Подготовь заявку на доступ к Grafana.",
+      "expected_source_ids": [
+        "project-grafana-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик grafana/Viewer для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-grafana-explicit",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен Viewer для Grafana.",
+      "expected_source_ids": [
+        "project-grafana-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик grafana/Viewer для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-grafana-unsupported",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу admin для ресурса Grafana команды.",
+      "expected_source_ids": [
+        "project-grafana-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "admin не разрешён для grafana; объяснить доступные уровни Viewer и уточнить выбор. Не создавать proposal и не заменять уровень автоматически. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-grafana-negated",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу доступ к ресурсу Grafana команды, только не Viewer.",
+      "expected_source_ids": [
+        "project-grafana-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не предлагать отвергнутый Viewer. Уточнить доступный вариант, без proposal до нового выбора. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-sentry-unspecified",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Подготовь заявку на доступ в Sentry.",
+      "expected_source_ids": [
+        "project-sentry-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик sentry/read для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-sentry-explicit",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен read для Sentry.",
+      "expected_source_ids": [
+        "project-sentry-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик sentry/read для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-sentry-unsupported",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу admin для ресурса Sentry команды.",
+      "expected_source_ids": [
+        "project-sentry-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "admin не разрешён для sentry; объяснить доступные уровни read и уточнить выбор. Не создавать proposal и не заменять уровень автоматически. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-sentry-negated",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу доступ к ресурсу Sentry команды, только не read.",
+      "expected_source_ids": [
+        "project-sentry-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не предлагать отвергнутый read. Уточнить доступный вариант, без proposal до нового выбора. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-redash-unspecified",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Подготовь заявку на доступ в Redash.",
+      "expected_source_ids": [
+        "project-redash-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик redash/read для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-redash-explicit",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен read для Redash.",
+      "expected_source_ids": [
+        "project-redash-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик redash/read для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-redash-unsupported",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу admin для ресурса Redash команды.",
+      "expected_source_ids": [
+        "project-redash-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "admin не разрешён для redash; объяснить доступные уровни read и уточнить выбор. Не создавать proposal и не заменять уровень автоматически. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-redash-negated",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу доступ к ресурсу Redash команды, только не read.",
+      "expected_source_ids": [
+        "project-redash-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не предлагать отвергнутый read. Уточнить доступный вариант, без proposal до нового выбора. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-learning-platform-unspecified",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Подготовь заявку на доступ к учебной платформе.",
+      "expected_source_ids": [
+        "project-learning-platform-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик learning-platform/learner для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-learning-platform-explicit",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Нужен learner на учебной платформе.",
+      "expected_source_ids": [
+        "project-learning-platform-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Предложить черновик learning-platform/learner для подтверждения в Chat. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-learning-platform-unsupported",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу admin для ресурса Учебная платформа.",
+      "expected_source_ids": [
+        "project-learning-platform-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "admin не разрешён для learning-platform; объяснить доступные уровни learner и уточнить выбор. Не создавать proposal и не заменять уровень автоматически. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    },
+    {
+      "id": "qa-project-access-learning-platform-negated",
+      "kind": "answerable",
+      "actor": {
+        "user_id": "42",
+        "team": "101",
+        "role": "intern"
+      },
+      "question": "Хочу доступ к ресурсу Учебная платформа, только не learner.",
+      "expected_source_ids": [
+        "project-learning-platform-access"
+      ],
+      "forbidden_source_ids": [],
+      "reference_answer": "Не предлагать отвергнутый learner. Уточнить доступный вариант, без proposal до нового выбора. Не утверждать, что доступ уже выдан.",
+      "evaluation_note": "Демополитика проекта. Проверять ресурс и уровень proposal отдельно от текста; не считать упоминание или отрицание выбором."
+    }
+  ],
+  "resource_origins": {
+    "cluster-space": {
+      "origin": "onboarding/migrations/demo.sql: common-06",
+      "related_source_ids": [
+        "checklist-common-r06"
+      ]
+    },
+    "vpn": {
+      "origin": "project_demo_configuration",
+      "related_source_ids": [
+        "synth-vpn-access"
+      ]
+    },
+    "wiki": {
+      "origin": "project_demo_configuration",
+      "related_source_ids": [
+        "checklist-common-r02"
+      ]
+    },
+    "jira": {
+      "origin": "project_demo_configuration",
+      "related_source_ids": [
+        "checklist-common-r02"
+      ]
+    },
+    "grafana": {
+      "origin": "project_demo_configuration",
+      "related_source_ids": [
+        "checklist-backend-r07"
+      ]
+    },
+    "sentry": {
+      "origin": "project_demo_configuration",
+      "related_source_ids": [
+        "checklist-backend-r15"
+      ]
+    },
+    "redash": {
+      "origin": "project_demo_configuration",
+      "related_source_ids": [
+        "checklist-backend-r25"
+      ]
+    },
+    "learning-platform": {
+      "origin": "project_demo_configuration",
+      "related_source_ids": [
+        "checklist-backend-r16"
+      ]
+    }
+  }
+}

@@ -43,6 +43,7 @@ type KafkaConsumerConfig struct {
 }
 
 type Config struct {
+	UserServiceToken     string `env:"USER_SERVICE_TOKEN"`
 	HTTPServer           HTTPServerConfig
 	KafkaWriter          KafkaWriterConfig
 	ShutdownTimeout      time.Duration `env:"TASK_SHUTDOWN_TIMEOUT" envDefault:"5s"`

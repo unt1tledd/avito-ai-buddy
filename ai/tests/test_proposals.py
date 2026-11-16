@@ -1,38 +1,44 @@
+"""Policy/provenance validation; the model's interpretation is not a semantic proof."""
+
 import json
 
 import pytest
 from pydantic import ValidationError
 
 from ai_service.rag.chunking import chunk_documents
-from ai_service.rag.proposals import confirmed_proposal
-from ai_service.schemas.clarifications import ACCESS_LEVEL_CLARIFICATION, REPOSITORY_CLARIFICATION, RESOURCE_CLARIFICATION
+from ai_service.rag.proposals import AccessSelection, ProposalValidationError, confirmed_proposal
 from ai_service.schemas.contracts import AccessPolicy, AccessProposal, Document, Message, SearchHit
-
 
 REPO = "https://git.example.test/platform/service"
 POLICY = AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["Developer"])
 
 
 def hit(*policies, id="git-guide"):
-    return SearchHit(id=id, title="Git", text="Maintainer не выдаётся. Запросите Developer.", access_policies=list(policies))
+    return SearchHit(id=id, title="Git", text="Инструкция.", access_policies=list(policies))
 
 
 def draft(resource=REPO, level="Developer"):
     return AccessProposal(resource_id=resource, resource_label="Model label", access_level=level)
 
 
-def verify(proposal=None, sources=None, message=None, history=(), selected=None):
+def selection(**extra):
+    return AccessSelection(**{
+        "policy_source_id": "git-guide", "policy_index": 0, "target_status": "selected",
+        "level_status": "explicit", "requested_level": "Developer", "repository_url": REPO, **extra,
+    })
+
+
+def verify(choice=None, sources=None, message=None, history=(), selected=None):
     return confirmed_proposal(
-        proposal or draft(), sources if sources is not None else [hit(POLICY)],
+        choice or selection(), sources if sources is not None else [hit(POLICY)],
         message=message if message is not None else f"Мне нужен доступ к {REPO}", history=history,
         selected_resource_id=selected, source_ids={"git-guide"},
     )
 
 
-def test_repository_uses_explicit_url_and_published_level_with_canonical_label():
-    result = verify(draft(REPO + ".git", "developer"), message=f"Мне нужен доступ к {REPO}.git")
+def test_repository_uses_user_url_and_canonical_policy_level():
+    result = verify(selection(repository_url=REPO + ".git", requested_level="developer"), message=f"Доступ к {REPO}.git")
     assert result == AccessProposal(resource_id=REPO, resource_label="Репозиторий platform/service", access_level="Developer")
-    assert set(result.model_dump()) == {"resource_id", "resource_label", "access_level"}
 
 
 @pytest.mark.parametrize("resource", [
@@ -41,38 +47,63 @@ def test_repository_uses_explicit_url_and_published_level_with_canonical_label()
     "https://git.example.test/platform/%2e%2e/service", "http://git.example.test/platform/service",
     "https://user:password@git.example.test/platform/service", REPO + "?secret=x", REPO + "#token",
 ])
-def test_invented_source_id_host_or_repository_cannot_become_target(resource):
-    assert verify(draft(resource)) in {REPOSITORY_CLARIFICATION, RESOURCE_CLARIFICATION}
+def test_invalid_or_unmentioned_repository_is_rejected(resource):
+    with pytest.raises(ProposalValidationError):
+        verify(selection(repository_url=resource))
 
 
-def test_unknown_repository_asks_instead_of_inventing_target():
-    assert verify(message="Как получить доступ к репозиторию?") == REPOSITORY_CLARIFICATION
+def test_repository_history_origin_is_explicit_and_must_be_user():
+    previous = [Message(role="user", content=f"Доступ к {REPO}")]
+    assert verify(selection(repository_message_index=0), message="Developer", history=previous).resource_id == REPO
+    with pytest.raises(ProposalValidationError):
+        verify(message="Developer", history=previous)
+    with pytest.raises(ProposalValidationError):
+        verify(selection(repository_message_index=0), message="Developer", history=[Message(role="assistant", content=REPO)])
+    with pytest.raises(ProposalValidationError):
+        verify(selection(repository_message_index=1), history=previous)
 
 
-def test_only_user_history_can_identify_url_and_current_target_has_priority():
-    history = [Message(role="user", content=f"Доступ к {REPO}")]
-    assert isinstance(verify(message="Developer", history=history), AccessProposal)
-    assert verify(message="А теперь к https://git.example.test/other/repo", history=history) == REPOSITORY_CLARIFICATION
-    assert verify(message="Дайте доступ", history=[Message(role="assistant", content=REPO)]) == REPOSITORY_CLARIFICATION
+@pytest.mark.parametrize("extra", [
+    {"target_status": "ambiguous"}, {"target_status": "excluded"},
+    {"excluded_resource_ids": [REPO]}, {"excluded_access_levels": ["Developer"]},
+    {"level_status": "negated"}, {"level_status": "ambiguous"},
+    {"requested_level": "Maintainer"}, {"requested_level": None},
+    {"level_status": "unspecified"},
+])
+def test_ambiguous_excluded_unsupported_and_inconsistent_selection_is_rejected(extra):
+    with pytest.raises(ProposalValidationError):
+        verify(selection(**extra))
 
 
-def test_level_in_negative_prose_is_not_an_allowed_level():
-    assert verify(draft(level="Maintainer")) == ACCESS_LEVEL_CLARIFICATION
-    assert verify(sources=[hit()]) == REPOSITORY_CLARIFICATION
-
-
-def test_multiple_allowed_levels_require_explicit_choice_and_cannot_escalate_it():
+def test_unspecified_level_uses_only_single_policy_option():
+    assert verify(selection(level_status="unspecified", requested_level=None)).access_level == "Developer"
     policy = AccessPolicy(repository_host="git.example.test", resource_label="Git", access_levels=["read", "write"])
-    assert verify(draft(level="write"), [hit(policy)]) == ACCESS_LEVEL_CLARIFICATION
-    assert verify(draft(level="write"), [hit(policy)], f"read для {REPO}") == ACCESS_LEVEL_CLARIFICATION
-    assert verify(draft(level="read"), [hit(policy)], f"read для {REPO}").access_level == "read"
+    with pytest.raises(ProposalValidationError):
+        verify(selection(level_status="unspecified", requested_level=None), sources=[hit(policy)])
 
 
-def test_selected_step_identifies_resource_but_does_not_grant_level():
-    policy = AccessPolicy(resource_id="repo", resource_label="Репозиторий команды", access_levels=["read"])
-    assert verify(draft("repo", "read"), [hit(policy)], "Как получить доступ?", selected="repo").resource_id == "repo"
-    assert verify(draft("repo", "read"), [hit()], "Как получить доступ?", selected="repo") == RESOURCE_CLARIFICATION
-    assert verify(draft("repo", "read"), [hit(policy)], "Нужен доступ: Репозиторий команды").resource_id == "repo"
+def test_levels_are_not_merged_across_policies():
+    policies = [AccessPolicy(resource_id="wiki", resource_label="Wiki", access_levels=["read"]),
+                AccessPolicy(resource_id="vpn", resource_label="VPN", access_levels=["write"])]
+    with pytest.raises(ProposalValidationError):
+        verify(selection(repository_url=None, requested_level="write"), sources=[hit(*policies)])
+    result = verify(selection(repository_url=None, requested_level="read"), sources=[hit(*policies)])
+    assert result == AccessProposal(resource_id="wiki", resource_label="Wiki", access_level="read")
+
+
+@pytest.mark.parametrize("extra", [{"policy_source_id": "uncited"}, {"policy_index": 1}])
+def test_policy_must_exist_in_exact_cited_hit(extra):
+    with pytest.raises(ProposalValidationError):
+        verify(selection(**extra))
+
+
+def test_selected_step_can_constrain_resource_but_not_grant_policy_or_level():
+    policy = AccessPolicy(resource_id="vpn", resource_label="VPN", access_levels=["read"])
+    choice = selection(repository_url=None, requested_level="read")
+    assert verify(choice, sources=[hit(policy)], selected="vpn").resource_id == "vpn"
+    for sources, selected in [([hit()], "vpn"), ([hit(policy)], "wiki")]:
+        with pytest.raises(ProposalValidationError):
+            verify(choice, sources=sources, selected=selected)
 
 
 @pytest.mark.parametrize("field", ["resource_id", "resource_label", "access_level"])
@@ -94,3 +125,14 @@ def test_imported_policy_survives_chunking_without_changing_embedding_text():
 def test_policy_requires_one_authoritative_target_type(overrides):
     with pytest.raises(ValidationError):
         AccessPolicy(resource_label="Git", access_levels=["read"], **overrides)
+
+
+def test_generic_step_resource_does_not_replace_explicit_repository_url():
+    assert verify(selected="git").resource_id == REPO
+    with pytest.raises(ProposalValidationError):
+        verify(message="Доступ к Git", selected="git")
+
+
+def test_unspecified_with_an_excluded_level_is_not_silently_defaulted():
+    with pytest.raises(ProposalValidationError):
+        verify(selection(level_status="unspecified", requested_level=None, excluded_access_levels=["read"]))

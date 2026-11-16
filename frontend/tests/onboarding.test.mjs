@@ -1,60 +1,9 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { basename, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { compileFunction } from 'node:vm';
-import ts from 'typescript';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { load } from './load-source.mjs';
 
-const require = createRequire(import.meta.url);
-const coverageDir = process.env.NODE_V8_COVERAGE
-  ? fileURLToPath(new URL('../coverage/', import.meta.url))
-  : null;
-
-function load(file, overrides = {}) {
-  const sourcePath = fileURLToPath(new URL(`../src/${file}`, import.meta.url));
-  const source = readFileSync(sourcePath, 'utf8');
-  const { outputText, sourceMapText } = ts.transpileModule(source, {
-    fileName: sourcePath,
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2020,
-      jsx: ts.JsxEmit.React,
-      esModuleInterop: true,
-      sourceMap: Boolean(coverageDir),
-      inlineSources: Boolean(coverageDir),
-    },
-  });
-
-  const module = { exports: {} };
-  const resolve = id => overrides[id] || require(id);
-  const args = ['require', 'module', 'exports'];
-
-  if (coverageDir) {
-    mkdirSync(coverageDir, { recursive: true });
-    const generatedDir = mkdtempSync(join(coverageDir, 'compiled-'));
-    const filename = join(generatedDir, `${basename(file)}.cjs`);
-    const sourceMap = JSON.parse(sourceMapText);
-    sourceMap.sources = [sourcePath];
-    const encoded = Buffer.from(JSON.stringify(sourceMap)).toString('base64');
-    const code = outputText.replace(
-      /sourceMappingURL=.*$/,
-      `sourceMappingURL=data:application/json;base64,${encoded}`,
-    );
-
-    writeFileSync(filename, code);
-    compileFunction(code, args, { filename })(resolve, module, module.exports);
-  } else {
-    compileFunction(outputText, args, { filename: sourcePath })(
-      resolve, module, module.exports,
-    );
-  }
-
-  return module.exports;
-}
 // Deterministic browser storage; never rely on Node's experimental localStorage.
 const storage = new Map();
 Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{
@@ -498,4 +447,220 @@ test('roadmap refresh failure retains loaded steps and reports stale data',()=>{
   const html=renderToStaticMarkup(React.createElement(RoadmapSummaryDialog,{data:{assigned:true,groupingAvailable:true,steps:[{step_id:'git',title:'Доступ Git',current:true,completed:false,track:'tech'}],tracks:[]},loading:false,error:true,onRetry(){},onClose(){},onOpen(){}}));
   assert.match(html,/Доступ Git/);assert.match(html,/Показаны последние загруженные данные/);
   assert.match(html,/role="alert"/);
+});
+
+test('user tasks use the dedicated endpoint and map protobuf decision statuses',async()=>{
+  const paths=[];
+  globalThis.fetch=async(path)=>{paths.push(path);return Response.json([
+    {taskId:'9007199254740993',proposalId:'p1',resourceId:'Git',accessLevel:'Developer',status:'ACCESS_REQUEST_STATUS_APPROVED',createdAt:'2026-11-15T12:00:00Z',externalRequestId:'TASK-1'},
+    {taskId:'2',proposalId:'p2',resourceId:'VPN',status:'ACCESS_REQUEST_STATUS_PENDING'},
+    {taskId:'3',proposalId:'p3',resourceId:'Docs',status:3},
+    {taskId:'4',proposalId:'p4',status:'NEW_STATUS'},
+  ]);};
+  const items=await api.fetchUserRequests('42');
+  assert.deepEqual(paths,['/v1/tasks/42?limit=100&after_id=0']);
+  assert.deepEqual(items.map(item=>item.proposal.status),['approved','pending_approval','rejected','NEW_STATUS']);
+  assert.equal(items[0].proposal.tracker_issue_key,'TASK-1');
+  assert.ok(items.every(item=>!item.conversationId));
+});
+
+test('user tasks paginate with lossless int64 cursors and reject broken responses',async()=>{
+  const paths=[];
+  globalThis.fetch=async(path)=>{paths.push(path);return Response.json(paths.length===1?Array.from({length:100},(_,i)=>({taskId:i===99?'9007199254740993':String(i+1),proposalId:String(i),status:1})):[]);};
+  assert.equal((await api.fetchUserRequests('42')).length,100);
+  assert.match(paths[1],/after_id=9007199254740993$/);
+  globalThis.fetch=async()=>Response.json({tasks:[]});
+  await assert.rejects(api.fetchUserRequests('42'),/Invalid tasks response/);
+  globalThis.fetch=async()=>Response.json(Array.from({length:100},()=>({taskId:'0'})));
+  await assert.rejects(api.fetchUserRequests('42'),/pagination/);
+  globalThis.fetch=async()=>Response.json({}, {status:503});
+  await assert.rejects(api.fetchUserRequests('42'),err=>err.status===503);
+});
+
+test('logout revokes the server session before marking the browser signed out',async()=>{
+  const isolated=load('lib/api.ts');
+  let calls=0;
+  globalThis.fetch=async(path,init)=>{
+    calls++;assert.equal(path,'/v1/auth/logout');assert.equal(init.method,'POST');
+    assert.equal(init.credentials,'same-origin');
+    assert.equal(storage.get('buddy-signed-out'),undefined);
+    return new Response(null,{status:204});
+  };
+  await isolated.logout();assert.equal(calls,1);assert.equal(storage.get('buddy-signed-out'),'true');
+  await assert.rejects(isolated.refreshSession(),/Войди/);
+  assert.equal(calls,1);
+});
+
+test('failed logout does not pretend that the server session was revoked',async()=>{
+  const isolated=load('lib/api.ts');
+  globalThis.fetch=async()=>Response.json({}, {status:503});
+  await assert.rejects(isolated.logout(),err=>err.status===503);
+  assert.equal(storage.get('buddy-signed-out'),undefined);
+  globalThis.fetch=async()=>Response.json({access_token:'still-valid'});
+  await isolated.refreshSession();
+});
+
+test('server history replaces only the optimistic user copy, preserving real repeated messages',()=>{
+  const local={id:'local-123',sender:'user',text:'Вопрос',timestamp:'2026-11-15T12:00:00Z'};
+  const server={...local,id:'saved',timestamp:'2026-11-15T12:00:01Z'};
+  const error={id:'error-123',sender:'assistant',text:'Ошибка',error:true};
+  const merged=mergeChatMessages([local,error],[server]);
+  assert.deepEqual(merged.filter(m=>m.sender==='user').map(m=>m.id),['saved']);
+  assert.ok(merged.some(m=>m.error));
+  const repeated=mergeChatMessages([server],[{...server,id:'saved-again'}]);
+  assert.equal(repeated.length,2);
+  const old={...server,id:'old',timestamp:'2026-11-14T12:00:00Z'};
+  assert.equal(mergeChatMessages([local],[old]).length,2);
+});
+
+test('network errors are readable and do not expose raw server errors',()=>{
+  assert.match(api.friendlyError(new TypeError('Load failed')),/Проверь соединение/);
+  assert.match(api.friendlyError(new api.ApiError(503,'database password and internal stack')),/временно недоступен/);
+  assert.match(api.friendlyError(new api.ApiError(401,'Unauthorized')),/Сессия истекла/);
+  assert.match(api.friendlyError(new DOMException('Aborted','AbortError')),/дождаться ответа/);
+  assert.doesNotMatch(api.friendlyError(new Error('internal stack')),/internal stack/);
+});
+
+test('logout confirmation and copy controls have accessible labels',()=>{
+  const {LogoutDialog}=load('pages/LogoutDialog.tsx',{'../lib/api':api});
+  const {MessageCopyButton}=load('pages/MessageCopyButton.tsx');
+  const html=renderToStaticMarkup(React.createElement(LogoutDialog,{onClose(){},async onLogout(){}}));
+  assert.match(html,/Выйти из аккаунта\?/);assert.match(html,/Остаться/);
+  assert.doesNotMatch(html,/всех устройствах/);
+  const copy=renderToStaticMarkup(React.createElement(MessageCopyButton,{text:'Привет'}));
+  assert.match(copy,/aria-label="Копировать сообщение"/);
+  assert.match(copy,/type="button"/);
+  assert.match(copy,/role="tooltip"/);
+  assert.match(copy,/aria-describedby=/);
+  assert.doesNotMatch(copy,/title=/);
+  assert.match(html,/Переписки и прогресс адаптации сохранятся<\/p>/);
+});
+
+
+test('unassigned roadmap dialog has a single footer action to check assignment',()=>{
+  const {RoadmapSummaryDialog}=load('pages/RoadmapSummaryDialog.tsx');
+  const html=renderToStaticMarkup(React.createElement(RoadmapSummaryDialog,{data:unassigned,loading:false,error:false,onRetry(){},onClose(){},onOpen(){}}));
+  const footer=html.match(/<footer[^>]*>(.*?)<\/footer>/s)[1];
+  assert.equal((footer.match(/<button/g)||[]).length,1);
+  assert.match(footer,/Проверить назначение/);
+  assert.doesNotMatch(html,/Открыть весь Roadmap/);
+});
+
+test('sidebar remembers collapsed and expanded state separately for each account',()=>{
+  const preferences=load('lib/uiPreferences.ts');
+  assert.equal(preferences.readMenuOpen('first',true),true);
+  assert.equal(preferences.readMenuOpen('first',false),false);
+  preferences.saveMenuOpen('first',false);
+  preferences.saveMenuOpen('second',true);
+  // Re-load the module as a page reload would, keeping browser storage.
+  const restored=load('lib/uiPreferences.ts');
+  assert.equal(restored.readMenuOpen('first',true),false);
+  assert.equal(restored.readMenuOpen('second',false),true);
+  localStorage.setItem('buddy-menu-open-first','invalid');
+  assert.equal(restored.readMenuOpen('first',true),true);
+});
+
+test('profile help and logout confirmation survive reload and stay closed after dismissal',()=>{
+  const descriptor=Object.getOwnPropertyDescriptor(globalThis,'sessionStorage');
+  const session=new Map();
+  Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:key=>session.get(key)??null,setItem:(key,value)=>session.set(key,value),removeItem:key=>session.delete(key)}});
+  try {
+    const preferences=load('lib/uiPreferences.ts');
+    for(const dialog of ['help','logout']) {
+      preferences.saveProfileDialog('first',dialog);
+      const restored=load('lib/uiPreferences.ts');
+      assert.equal(restored.readProfileDialog('first'),dialog);
+      assert.equal(restored.readProfileDialog('second'),'');
+      restored.saveProfileDialog('first','');
+      assert.equal(load('lib/uiPreferences.ts').readProfileDialog('first'),'');
+      assert.equal(session.has('buddy-profile-dialog-first'),false);
+    }
+    session.set('buddy-profile-dialog-first','unexpected');
+    assert.equal(preferences.readProfileDialog('first'),'');
+  } finally {
+    if(descriptor)Object.defineProperty(globalThis,'sessionStorage',descriptor);else delete globalThis.sessionStorage;
+  }
+});
+
+test('UI preferences tolerate blocked browser storage',()=>{
+  const local=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  const session=Object.getOwnPropertyDescriptor(globalThis,'sessionStorage');
+  const denied={configurable:true,get(){throw new Error('Storage denied');}};
+  Object.defineProperty(globalThis,'localStorage',denied);
+  Object.defineProperty(globalThis,'sessionStorage',denied);
+  try {
+    const preferences=load('lib/uiPreferences.ts');
+    assert.equal(preferences.readMenuOpen('first',false),false);
+    assert.equal(preferences.readProfileDialog('first'),'');
+    assert.doesNotThrow(()=>preferences.saveMenuOpen('first',true));
+    assert.doesNotThrow(()=>preferences.saveProfileDialog('first','help'));
+    assert.doesNotThrow(()=>preferences.saveProfileDialog('first',''));
+  } finally {
+    if(local)Object.defineProperty(globalThis,'localStorage',local);else delete globalThis.localStorage;
+    if(session)Object.defineProperty(globalThis,'sessionStorage',session);else delete globalThis.sessionStorage;
+  }
+});
+
+test('reloading already confirmed history must not erase a new identical pending message',()=>{
+  const saved={id:'server-1',sender:'user',text:'Привет',timestamp:'2026-11-15T12:00:00Z'};
+  const pending={...saved,id:'local-new',timestamp:'2026-11-15T12:00:10Z'};
+  const messages=mergeChatMessages([saved,pending],[saved]);
+  assert.deepEqual(messages.map(message=>message.id),['server-1','local-new']);
+});
+
+test('roadmap preview cannot choose a next step if the requested current step is absent',()=>{
+  const {nextSummaryStep}=load('pages/RoadmapSummaryDialog.tsx');
+  const data={assigned:true,groupingAvailable:true,tracks:[],steps:[{step_id:'first',track:'tech',completed:false}]};
+  assert.equal(nextSummaryStep(data,{step_id:'missing',track:'tech',completed:false}),undefined);
+});
+
+test('successful malformed JSON is an error, while empty 204 and non-JSON server failures are supported',async()=>{
+  globalThis.fetch=async()=>new Response('not JSON',{status:200});
+  await assert.rejects(api.request('/test'),SyntaxError);
+  globalThis.fetch=async()=>new Response(null,{status:204});
+  assert.deepEqual(await api.request('/test'),{});
+  globalThis.fetch=async()=>new Response('<html>Bad gateway</html>',{status:502});
+  await assert.rejects(api.request('/test'),error=>error instanceof api.ApiError && error.status===502);
+});
+
+test('HTTP timeout still applies when the caller provides its own cancellation signal',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const caller=new AbortController();
+  let signal;
+  globalThis.fetch=async(_path,init)=>{
+    signal=init.signal;
+    return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Timeout','AbortError')),{once:true}));
+  };
+  const result=api.request('/slow',{signal:caller.signal});
+  const outcome=result.catch(error=>error);
+  t.mock.timers.tick(120000);
+  const aborted=signal.aborted;
+  caller.abort(); // Clean up even when testing a broken timeout implementation.
+  await outcome;
+  assert.equal(aborted,true);
+});
+
+test('HTTP timeout includes reading a stalled response body',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  let started;
+  const reading=new Promise(resolve=>{started=resolve;});
+  globalThis.fetch=async(_path,init)=>({
+    status:200,ok:true,
+    json(){started();return new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new DOMException('Timeout','AbortError')),{once:true}));},
+  });
+  const result=api.request('/slow-body');
+  const rejected=assert.rejects(result,error=>error.name==='AbortError');
+  await reading;
+  t.mock.timers.tick(120000);
+  await rejected;
+});
+
+test('caller cancellation forwards its original reason to the HTTP request',async()=>{
+  const caller=new AbortController();
+  const reason=new DOMException('Cancelled by user','AbortError');
+  globalThis.fetch=async(_path,init)=>new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true}));
+  const result=api.request('/cancelled',{signal:caller.signal});
+  const rejected=assert.rejects(result,error=>error===reason);
+  caller.abort(reason);
+  await rejected;
 });

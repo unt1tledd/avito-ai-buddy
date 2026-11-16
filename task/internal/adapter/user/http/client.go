@@ -14,13 +14,18 @@ import (
 )
 
 type Client struct {
+	serviceToken     string
 	http             *http.Client
 	baseURL          string
 	maxResponseBytes int64
 }
 
-func NewClient(client *http.Client, baseURL string, maxResponseBytes int64) *Client {
-	return &Client{http: client, baseURL: strings.TrimRight(baseURL, "/"), maxResponseBytes: maxResponseBytes}
+func NewClient(client *http.Client, baseURL string, maxResponseBytes int64, serviceTokens ...string) *Client {
+	var token string
+	if len(serviceTokens) > 0 {
+		token = serviceTokens[0]
+	}
+	return &Client{serviceToken: token, http: client, baseURL: strings.TrimRight(baseURL, "/"), maxResponseBytes: maxResponseBytes}
 }
 
 func (c *Client) GetTeamID(ctx context.Context, userID int64) (int64, error) {
@@ -29,6 +34,7 @@ func (c *Client) GetTeamID(ctx context.Context, userID int64) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	request.Header.Set("Authorization", "Bearer "+c.serviceToken)
 	response, err := c.http.Do(request)
 	if err != nil {
 		return 0, err
@@ -38,7 +44,7 @@ func (c *Client) GetTeamID(ctx context.Context, userID int64) (int64, error) {
 		return 0, fmt.Errorf("%w: user %d has no internship", taskerrors.ErrInvalidInput, userID)
 	}
 	if response.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("User metadata returned HTTP %d", response.StatusCode)
+		return 0, fmt.Errorf("user metadata returned HTTP %d", response.StatusCode)
 	}
 	var metadata struct {
 		Team struct {
@@ -49,7 +55,7 @@ func (c *Client) GetTeamID(ctx context.Context, userID int64) (int64, error) {
 		return 0, fmt.Errorf("decode User metadata: %w", err)
 	}
 	if metadata.Team.ID <= 0 {
-		return 0, errors.New("User metadata has no team")
+		return 0, errors.New("user metadata has no team")
 	}
 	return metadata.Team.ID, nil
 }

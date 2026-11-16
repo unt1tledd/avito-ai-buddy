@@ -20,7 +20,7 @@ from ai_service.rag.import_documents import import_documents
 from ai_service.rag.import_retry import retry_import_request
 from ai_service.repositories.knowledge import KnowledgeRepository
 from ai_service.schemas.contracts import SearchHit, SearchResult
-from ai_service.schemas.support import TEMPLATES, needs_safety_fallback
+from ai_service.schemas.support import IMMEDIATE_SAFETY_ANSWER, needs_safety_fallback
 from test_chat import EMBEDDING, QUESTION, ScriptedModel, ask, call, settings  # noqa: F401
 
 
@@ -64,7 +64,7 @@ def test_technical_words_do_not_select_crisis_on_model_error(settings, monkeypat
     with TestClient(create_app(settings, model=model)) as client:
         response = ask(client, message)
     assert response.status_code == (502 if status == 400 else 200)
-    assert response.json().get("answer") != TEMPLATES["immediate_safety"]
+    assert response.json().get("answer") != IMMEDIATE_SAFETY_ANSWER
     assert queries == ([] if status == 400 else [message])
 
 

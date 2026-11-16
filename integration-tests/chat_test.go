@@ -4,12 +4,13 @@ package integration_test
 
 import (
 	chatpb "avito-ai-buddy/pkg/generated/chat/v1"
+	"sync"
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"sync"
-	"testing"
 )
 
 func TestChatHistoryIdempotencyAndIsolation(t *testing.T) {

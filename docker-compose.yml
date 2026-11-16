@@ -31,6 +31,8 @@ services:
       context: .
       dockerfile: user/Dockerfile
     environment:
+      USER_SERVICE_TOKEN: "${USER_SERVICE_TOKEN:?Set USER_SERVICE_TOKEN in .env}"
+      AUTH_BASE_URL: "http://auth:8080"
       GRPC_HOST: "0.0.0.0"
       USER_SEED_DEMO: "${USER_SEED_DEMO:-true}"
       POSTGRES_HOST: db
@@ -177,6 +179,7 @@ services:
       context: .
       dockerfile: chat/Dockerfile
     environment:
+      USER_SERVICE_TOKEN: "${USER_SERVICE_TOKEN:?Set USER_SERVICE_TOKEN in .env}"
       CHAT_POSTGRES_URL: "postgresql://chat_app:${CHAT_DB_PASSWORD}@db:5432/chat?sslmode=disable"
       AUTH_BASE_URL: "http://auth:8080"
       CHAT_HTTP_PORT: "8080"
@@ -187,6 +190,7 @@ services:
       AI_SERVICE_TOKEN: "${AI_SERVICE_TOKEN:-}"
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_TASK_COMMANDS_TOPIC: "task.access_requests.create"
+      CHAT_PROPOSAL_TTL: "${CHAT_PROPOSAL_TTL:-24h}"
     depends_on:
       db:
         condition: service_healthy
@@ -211,6 +215,7 @@ services:
       context: .
       dockerfile: onboarding/Dockerfile
     environment:
+      USER_SERVICE_TOKEN: "${USER_SERVICE_TOKEN:?Set USER_SERVICE_TOKEN in .env}"
       ONBOARDING_POSTGRES_URL: "postgresql://onboarding_app:${ONBOARDING_DB_PASSWORD}@db:5432/onboarding?sslmode=disable"
       ONBOARDING_SERVICE_TOKEN: "${ONBOARDING_SERVICE_TOKEN:-}"
       ONBOARDING_SEED_DEMO: "${ONBOARDING_SEED_DEMO:-true}"
@@ -236,6 +241,7 @@ services:
       context: .
       dockerfile: task/Dockerfile
     environment:
+      USER_SERVICE_TOKEN: "${USER_SERVICE_TOKEN:?Set USER_SERVICE_TOKEN in .env}"
       TASK_DATABASE_URL: "postgresql://task_app:${TASK_DB_PASSWORD}@db:5432/task_db?sslmode=disable"
       TASK_TRACKER_TOKEN: "${TASK_TRACKER_TOKEN:-}"
       TASK_USER_BASE_URL: "http://user:8080"

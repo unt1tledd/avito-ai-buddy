@@ -45,6 +45,7 @@ func TestConfirmProposalErrors(t *testing.T) {
 		{name: "missing token", proposalID: "42", want: codes.Unauthenticated},
 		{name: "invalid IDs", proposalID: "bad", token: "session", serviceErr: chaterrors.ErrMissingConfirmationIDs, want: codes.InvalidArgument},
 		{name: "missing proposal", proposalID: "42", token: "session", serviceErr: chaterrors.ErrProposalNotFound, want: codes.NotFound},
+		{name: "expired proposal", proposalID: "42", token: "session", serviceErr: chaterrors.ErrProposalExpired, want: codes.FailedPrecondition},
 		{name: "invalid token", proposalID: "42", token: "session", serviceErr: chaterrors.ErrInvalidToken, want: codes.Unauthenticated},
 		{name: "auth unavailable", proposalID: "42", token: "session", serviceErr: chaterrors.ErrAuthUnavailable, want: codes.Unavailable},
 		{name: "unexpected error", proposalID: "42", token: "session", serviceErr: errors.New("database unavailable"), want: codes.Internal},

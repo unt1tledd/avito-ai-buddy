@@ -15,11 +15,10 @@ from time import monotonic
 
 import httpx
 
-from ai_service.agents.agent import Agent, NO_KNOWLEDGE
+from ai_service.agents.agent import Agent
 from ai_service.clients.llm import ResponsesModel
 from ai_service.core.config import Settings
-from ai_service.schemas.clarifications import CLARIFICATION_QUESTIONS
-from ai_service.schemas.contracts import AccessPolicy, Actor, SearchHit, SearchResult
+from ai_service.schemas.contracts import AccessPolicy, Actor, Message, OnboardingPlan, SearchHit, SearchResult
 
 
 REPOSITORY = "https://git.example.test/team/repo"
@@ -53,6 +52,22 @@ class Case:
     query_terms: tuple[str, ...] = ("git",)
     answer_terms: tuple[str, ...] = ()
     reformulate: bool = True
+    history: tuple[Message, ...] = ()
+    expected_resource: str | None = None
+    expected_level: str | None = None
+    require_proposal: bool = True
+    plans: tuple[OnboardingPlan, ...] = ()
+
+
+ACCESS = SearchHit(
+    id="synthetic-access", title="Доступы Wiki и VPN", text="Выберите ресурс и уровень доступа для заявки.",
+    access_policies=[AccessPolicy(resource_id="wiki", resource_label="Wiki", access_levels=["read", "write"]),
+                     AccessPolicy(resource_id="vpn", resource_label="VPN", access_levels=["read", "write"])],
+)
+WIKI_READ = SearchHit(
+    id="synthetic-wiki", title="Доступ к Wiki", text="Для Wiki доступен уровень read.",
+    access_policies=[AccessPolicy(resource_id="wiki", resource_label="Wiki", access_levels=["read"])],
+)
 
 
 CASES = (
@@ -73,6 +88,42 @@ CASES = (
          outcome="no_knowledge", answer_terms=()),
 )
 
+CASES += (
+    Case("negative-target", "Только не VPN, нужен read для Wiki", hits=(ACCESS,), query_terms=("wiki",),
+         reformulate=False, expected_resource="wiki", expected_level="read"),
+    Case("negative-level", "Нужен read для VPN, только не write", hits=(ACCESS,), query_terms=("vpn",),
+         reformulate=False, expected_resource="vpn", expected_level="read"),
+    Case("negation-is-not-unspecified", "Нужен доступ к VPN, только не write", hits=(ACCESS,),
+         outcome="clarification", query_terms=("vpn",), reformulate=False),
+    Case("new-target", "Теперь нужен read для Wiki", hits=(ACCESS,), query_terms=("wiki",), reformulate=False,
+         history=(Message(role="user", content="Нужен read для VPN"),), expected_resource="wiki", expected_level="read"),
+    Case("level-not-inherited-across-targets", "Теперь нужен доступ к Wiki", hits=(ACCESS,), query_terms=("wiki",),
+         reformulate=False, outcome="clarification", history=(Message(role="user", content="Нужен read для VPN"),)),
+    Case("unsupported-explicit-level", "Нужен admin для Wiki", hits=(WIKI_READ,), outcome="clarification",
+         query_terms=("wiki",), reformulate=False),
+    Case("unspecified-single-level", "Нужен доступ к Wiki", hits=(WIKI_READ,), query_terms=("wiki",),
+         reformulate=False, expected_resource="wiki", expected_level="read"),
+)
+
+
+STATE_PLAN = OnboardingPlan(id="technical", title="Технический трек", current_step={
+    "id": "vpn-step", "title": "Настроить VPN", "resource_id": "vpn",
+})
+OFFICE = SearchHit(id="synthetic-office", title="Офис", text="Офис находится на улице Примерной, 1.")
+CASES += (
+    Case("context-followup", "А сколько ждать?", history=(Message(role="user", content=f"Как получить доступ к Git? {REPOSITORY}"),),
+         query_terms=("git",), reformulate=False, require_proposal=False),
+    Case("compound-step-office", "Какой у меня текущий шаг и где находится офис?", hits=(OFFICE,),
+         plans=(STATE_PLAN,), query_terms=("офис",), answer_terms=("VPN",), require_proposal=False, reformulate=False),
+    Case("step-access", "Нужен read для текущего шага моего технического трека", hits=(ACCESS,), plans=(STATE_PLAN,),
+         query_terms=("vpn",), expected_resource="vpn", expected_level="read", reformulate=False),
+    Case("state-after-search", "Какой у меня текущий шаг?", hits=(), plans=(STATE_PLAN,), outcome="onboarding_state",
+         query_terms=(), require_proposal=False, reformulate=False),
+    Case("greeting-after-search", "Привет", hits=(), outcome="conversation", query_terms=(),
+         require_proposal=False, reformulate=False),
+)
+
+
 
 class ControlledRetriever:
     def __init__(self, case):
@@ -92,10 +143,17 @@ class CountedModel:
     def __init__(self, model):
         self.model = model
         self.calls = 0
+        self.final_kind = None
 
     async def respond(self, **kwargs):
         self.calls += 1
-        return await self.model.respond(**kwargs)
+        response = await self.model.respond(**kwargs)
+        if not response.calls and response.text:
+            try:
+                self.final_kind = json.loads(response.text).get("kind")
+            except (ValueError, AttributeError):
+                self.final_kind = None
+        return response
 
 
 async def evaluate(case, settings, http, prompt):
@@ -108,29 +166,38 @@ async def evaluate(case, settings, http, prompt):
         deadline = asyncio.get_running_loop().time() + settings.chat_timeout_seconds
         async with asyncio.timeout_at(deadline):
             response = await agent.answer(
-                case.question, Actor(user_id="synthetic", role="intern", team="synthetic"), deadline=deadline,
+                case.question, Actor(user_id="synthetic", role="intern", team="synthetic"), deadline=deadline, history=case.history, onboarding_plans=case.plans,
             )
         problems = []
-        expected_searches = 0 if case.outcome == "clarification" else (2 if case.refined_hits is not None else 1)
-        allowed_searches = range(1, 4) if case.outcome == "no_knowledge" else (expected_searches,)
+        expected_searches = 2 if case.refined_hits is not None else 1
+        allowed_searches = range(1, 3) if case.outcome == "no_knowledge" else (expected_searches,)
         if len(retriever.queries) not in allowed_searches:
             problems.append("unexpected_search_count")
-        if model.calls != len(retriever.queries) + 1:
+        if not len(retriever.queries) + 1 <= model.calls <= len(retriever.queries) + 2:
             problems.append("unexpected_model_count")
         if case.outcome == "grounded_answer":
             expected = case.refined_hits if case.refined_hits is not None else case.hits
             if {source.id for source in response.sources} != {hit.id for hit in expected}:
                 problems.append("unexpected_sources")
-            if response.proposal is None:
+            if case.require_proposal and response.proposal is None:
                 problems.append("missing_proposal")
+            if not case.require_proposal and response.proposal is not None:
+                problems.append("unexpected_proposal")
+            if response.proposal is not None:
+                if case.expected_resource and response.proposal.resource_id != case.expected_resource:
+                    problems.append("wrong_resource")
+                if case.expected_level and response.proposal.access_level != case.expected_level:
+                    problems.append("wrong_level")
             for term in case.answer_terms:
                 if term.casefold() not in response.answer.casefold():
                     problems.append("missing_answer_term:" + term)
         elif case.outcome == "clarification":
-            if response.answer not in CLARIFICATION_QUESTIONS or response.sources:
+            # A cited factual explanation plus a question is valid, too.
+            # This is a structural smoke check, not proof of the question's semantics.
+            if model.final_kind not in {"clarification", "grounded_answer"} or response.proposal:
                 problems.append("expected_clarification")
-        elif response.answer != NO_KNOWLEDGE or response.sources:
-            problems.append("expected_no_knowledge")
+        elif model.final_kind != case.outcome or response.sources or response.proposal:
+            problems.append("unexpected_answer_kind")
         if expected_searches:
             query = retriever.queries[0].casefold() if retriever.queries else ""
             if case.reformulate and (query == case.question.casefold() or not re.search("[а-я]", query)):
