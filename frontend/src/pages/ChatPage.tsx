@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatMessage, fetchHistory, sendChatMessage, confirmAccessProposal, refreshSession, Conversation, listConversations, createConversation, deleteConversation, recentConversations, friendlyError } from '../lib/api';
+import { NavigationIcon } from './NavigationIcon';
 import { MessageCopyButton } from './MessageCopyButton';
 import { LogoutDialog } from './LogoutDialog';
 import { AccessProposalCard } from './AccessProposalCard';
 import { MessageText, MessageSources } from './MessageContent';
 import { AppBrand, ThemeToggle } from './AppChrome';
+import { HelpContent } from './HelpContent';
 import { RequestsPage } from './RequestsPage';
 import { HomePage } from './HomePage';
 import { RoadmapPage } from './OnboardingPage';
@@ -13,11 +15,8 @@ import { ProfileDialog, readMenuOpen, saveMenuOpen, readProfileDialog, saveProfi
 type Screen = 'home' | 'roadmap' | 'requests' | 'chat' | 'profile';
 type IconName = Screen | 'panel' | 'chevron' | 'plus' | 'help' | 'logout' | 'close' | 'sun' | 'moon' | 'trash';
 function Icon({name}: {name: IconName}) {
-  const paths: Record<IconName, React.ReactNode> = {
-    home: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></>,
-    roadmap: <><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v6a4 4 0 0 0 4 4h4a4 4 0 0 0 0-8h-1m-3 0h.01M18 15v2"/></>,
-    requests: <><path d="M14 3H5v18h14V8Z M14 3v5h5M8 12h8M8 16h5"/></>,
-    chat: <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z"/>,
+  if(name==='home' || name==='roadmap' || name==='requests' || name==='chat')return <NavigationIcon name={name}/>;
+  const paths: Record<Exclude<IconName,'home'|'roadmap'|'requests'|'chat'>, React.ReactNode> = {
     profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></>,
     panel: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></>,
     chevron: <path d="m9 5 7 7-7 7"/>,
@@ -330,7 +329,7 @@ export function ChatPage({userId,profile,onLogout,dark,onToggleTheme}:{userId:st
     </div>
     {profileDialog==='logout' && <LogoutDialog onClose={()=>changeProfileDialog('')} onLogout={async()=>{await onLogout();saveProfileDialog(userId,'');}}/>}
     <dialog ref={helpDialog} className="buddy-help-dialog" aria-labelledby="buddy-help-title" onCancel={e=>{e.preventDefault();changeProfileDialog('');}} onClick={e=>{if(e.target===e.currentTarget)changeProfileDialog('');}}>
-      <div className="buddy-help-content"><button className="buddy-icon-button buddy-help-close" autoFocus aria-label="Закрыть помощь" onClick={()=>changeProfileDialog('')}><Icon name="close"/></button><span className="buddy-state-icon"><Icon name="help"/></span><h2 id="buddy-help-title">Тут пока что пусто,<br/>мы закрыты</h2><button className="buddy-action-button" onClick={()=>changeProfileDialog('')}>Понятно</button></div>
+      <HelpContent onClose={()=>changeProfileDialog('')}/>
     </dialog>
   </div>;
 }

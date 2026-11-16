@@ -19,8 +19,10 @@ test('legacy weekly preference still renders a flat plan in server order without
     const html=render();
     assert.doesNotMatch(html,/По неделям|Вид Roadmap|roadmap-period|Откроем новый чат/);
     assert.match(html,/roadmap-timeline/);
-    assert.ok(html.indexOf('Первый шаг')<html.indexOf('Второй шаг'));
-    assert.match(html,/Спросить бадди: Первый шаг/);
+    const first=html.indexOf('Первый шаг'),second=html.indexOf('Второй шаг');
+    assert.ok(first>=0,'the first step must exist');
+    assert.ok(second>first,'the second step must follow the first');
+    assert.doesNotMatch(html,/Спросить бадди: Первый шаг/);
     assert.match(html,/Спросить бадди: Второй шаг/);
   } finally {if(storage)Object.defineProperty(globalThis,'localStorage',storage);else delete globalThis.localStorage;}
 });
@@ -33,10 +35,25 @@ test('completion message belongs to the progress card rather than the steps list
   assert.equal((html.match(/Все шаги выполнены/g)||[]).length,1);
 });
 
-test('source cards remove checklist badges without dropping sources or demo labels',()=>{
+test('source cards hide entire checklist entries while keeping other materials',()=>{
   const html=renderToStaticMarkup(React.createElement(MessageSources,{sources:[{id:'check',title:'[ЧЕК-ЛИСТ] Выпускной',url:'https://example.com/check'},{id:'demo',title:'[ДЕМО] Документ',url:'https://example.com/demo'}]}));
   assert.doesNotMatch(html,/ЧЕК-ЛИСТ/);
-  assert.match(html,/Выпускной/);assert.match(html,/\[ДЕМО\] Документ/);
-  assert.match(html,/href="https:\/\/example.com\/check"/);
-  assert.equal((html.match(/<a /g)||[]).length,2);
+  assert.doesNotMatch(html,/Выпускной/);assert.match(html,/\[ДЕМО\] Документ/);
+  assert.doesNotMatch(html,/href="https:\/\/example.com\/check"/);
+  assert.equal((html.match(/<a /g)||[]).length,1);
+});
+
+
+test('roadmap shows no inline ask actions before selecting a step',()=>{
+  assert.doesNotMatch(render(),/class="roadmap-step-ask"/);
+});
+test('only the selected step receives an inline ask action',()=>{
+  const storage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>JSON.stringify({track:'common',step:'first'})}});
+  try {
+    const html=render();
+    assert.equal((html.match(/class="roadmap-step-ask"/g)||[]).length,1);
+    assert.match(html,/Спросить бадди: Первый шаг/);
+    assert.doesNotMatch(html,/Спросить бадди: Второй шаг/);
+  } finally {if(storage)Object.defineProperty(globalThis,'localStorage',storage);else delete globalThis.localStorage;}
 });

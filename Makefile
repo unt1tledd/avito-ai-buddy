@@ -1,10 +1,8 @@
 GO_MODULES := auth user onboarding task chat pkg integration-tests
 
-.PHONY: deps verify fmt lint test vet tools-check load-test load-test-one load-test-list integration-test-one local-up local-up-new local-monitoring local-status local-logs local-stop local-up local-up-new local-monitoring local-status local-logs local-stop help integration-test-list update-docker update-docker-one docker-status lint-py lint-fr
-deps: ## Скачать зависимости Go
-	@set -e; for module in $(GO_MODULES); do (cd $$module && GOWORK=off go mod download all); done
-verify: ## Проверить контрольные суммы зависимостей Go
-	@set -e; for module in $(GO_MODULES); do (cd $$module && GOWORK=off go mod verify); done
+.PHONY: fmt lint test vet tools-check load-test load-test-one load-test-list integration-test-one local-up local-up-new local-monitoring local-status local-logs local-stop local-up local-up-new local-monitoring local-status local-logs local-stop help integration-test-list update-docker update-docker-one docker-status lint-py lint-fr demo-up
+
+##@ Разработка и линтеры
 fmt: ## Отформатировать Go-код
 	@set -e; for module in $(GO_MODULES); do (cd $$module && golangci-lint fmt --config ../.golangci.yaml); done
 lint-go: ## Go-линтер, включая исходники интеграционных тестов
@@ -28,14 +26,7 @@ lint-py: ## Python-линтер (Ruff)
 
 lint-fr: ## Фронтенд-линтер (ESLint)
 	cd frontend && npm run lint	
-test: ## Запустить Go-тесты с проверкой гонок
-	@set -e; for module in $(GO_MODULES); do ( \
-		cd $$module; \
-		packages=$$(go list ./...); \
-		if [ -n "$$packages" ]; then go test -race -count=1 ./...; fi \
-	); done
-vet: ## Запустить go vet
-	@set -e; for module in $(GO_MODULES); do (cd $$module && go vet ./...); done
+
 tools-check: ## Показать версии инструментов Go
 	go version
 	golangci-lint version
@@ -45,12 +36,16 @@ DOCKER_USE_SUDO ?= 0
 LOCAL_DOCKER = $(if $(filter 1,$(DOCKER_USE_SUDO)),sudo docker,docker)
 SERVICES ?= chat ai auth task
 
-
+##@ Локальный стенд
 local-up: ## Поднять приложение с сохранёнными данными
 	DOCKER_USE_SUDO="$(DOCKER_USE_SUDO)" bash infra/scripts/up-local.sh
 
 local-up-new: ## Полностью пересобрать приложение вместе с базой данных и ее индексами 
 	DOCKER_USE_SUDO="$(DOCKER_USE_SUDO)" bash infra/scripts/up-local.sh --import-ai	
+
+demo-up: local-up ## Поднять локальный стенд и подготовить демо-аккаунт с Roadmap
+	python3 infra/scripts/seed-demo.py	
+
 
 local-monitoring: ## Запустить Grafana, Loki, Alloy, Blackbox и Prometheus
 	$(LOCAL_DOCKER) compose --profile observability up -d loki alloy blackbox prometheus grafana
@@ -69,7 +64,7 @@ local-stop: ## Остановить приложение и мониторинг
 SOAK_SECONDS ?= 60
 LOAD_ARGS ?=
 
-
+##@ Нагрузочные тесты
 load-test: ## Полное нагрузочное тестирование 
 	@DOCKER_USE_SUDO="$(DOCKER_USE_SUDO)" python3 tests/load/run.py all \
 		--soak-seconds "$(SOAK_SECONDS)" $(LOAD_ARGS)
@@ -82,6 +77,7 @@ load-test-one: ## Запустить один нагрузочный сцена�
 load-test-list: ## Показать нагрузочные сценарии
 	@python3 tests/load/run.py --list
 
+##@ Интеграционные тесты
 integration-test: ## Полное интеграционное тестирование
 	bash integration-tests/run.sh	
 
@@ -113,7 +109,7 @@ integration-test-list: ## Показать список интеграционн
 
 APP_SERVICES := auth user chat onboarding ai task frontend
 
-
+##@ Управление контейнерами
 update-docker: ## Пересобрать и перезапустить все сервисы приложения
 	$(LOCAL_DOCKER) compose up -d --build --force-recreate --no-deps $(APP_SERVICES)
 
@@ -124,14 +120,28 @@ update-docker-one: ## Пересобрать и перезапустить вы�
 docker-status: ## Показать запущенные и остановленные контейнеры проекта
 	$(LOCAL_DOCKER) compose --profile "*" ps -a
 
+
+
+
+##@ Справка
+
 help: ## Показать команды проекта и их назначение
-	@awk '/^[[:alnum:]_][[:alnum:]_.-]*[[:space:]]*:([[:space:]]|$$)/ { \
-		name = $$0; sub(/[[:space:]]*:.*/, "", name); \
-		if (seen[name]++) next; \
-		desc = $$0; \
-		if (desc ~ /##/) sub(/^.*##[[:space:]]*/, "", desc); \
-		else desc = "Описание пока не добавлено"; \
-		printf "  %-24s %s\n", name, desc; \
-	}' $(MAKEFILE_LIST)
+	@awk ' \
+		/^##@[[:space:]]+/ { \
+			title = $$0; \
+			sub(/^##@[[:space:]]+/, "", title); \
+			printf "%s%s\n", (section++ ? "\n" : ""), title; \
+			next; \
+		} \
+		/^[[:alnum:]_][[:alnum:]_.-]*[[:space:]]*:([[:space:]]|$$)/ { \
+			name = $$0; \
+			sub(/[[:space:]]*:.*/, "", name); \
+			if (seen[name]++) next; \
+			desc = $$0; \
+			if (desc ~ /##/) sub(/^.*##[[:space:]]*/, "", desc); \
+			else desc = "Описание пока не добавлено"; \
+			printf "  %-24s %s\n", name, desc; \
+		} \
+	' $(MAKEFILE_LIST)
 
 		

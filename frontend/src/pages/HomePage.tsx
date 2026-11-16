@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Conversation, OnboardingRoadmap, OnboardingStep, fetchOnboardingRoadmap, recentConversations } from '../lib/api';
 
+import { NavigationIcon } from './NavigationIcon';
 import { RoadmapSummaryDialog } from './RoadmapSummaryDialog';
 import { RequestsDialog } from './RequestsDialog';
 
@@ -27,18 +28,18 @@ export function HomePage({userId,name,chats,busy,onChat,onQuestion,onRoadmap,onR
     <section className="home-activity" aria-labelledby="home-activity-title">
       <h3 id="home-activity-title">Последняя активность</h3>
       <button className="home-activity-row" disabled={busy} onClick={()=>last?onChat(last.id):onQuestion('')}>
-        <span className="home-activity-icon home-activity-icon--chat" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z"/></svg></span>
+        <span className="home-activity-icon home-activity-icon--chat" aria-hidden="true"><NavigationIcon name="chat"/></span>
         <span className="home-activity-copy"><strong>Последний чат</strong><span>{busy && !last?'Загружаем переписки…':last?.title || 'Пока нет переписок — задай первый вопрос бадди'}</span></span>
         <span className="home-activity-action">{last?'Открыть чат':'Новый чат'}</span><span className="home-activity-chevron" aria-hidden="true">›</span>
       </button>
       <button className="home-activity-row" onClick={()=>setDialog('roadmap')} aria-haspopup="dialog" aria-busy={loading}>
-        <span className="home-activity-icon home-activity-icon--roadmap" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v6a4 4 0 0 0 4 4h4a4 4 0 0 0 0-8h-3M18 15v2"/></svg></span>
+        <span className="home-activity-icon home-activity-icon--roadmap" aria-hidden="true"><NavigationIcon name="roadmap"/></span>
         <span className="home-activity-copy"><strong>Roadmap</strong><span>{roadmapLabel}</span></span>
         {!loading && !error && data?.assigned && total>0 && <span className="home-activity-progress"><span>{done} из {total} шагов выполнено</span><progress value={done} max={total} aria-label="Прогресс адаптации"/></span>}
         <span className="home-activity-chevron" aria-hidden="true">›</span>
       </button>
       <button className="home-activity-row" disabled={busy} onClick={()=>setDialog('requests')} aria-haspopup="dialog">
-        <span className="home-activity-icon home-activity-icon--requests" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 3H5v18h14V8Z M14 3v5h5M8 12h8M8 16h5"/></svg></span>
+        <span className="home-activity-icon home-activity-icon--requests" aria-hidden="true"><NavigationIcon name="requests"/></span>
         <span className="home-activity-copy"><strong>Заявки</strong><span>Доступы и статусы согласования</span></span><span className="home-activity-chevron" aria-hidden="true">›</span>
       </button>
       {error && <button className="home-text-button" onClick={()=>setVersion(v=>v+1)}>Повторить загрузку плана</button>}

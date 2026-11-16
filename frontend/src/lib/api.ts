@@ -269,10 +269,12 @@ export async function listConversations():Promise<Conversation[]> {
 export async function createConversation():Promise<Conversation> { return request<Conversation>('/v1/chat/conversations',{method:'POST'}); }
 export async function deleteConversation(id?:string):Promise<void> { await request('/v1/chat/conversations'+(id?`/${encodeURIComponent(id)}`:''),{method:'DELETE'}); }
 
-export function stepQuestion(step: OnboardingStep): string {
+export function stepQuestion(step: OnboardingStep, trackName?:string): string {
+  const track=trackName || step.current_track_name || step.track;
+  const context=track?` Трек: «${track}».`:'';
   return step.action_type === 'access_request'
-    ? `Как получить доступ для шага «${step.title}»?${step.resource_id ? ` Ресурс: ${step.resource_id}.` : ''}`
-    : `Как выполнить шаг адаптации «${step.title}»?`;
+    ? `Как получить доступ для шага «${step.title}»?${context}${step.resource_id ? ` Ресурс: ${step.resource_id}.` : ''}`
+    : `Как выполнить шаг адаптации «${step.title}»?${context}`;
 }
 
 export interface ConversationProposal { proposal: Proposal; conversationId: string; timestamp: string }
