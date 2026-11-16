@@ -1,0 +1,381 @@
+openapi: 3.1.0
+info:
+  title: AI-buddy internal API
+  version: 1.0.0
+paths:
+  /healthz:
+    get:
+      summary: Health
+      operationId: health_healthz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Health Healthz Get
+  /readyz:
+    get:
+      summary: Readiness
+      operationId: readiness_readyz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+        '503':
+          description: Required configuration or index unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+  /api/v1/answer:
+    post:
+      summary: Answer
+      description: Get an answer using the current user profile supplied by authenticated
+        Chat. AI does not call User. Maximum request body is 1 MiB.
+      operationId: answer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Malformed request body
+        '401':
+          description: Invalid or missing chat service token
+        '408':
+          description: Request body deadline expired
+        '413':
+          description: Request body exceeds 1 MiB
+        '502':
+          description: Embeddings, knowledge base, model or tool orchestration error
+        '503':
+          description: AI service configuration is incomplete
+        '504':
+          description: Chat deadline expired
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+components:
+  schemas:
+    AccessProposal:
+      properties:
+        resource_id:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Resource Id
+        resource_label:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Resource Label
+        access_level:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Access Level
+      additionalProperties: false
+      type: object
+      required:
+      - resource_id
+      - resource_label
+      - access_level
+      title: AccessProposal
+      description: AI-to-Chat draft; Chat owns its ID, confirmation and dispatch state.
+    ChatActor:
+      properties:
+        user_id:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: User Id
+        team:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Team
+        role:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Role
+        actual_end_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Actual End Date
+      additionalProperties: false
+      type: object
+      required:
+      - user_id
+      - team
+      - role
+      title: ChatActor
+      description: Current user context supplied by the authenticated Chat service.
+    ChatRequest:
+      properties:
+        conversation_id:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          - type: 'null'
+          title: Conversation Id
+          description: Optional chat ID for correlation. AI does not store conversations.
+        actor:
+          $ref: '#/components/schemas/ChatActor'
+          description: Current user ID, role and team verified by Chat. AI uses this
+            profile for document ACL and does not call User. Forward actual_end_date
+            when the internship has ended.
+        message:
+          type: string
+          maxLength: 4000
+          minLength: 1
+          title: Message
+        onboarding_plans:
+          items:
+            $ref: '#/components/schemas/OnboardingPlan'
+          type: array
+          maxItems: 128
+          title: Onboarding Plans
+          description: Optional onboarding tracks supplied by Chat, each with its
+            current step or null. Step action_type is context only, not an instruction
+            to execute an action. The planner formulates a context-aware search query
+            for every message before final generation. The final model can clarify
+            ambiguous step references after retrieval. Onboarding context is accepted
+            only through this field and is limited to 128 KiB of JSON context, including
+            string escaping for the model request.
+        history:
+          items:
+            $ref: '#/components/schemas/Message'
+          type: array
+          title: History
+          description: Previous messages in chronological order, oldest first, excluding
+            the current question. AI considers the last 30 messages, verifies assistant
+            source access and keeps at most 128 KiB of history. Older messages are
+            dropped whole. The complete request remains limited to 1 MiB.
+      additionalProperties: false
+      type: object
+      required:
+      - actor
+      - message
+      title: ChatRequest
+    ChatResponse:
+      properties:
+        answer:
+          type: string
+          title: Answer
+        sources:
+          items:
+            $ref: '#/components/schemas/CitedSource'
+          type: array
+          maxItems: 6
+          title: Sources
+          description: Only sources cited in the answer, in order of first citation,
+            without duplicates.
+        proposal:
+          anyOf:
+          - $ref: '#/components/schemas/AccessProposal'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - answer
+      - sources
+      title: ChatResponse
+    CitedSource:
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Id
+        title:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Title
+        url:
+          anyOf:
+          - type: string
+            maxLength: 2083
+            minLength: 1
+            format: uri
+          - type: 'null'
+          title: Url
+        text:
+          type: string
+          maxLength: 1200
+          minLength: 1
+          title: Text
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - title
+      - text
+      title: CitedSource
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    Message:
+      properties:
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+          title: Role
+        content:
+          type: string
+          minLength: 1
+          title: Content
+        source_ids:
+          items:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          type: array
+          maxItems: 6
+          title: Source Ids
+          description: Source IDs stored with a past assistant reply. Every listed
+            source must still be accessible to the current actor. Source-free replies
+            without citation markers are retained only as untrusted conversation context,
+            not evidence of facts or access rights. Chat must preserve source metadata.
+      additionalProperties: false
+      type: object
+      required:
+      - role
+      - content
+      title: Message
+    OnboardingPlan:
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Id
+        title:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Title
+        current_step:
+          anyOf:
+          - $ref: '#/components/schemas/OnboardingStep'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - title
+      title: OnboardingPlan
+      description: Read-only track snapshot supplied by Chat, including tracks without
+        a current step.
+    OnboardingStep:
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          title: Id
+        title:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Title
+        resource_id:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Resource Id
+        action_type:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Action Type
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - title
+      title: OnboardingStep
+      description: Current step within an onboarding track; action type is context
+        only.
+    Readiness:
+      properties:
+        status:
+          type: string
+          enum:
+          - ready
+          - unavailable
+          title: Status
+        capability:
+          type: string
+          const: questions
+          title: Capability
+          default: questions
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - status
+      title: Readiness
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer

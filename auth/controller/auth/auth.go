@@ -12,6 +12,7 @@ import (
 type AuthService interface {
 	Register(ctx context.Context, email, password string) (userID int64, message string, err error)
 	Login(ctx context.Context, email, password string) (accessToken, refreshToken string, err error)
+	Logout(ctx context.Context, refreshToken string) error
 	RefreshToken(ctx context.Context, refreshToken string) (newAccessToken, newRefreshToken string, err error)
 	ValidateToken(ctx context.Context, token string) (isValid bool, userID int64, err error)
 }
@@ -34,6 +35,7 @@ func NewAuthHandler(
 func Register(mux *http.ServeMux, h authHandler) {
 	mux.HandleFunc("POST /api/v1/auth/register", h.Register)
 	mux.HandleFunc("POST /api/v1/auth/login", h.Login)
+	mux.HandleFunc("POST /api/v1/auth/logout", h.Logout)
 	mux.HandleFunc("POST /api/v1/auth/validate", h.ValidateToken)
 	mux.HandleFunc("POST /api/v1/auth/refresh", h.RefreshToken)
 }
@@ -60,11 +62,24 @@ func setAccessCookie(w http.ResponseWriter, r *http.Request, accessToken string)
 }
 
 func setRefreshCookie(w http.ResponseWriter, r *http.Request, refreshToken string) {
+	cookiePath := path.Dir(r.URL.Path)
+	clearAuthCookie(w, r, refreshTokenCookie, path.Join(cookiePath, "refresh"))
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookie,
 		Value:    refreshToken,
-		Path:     path.Join(path.Dir(r.URL.Path), "refresh"),
+		Path:     cookiePath,
 		MaxAge:   7 * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func clearAuthCookie(w http.ResponseWriter, r *http.Request, name, cookiePath string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Path:     cookiePath,
+		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteLaxMode,

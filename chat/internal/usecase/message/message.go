@@ -1,0 +1,262 @@
+package message
+
+//go:generate mockgen -source=message.go -destination=mocks/message_mocks.go -package=mocks
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"avito-ai-buddy/chat/internal/entity"
+	chaterrors "avito-ai-buddy/chat/internal/errors"
+	"avito-ai-buddy/chat/internal/port"
+
+	"github.com/golang-jwt/jwt/v4"
+)
+
+type conversationService interface {
+	GetOrCreate(ctx context.Context, userID int64) (*entity.Conversation, error)
+}
+
+type messageRepository interface {
+	Create(ctx context.Context, message entity.Message) (int64, error)
+	GetOrCreateQuestion(ctx context.Context, question entity.Message, idempotencyKey int64) (id int64, savedText string, err error)
+	ClaimReply(ctx context.Context, questionID int64, lease time.Duration) (time.Time, error)
+	GetReply(ctx context.Context, questionID int64) (*entity.Message, error)
+	FinishReply(ctx context.Context, questionID int64, claimUntil time.Time, replyID int64) error
+	ListByConversation(ctx context.Context, conversationID int64, pageSize int32, pageToken string) ([]entity.Message, string, error)
+}
+
+const (
+	replyTimeout = 45 * time.Second
+	replyLease   = time.Minute
+)
+
+type actionRepository interface {
+	Create(ctx context.Context, action entity.Action) (int64, error)
+}
+
+type userClient interface {
+	GetUserContext(ctx context.Context, userID string) (entity.UserContext, error)
+}
+
+type onboardingClient interface {
+	GetOnboardingPlans(ctx context.Context, userID int64, token string) ([]entity.OnboardingPlan, error)
+}
+
+type aiClient interface {
+	GetAnswer(ctx context.Context, request entity.AnswerRequest) (entity.Answer, error)
+}
+
+type chatService struct {
+	tx                 port.Transactor
+	auth               port.TokenValidator
+	conversations      conversationService
+	messagesRepo       messageRepository
+	actionsRepo        actionRepository
+	user               userClient
+	onboarding         onboardingClient
+	ai                 aiClient
+	maxMessageLength   int
+	maxHistoryMessages int32
+}
+
+// NewService builds the message usecase: it needs the conversation and
+// message repositories, the access proposal repository, the user, onboarding
+// and AI clients, the auth token validator and a transaction manager.
+func NewService(
+	conversations conversationService,
+	messagesRepo messageRepository,
+	actionsRepo actionRepository,
+	user userClient,
+	onboarding onboardingClient,
+	ai aiClient,
+	auth port.TokenValidator,
+	tx port.Transactor,
+	maxMessageLength int,
+	maxHistoryMessages int32,
+) *chatService {
+	return &chatService{
+		tx:                 tx,
+		auth:               auth,
+		conversations:      conversations,
+		messagesRepo:       messagesRepo,
+		actionsRepo:        actionsRepo,
+		user:               user,
+		onboarding:         onboarding,
+		ai:                 ai,
+		maxMessageLength:   maxMessageLength,
+		maxHistoryMessages: maxHistoryMessages,
+	}
+}
+
+// SendMessage saves the intern's question (idempotent by key), claims the
+// reply and asks the AI service. Retries with the same key return the saved
+// reply instead of asking twice.
+func (s *chatService) SendMessage(ctx context.Context, token, text string, idempotencyKey int64) (entity.Message, error) {
+	userID, err := s.auth.ValidateToken(ctx, token)
+	if err != nil {
+		return entity.Message{}, err
+	}
+
+	length := utf8.RuneCountInString(strings.TrimSpace(text))
+	if length == 0 || length > s.maxMessageLength {
+		return entity.Message{}, fmt.Errorf("%w: expected 1 to %d characters", chaterrors.ErrInvalidMessageLength, s.maxMessageLength)
+	}
+
+	conversation, err := s.conversations.GetOrCreate(ctx, userID)
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrGetConversation, err)
+	}
+
+	question := entity.Message{
+		ConversationID: conversation.ID,
+		Role:           entity.MessageRoleUser,
+		Text:           text,
+		CreatedAt:      time.Now().UTC(),
+	}
+	questionID, savedText, err := s.messagesRepo.GetOrCreateQuestion(ctx, question, idempotencyKey)
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrSaveUserMessage, err)
+	}
+	if savedText != question.Text {
+		return entity.Message{}, chaterrors.ErrIdempotencyKeyReused
+	}
+	question.ID = questionID
+
+	// The processing deadline leaves time for the database claim to expire after a crash.
+	replyCtx, cancel := context.WithTimeout(ctx, replyTimeout)
+	defer cancel()
+	claimUntil, err := s.messagesRepo.ClaimReply(replyCtx, questionID, replyLease)
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("claim reply: %w", err)
+	}
+	if claimUntil.IsZero() {
+		reply, err := s.messagesRepo.GetReply(replyCtx, questionID)
+		if err != nil {
+			return entity.Message{}, fmt.Errorf("get saved reply: %w", err)
+		}
+		if reply == nil {
+			return entity.Message{}, chaterrors.ErrReplyInProgress
+		}
+		return *reply, nil
+	}
+
+	reply, err := s.answerQuestion(replyCtx, userID, token, question, claimUntil)
+	if err != nil {
+		// Release on normal errors and cancellations. The lease covers a crash or failed release.
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		_ = s.messagesRepo.FinishReply(releaseCtx, questionID, claimUntil, 0)
+	}
+	return reply, err
+}
+
+func (s *chatService) answerQuestion(ctx context.Context, userID int64, token string, question entity.Message, claimUntil time.Time) (entity.Message, error) {
+	history, _, err := s.messagesRepo.ListByConversation(ctx, question.ConversationID, s.maxHistoryMessages, strconv.FormatInt(question.ID, 10))
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrListMessages, err)
+	}
+
+	userKey := strconv.FormatInt(userID, 10)
+	user, err := s.user.GetUserContext(ctx, userKey)
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrGetUserContext, err)
+	}
+	user.UserID = userKey
+
+	plans, err := s.onboarding.GetOnboardingPlans(ctx, userID, token)
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrGetOnboardingPlans, err)
+	}
+
+	answer, err := s.ai.GetAnswer(ctx, entity.AnswerRequest{
+		User:            user,
+		Message:         question.Text,
+		History:         history,
+		OnboardingPlans: plans,
+	})
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("%w: %w", chaterrors.ErrGetAIAnswer, err)
+	}
+
+	assistantMessage := entity.Message{
+		ConversationID: question.ConversationID,
+		Role:           entity.MessageRoleAssistant,
+		Text:           answer.Text,
+		Sources:        answer.Sources,
+		CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
+	}
+
+	if proposal := answer.Proposal; proposal != nil {
+		assistantMessage.Proposal = &entity.Action{
+			ResourceID:    proposal.ResourceID,
+			ResourceLabel: proposal.ResourceLabel,
+			AccessLevel:   proposal.AccessLevel,
+		}
+	}
+
+	if err := s.tx.WithTx(ctx, func(txCtx context.Context) error {
+		assistantMessageID, err := s.messagesRepo.Create(txCtx, assistantMessage)
+		if err != nil {
+			return fmt.Errorf("%w: %w", chaterrors.ErrSaveAssistantMessage, err)
+		}
+		assistantMessage.ID = assistantMessageID
+
+		if action := assistantMessage.Proposal; action != nil {
+			action.MessageID = assistantMessageID
+			actionID, err := s.actionsRepo.Create(txCtx, *action)
+			if err != nil {
+				return fmt.Errorf("%w: %w", chaterrors.ErrSaveProposal, err)
+			}
+			action.ID = actionID
+		}
+		if err := s.messagesRepo.FinishReply(txCtx, question.ID, claimUntil, assistantMessageID); err != nil {
+			return fmt.Errorf("finish reply: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return entity.Message{}, err
+	}
+
+	return assistantMessage, nil
+}
+
+// GetHistory returns a page of the intern's conversation history with a
+// cursor for the next page.
+func (s *chatService) GetHistory(ctx context.Context, token string, pageSize int32, pageToken string) (entity.HistoryPage, error) {
+	userID, err := s.auth.ValidateToken(ctx, token)
+	if err != nil {
+		return entity.HistoryPage{}, err
+	}
+	conversation, err := s.conversations.GetOrCreate(ctx, userID)
+	if err != nil {
+		return entity.HistoryPage{}, fmt.Errorf("%w: %w", chaterrors.ErrGetConversation, err)
+	}
+
+	messages, nextPageToken, err := s.messagesRepo.ListByConversation(ctx, conversation.ID, pageSize, pageToken)
+	if err != nil {
+		return entity.HistoryPage{}, fmt.Errorf("%w: %w", chaterrors.ErrListMessages, err)
+	}
+	return entity.HistoryPage{Messages: messages, NextPageToken: nextPageToken}, nil
+}
+
+// GetSession validates the token and returns the user ID with the session
+// expiry, used to bound the lifetime of a WebSocket connection.
+func (s *chatService) GetSession(ctx context.Context, token string) (string, time.Time, error) {
+	userID, err := s.auth.ValidateToken(ctx, token)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
+	// Auth has already verified this token. Read its expiry to bound the WebSocket session.
+	claims := new(jwt.RegisteredClaims)
+	if _, _, err := new(jwt.Parser).ParseUnverified(token, claims); err != nil ||
+		claims.ExpiresAt == nil || !time.Now().Before(claims.ExpiresAt.Time) {
+		return "", time.Time{}, chaterrors.ErrInvalidToken
+	}
+	return strconv.FormatInt(userID, 10), claims.ExpiresAt.Time, nil
+}

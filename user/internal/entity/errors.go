@@ -10,3 +10,6 @@ var (
 	ErrProfileConflict  = errors.New("profile already exists with different names")
 	ErrInternshipExists = errors.New("internship already exists")
 )
+
+var ErrInvalidToken = errors.New("invalid access token")
+var ErrAuthUnavailable = errors.New("auth unavailable")

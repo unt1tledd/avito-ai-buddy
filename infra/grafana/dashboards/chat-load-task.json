@@ -1,0 +1,187 @@
+{
+  "uid": "chat-load-task",
+  "title": "Нагрузка · Жизненный цикл заявки",
+  "description": "Доставка, решение и обратное уведомление проверяются в отчёте k6. Асинхронный лог без request_id может отсутствовать здесь.",
+  "schemaVersion": 41,
+  "version": 1,
+  "tags": [
+    "ai-buddy",
+    "load-test"
+  ],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Завершения RPC за минуту",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (method, code) (count_over_time({service=\"chat\"} |= \"RPC completed\" | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\" | json method=\"rpc\", code=\"code\", ms=\"duration_ms\" | __error__=\"\" | method=~\".*/(ConfirmProposal|GetHistory)\" | drop rid, ms [1m]))",
+          "legendFormat": "{{method}} · {{code}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "p95 успешных RPC",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95, {service=\"chat\"} |= \"RPC completed\" | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\" | json method=\"rpc\", code=\"code\", ms=\"duration_ms\" | __error__=\"\" | method=~\".*/(ConfirmProposal|GetHistory)\" | code=\"OK\" | drop rid | unwrap ms | __error__=\"\" [2m]) by (method)",
+          "legendFormat": "{{method}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Ошибки и предупреждения прогона",
+      "description": "",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{service=~\"chat|task\"} |~ `\"level\"\\s*:\\s*\"(error|warn|warning|fatal|panic)\"` | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\"",
+          "legendFormat": "",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 250
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Логи по ID запроса",
+      "description": "Доставка, решение и обратное уведомление проверяются в отчёте k6. Асинхронный лог без request_id может отсутствовать здесь.",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{service=~\"chat|task\"} | json rid=\"request_id\" | __error__=\"\" | rid!=\"\" | rid=~\"^${run_prefix:regex}[0-9a-f]*$\"",
+          "legendFormat": "",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 250
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "run_prefix",
+        "label": "Набор, ступень или аккаунт",
+        "type": "textbox",
+        "query": "__no_run__",
+        "current": {
+          "text": "__no_run__",
+          "value": "__no_run__"
+        }
+      }
+    ]
+  }
+}

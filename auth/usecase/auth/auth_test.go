@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"strings"
 	"testing"
@@ -172,6 +173,13 @@ func TestAuthService_Login_Success_Gomock(t *testing.T) {
 	authRepo.EXPECT().
 		GetUserByEmail(gomock.Any(), email).
 		Return(entity.User{ID: expectedUserID, Email: email, PasswordHash: string(hashedPassword)}, nil)
+	var storedHash []byte
+	var storedExpiry time.Time
+	authRepo.EXPECT().CreateRefreshToken(gomock.Any(), expectedUserID, gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ int64, tokenHash []byte, expiresAt time.Time) error {
+			storedHash, storedExpiry = tokenHash, expiresAt
+			return nil
+		})
 
 	// Act
 	accessToken, refreshToken, err := srv.Login(context.Background(), email, password)
@@ -180,6 +188,14 @@ func TestAuthService_Login_Success_Gomock(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, accessToken)
 	require.NotEmpty(t, refreshToken)
+	expectedHash := sha256.Sum256([]byte(refreshToken))
+	require.Equal(t, expectedHash[:], storedHash)
+	claims := &CustomClaims{}
+	_, err = jwt.ParseWithClaims(refreshToken, claims, func(*jwt.Token) (any, error) {
+		return testJWTSecret, nil
+	})
+	require.NoError(t, err)
+	require.True(t, storedExpiry.Equal(claims.ExpiresAt.Time))
 }
 
 func TestAuthService_Login_Err_Gomock(t *testing.T) {
@@ -233,6 +249,17 @@ func TestAuthService_Login_Err_Gomock(t *testing.T) {
 			expectedErr: repoErr,
 		},
 		{
+			name:     "repo error on store refresh token",
+			email:    "test@example.com",
+			password: "correct-password",
+			mockSetup: func(authRepo *mocks.MockauthRepository) {
+				authRepo.EXPECT().GetUserByEmail(gomock.Any(), "test@example.com").
+					Return(entity.User{ID: 1, PasswordHash: string(validHash)}, nil)
+				authRepo.EXPECT().CreateRefreshToken(gomock.Any(), int64(1), gomock.Any(), gomock.Any()).Return(repoErr)
+			},
+			expectedErr: repoErr,
+		},
+		{
 			name:     "wrong password",
 			email:    "test@example.com",
 			password: "wrong-password",
@@ -275,7 +302,7 @@ func TestAuthService_ValidateToken_Success(t *testing.T) {
 	srv := NewAuthService(nil, zap.NewNop(), testJWTSecret)
 	expectedUserID := int64(10)
 
-	tokenString, err := srv.generateToken(expectedUserID, accessTokenType, accessTokenTTL)
+	tokenString, err := srv.generateToken(expectedUserID, accessTokenType, accessTokenTTL, time.Now())
 	require.NoError(t, err)
 
 	// Act
@@ -292,10 +319,10 @@ func TestAuthService_ValidateToken_Err(t *testing.T) {
 
 	srv := NewAuthService(nil, zap.NewNop(), testJWTSecret)
 
-	expiredToken, err := srv.generateToken(1, accessTokenType, -time.Minute)
+	expiredToken, err := srv.generateToken(1, accessTokenType, -time.Minute, time.Now())
 	require.NoError(t, err)
 
-	refreshToken, err := srv.generateToken(1, refreshTokenType, refreshTokenTTL)
+	refreshToken, err := srv.generateToken(1, refreshTokenType, refreshTokenTTL, time.Now())
 	require.NoError(t, err)
 
 	claims := CustomClaims{UserID: 1, TokenType: accessTokenType}
@@ -304,7 +331,7 @@ func TestAuthService_ValidateToken_Err(t *testing.T) {
 	claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(accessTokenTTL))
 	wrongAlgorithm, err := jwt.NewWithClaims(jwt.SigningMethodHS384, claims).SignedString(testJWTSecret)
 	require.NoError(t, err)
-	noUserID, err := srv.generateToken(0, accessTokenType, accessTokenTTL)
+	noUserID, err := srv.generateToken(0, accessTokenType, accessTokenTTL, time.Now())
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -348,11 +375,22 @@ func TestAuthService_ValidateToken_Err(t *testing.T) {
 func TestAuthService_RefreshToken_Success(t *testing.T) {
 	t.Parallel()
 
-	srv := NewAuthService(nil, zap.NewNop(), testJWTSecret)
+	repo := mocks.NewMockauthRepository(gomock.NewController(t))
+	srv := NewAuthService(repo, zap.NewNop(), testJWTSecret)
 	expectedUserID := int64(99)
 
-	oldRefreshToken, err := srv.generateToken(expectedUserID, refreshTokenType, refreshTokenTTL)
+	oldRefreshToken, err := srv.generateToken(expectedUserID, refreshTokenType, refreshTokenTTL, time.Now())
 	require.NoError(t, err)
+	oldHash := sha256.Sum256([]byte(oldRefreshToken))
+	var storedHash []byte
+	gomock.InOrder(
+		repo.EXPECT().RotateRefreshToken(gomock.Any(), expectedUserID, oldHash[:], gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ int64, _, newHash []byte, _ time.Time) (bool, error) {
+				storedHash = newHash
+				return true, nil
+			}),
+		repo.EXPECT().RotateRefreshToken(gomock.Any(), expectedUserID, oldHash[:], gomock.Any(), gomock.Any()).Return(false, nil),
+	)
 
 	// Act
 	newAccessToken, newRefreshToken, err := srv.RefreshToken(context.Background(), oldRefreshToken)
@@ -361,6 +399,13 @@ func TestAuthService_RefreshToken_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, newAccessToken)
 	require.NotEqual(t, oldRefreshToken, newRefreshToken)
+	newHash := sha256.Sum256([]byte(newRefreshToken))
+	require.Equal(t, newHash[:], storedHash)
+
+	access, refresh, err := srv.RefreshToken(t.Context(), oldRefreshToken)
+	require.ErrorIs(t, err, entity.ErrInvalidToken)
+	require.Empty(t, access)
+	require.Empty(t, refresh)
 
 	valid, userID, err := srv.ValidateToken(t.Context(), newAccessToken)
 	require.NoError(t, err)
@@ -374,7 +419,8 @@ func TestAuthService_RefreshToken_Success(t *testing.T) {
 func TestAuthService_LegacyTokens(t *testing.T) {
 	t.Parallel()
 
-	srv := NewAuthService(nil, zap.NewNop(), testJWTSecret)
+	repo := mocks.NewMockauthRepository(gomock.NewController(t))
+	srv := NewAuthService(repo, zap.NewNop(), testJWTSecret)
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"user_id": 42,
@@ -392,8 +438,10 @@ func TestAuthService_LegacyTokens(t *testing.T) {
 	require.True(t, valid)
 	require.EqualValues(t, 42, userID)
 
+	refreshHash := sha256.Sum256([]byte(refreshToken))
+	repo.EXPECT().RotateRefreshToken(gomock.Any(), int64(42), refreshHash[:], gomock.Any(), gomock.Any()).Return(false, nil)
 	_, _, err = srv.RefreshToken(t.Context(), refreshToken)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, entity.ErrInvalidToken)
 
 	_, _, err = srv.ValidateToken(t.Context(), refreshToken)
 	require.ErrorIs(t, err, entity.ErrInvalidToken)
@@ -405,7 +453,7 @@ func TestAuthService_RejectsEmptyJWTSecret(t *testing.T) {
 	t.Parallel()
 
 	srv := NewAuthService(nil, zap.NewNop(), nil)
-	_, _, err := srv.generateTokenPair(1)
+	_, _, err := srv.generateTokenPair(1, time.Now())
 	require.ErrorIs(t, err, errMissingJWTSecret)
 
 	claims := jwt.MapClaims{"user_id": 1, "token_type": accessTokenType, "exp": time.Now().Add(accessTokenTTL).Unix()}

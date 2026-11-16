@@ -13,10 +13,18 @@ deps:
   - github.com/bufbuild/protoc-gen-validate
 generate:
     inputs:
-      - directory: "./user/api"
-      - directory: "./onboarding/api"
-      - directory: "./task/api"
-      - directory: "./chat/api"
+        - directory:
+            root: user/api
+            path: .
+        - directory:
+            root: onboarding/api
+            path: .
+        - directory:
+            root: task/api
+            path: .
+        - directory:
+            root: chat/api
+            path: .
     plugins:
         - name: go
           out: ./pkg/generated

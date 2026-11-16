@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package onboarding.v1;
+
+import "google/api/annotations.proto";
+import "validate/validate.proto";
+import "step/v1/step.proto";
+
+option go_package = "avito-ai-buddy/pkg/generated/plan/v1;planv1";
+
+service PlanService {
+  rpc AssignPlan(AssignPlanRequest) returns (GetPlanResponse) {
+    option (google.api.http) = {
+      post: "/v1/users/{user_id}/plan"
+      body: "*"
+    };
+  }
+  rpc GetPlan(GetPlanRequest) returns (GetPlanResponse) {
+    option (google.api.http) = { get: "/v1/users/{user_id}/plan" };
+  }
+  rpc GetPlanContext(GetPlanContextRequest) returns (GetPlanContextResponse) {
+    option (google.api.http) = { get: "/v1/users/{user_id}/plan_context" };
+  }
+}
+
+message AssignPlanRequest {
+  int64 user_id = 1 [(validate.rules).int64.gt = 0];
+  string track = 2;
+}
+
+message GetPlanRequest {
+  int64 user_id = 1 [(validate.rules).int64.gt = 0];
+}
+
+message GetPlanResponse {
+  int64 id = 1;
+  int64 user_id = 2;
+  string track = 3;
+  repeated Step steps = 4;
+}
+
+message GetPlanContextRequest {
+  int64 user_id = 1 [(validate.rules).int64.gt = 0];
+}
+
+// PlanTrackContext describes one track of the user plan. current_step is the
+// first incomplete step by template order; it is unset when the track is done.
+message PlanTrackContext {
+  string track = 1;
+  string display_name = 2;
+  Step current_step = 3;
+}
+
+message GetPlanContextResponse {
+  repeated PlanTrackContext tracks = 1;
+}

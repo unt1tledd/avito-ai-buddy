@@ -1,0 +1,809 @@
+{
+  "dataset": "avito-wiki",
+  "version": "1.3.2",
+  "created_on": "2026-11-11",
+  "synthetic": false,
+  "notice": "Смешанный корпус: 85 исходных демостатей, 59 фрагментов исходного Excel и 160 авторских учебных демоматериалов; отдельно заданы правила доступа учебного приложения. Учебный текст не является утверждённой политикой компании.",
+  "source_of_structure": "Пять исходных разделов из схемы пользователя и два дополнительных раздела для стажёров: адаптация и разработка. Дополнено двумя листами пользовательского Excel-чек-листа с сохранением периодов и строк. Учебное расширение: 16 авторских подразделов практики стажёра и наставника; их рекомендации не дополняют факты исходного Excel.",
+  "timezone": "Europe/Moscow",
+  "currency": "RUB",
+  "source_domain": "wiki.avito.example",
+  "links": "Домен wiki.avito.example относится только к вымышленным демостатьям. У фрагментов из Excel url=null: гиперссылок в исходнике нет.",
+  "document_count": 312,
+  "eval_case_count": 620,
+  "roles": {
+    "intern": "Стажёр: общие статьи",
+    "mentor": "Наставник: общие и закрытые учебные материалы, только по серверной проверке роли"
+  },
+  "team_policy": "teams=[]: командных ограничений нет. team=101 в примерах — произвольный тестовый ID, не реальная команда.",
+  "max_text_characters": 1543,
+  "sections": [
+    {
+      "id": "newcomers",
+      "title": "Новичкам",
+      "topics": [
+        {
+          "id": "access",
+          "title": "Доступы",
+          "document_ids": [
+            "synth-account-activation",
+            "synth-vpn-access",
+            "synth-repository-access"
+          ]
+        },
+        {
+          "id": "office",
+          "title": "Офис",
+          "document_ids": [
+            "synth-first-day",
+            "synth-permanent-badge",
+            "synth-buddy-tour"
+          ]
+        },
+        {
+          "id": "benefits",
+          "title": "Льготы",
+          "document_ids": [
+            "synth-benefits-start",
+            "synth-benefits-registration",
+            "synth-mentor-onboarding-check"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "office",
+      "title": "Как устроен офис",
+      "topics": [
+        {
+          "id": "locations",
+          "title": "Что где лежит",
+          "document_ids": [
+            "synth-office-navigation",
+            "synth-supplies-printing",
+            "synth-lockers-storage"
+          ]
+        },
+        {
+          "id": "rules",
+          "title": "Правила",
+          "document_ids": [
+            "synth-office-hours-guests",
+            "synth-quiet-clean-desk",
+            "synth-kitchen-meals"
+          ]
+        },
+        {
+          "id": "rooms",
+          "title": "Переговорки",
+          "document_ids": [
+            "synth-book-meeting-room",
+            "synth-room-checkin-cancel",
+            "synth-meeting-room-equipment"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "workplace",
+      "title": "Организация рабочего места",
+      "topics": [
+        {
+          "id": "desk",
+          "title": "Рабочее место",
+          "document_ids": [
+            "synth-desk-booking",
+            "synth-ergonomics-desk",
+            "synth-remote-workplace"
+          ]
+        },
+        {
+          "id": "mail",
+          "title": "Почта",
+          "document_ids": [
+            "synth-email-first-login",
+            "synth-email-clients-mobile",
+            "synth-email-signature-calendar"
+          ]
+        },
+        {
+          "id": "equipment",
+          "title": "Техника",
+          "document_ids": [
+            "synth-laptop-issue",
+            "synth-software-dev-environment",
+            "synth-broken-lost-laptop"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rewards",
+      "title": "Зарплаты и льготы",
+      "topics": [
+        {
+          "id": "salary",
+          "title": "Зарплата",
+          "document_ids": [
+            "synth-salary-dates",
+            "synth-payslip-missing-payment",
+            "synth-bank-details-change"
+          ]
+        },
+        {
+          "id": "bonus",
+          "title": "Бонусы",
+          "document_ids": [
+            "synth-intern-completion-bonus",
+            "synth-sport-compensation",
+            "synth-mentor-bonus-review"
+          ]
+        },
+        {
+          "id": "insurance",
+          "title": "ДМС",
+          "document_ids": [
+            "synth-insurance-activation",
+            "synth-insurance-appointment",
+            "synth-insurance-family"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "communication",
+      "title": "Коммуникации",
+      "topics": [
+        {
+          "id": "connection",
+          "title": "Корпоративная связь",
+          "document_ids": [
+            "synth-messenger-channels",
+            "synth-mobile-connection",
+            "synth-communication-response"
+          ]
+        },
+        {
+          "id": "mail",
+          "title": "Почта",
+          "document_ids": [
+            "synth-email-etiquette",
+            "synth-mailing-lists",
+            "synth-suspicious-email"
+          ]
+        },
+        {
+          "id": "meetings",
+          "title": "Встречи",
+          "document_ids": [
+            "synth-meeting-invitation",
+            "synth-standup-notes",
+            "synth-mentor-one-on-one"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "internship",
+      "title": "Стажировка и адаптация",
+      "topics": [
+        {
+          "id": "plan",
+          "title": "План адаптации",
+          "document_ids": [
+            "synth-intern-first-week",
+            "synth-intern-first-month-goals",
+            "synth-intern-step-confirmation",
+            "synth-intern-access-blocker"
+          ]
+        },
+        {
+          "id": "mentoring",
+          "title": "Наставник и обратная связь",
+          "document_ids": [
+            "synth-intern-who-helps",
+            "synth-intern-ask-technical-question",
+            "synth-intern-receive-feedback",
+            "synth-intern-mentor-away"
+          ]
+        },
+        {
+          "id": "tasks",
+          "title": "Задачи и рабочее время",
+          "document_ids": [
+            "synth-intern-first-task",
+            "synth-intern-task-status",
+            "synth-intern-work-time",
+            "synth-intern-unplanned-absence"
+          ]
+        },
+        {
+          "id": "learning",
+          "title": "Обучение и учебные документы",
+          "document_ids": [
+            "synth-intern-learning-route",
+            "synth-intern-security-course",
+            "synth-intern-university-documents",
+            "synth-intern-study-schedule"
+          ]
+        },
+        {
+          "id": "completion",
+          "title": "Итоги стажировки",
+          "document_ids": [
+            "synth-intern-midpoint-review",
+            "synth-intern-final-review-preparation",
+            "synth-intern-final-presentation",
+            "synth-intern-handoff-exit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "engineering",
+      "title": "Разработка для стажёров",
+      "topics": [
+        {
+          "id": "code",
+          "title": "Работа с кодом",
+          "document_ids": [
+            "synth-intern-git-branch",
+            "synth-intern-pull-request",
+            "synth-intern-code-review",
+            "synth-intern-git-conflict"
+          ]
+        },
+        {
+          "id": "quality",
+          "title": "Тестирование и CI",
+          "document_ids": [
+            "synth-intern-test-scope",
+            "synth-intern-ci-failed",
+            "synth-intern-staging-environment",
+            "synth-intern-staging-release"
+          ]
+        },
+        {
+          "id": "services",
+          "title": "Сервисы и наблюдаемость",
+          "document_ids": [
+            "synth-intern-service-catalog",
+            "synth-intern-service-logs",
+            "synth-intern-health-readiness",
+            "synth-intern-incident-report"
+          ]
+        },
+        {
+          "id": "data",
+          "title": "Данные и безопасность",
+          "document_ids": [
+            "synth-intern-test-data",
+            "synth-intern-secrets-storage",
+            "synth-intern-sql-sandbox",
+            "synth-intern-ai-tools"
+          ]
+        },
+        {
+          "id": "handoff",
+          "title": "Документация и передача результата",
+          "document_ids": [
+            "synth-intern-technical-note",
+            "synth-intern-decision-note",
+            "synth-intern-pair-session",
+            "synth-intern-definition-done"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "checklist",
+      "title": "Чек-лист из Excel",
+      "topics": [
+        {
+          "id": "guide",
+          "title": "Как пользоваться чек-листом",
+          "document_ids": [
+            "checklist-reading-guide"
+          ]
+        },
+        {
+          "id": "common",
+          "title": "Общие пункты стажёра",
+          "document_ids": [
+            "checklist-common-r04",
+            "checklist-common-r05",
+            "checklist-common-r06",
+            "checklist-common-r08",
+            "checklist-common-r09",
+            "checklist-common-r10",
+            "checklist-common-r11",
+            "checklist-common-r12",
+            "checklist-common-r15",
+            "checklist-common-r16"
+          ]
+        },
+        {
+          "id": "backend",
+          "title": "Backend: учебные пункты",
+          "document_ids": [
+            "checklist-backend-r02",
+            "checklist-backend-r03",
+            "checklist-backend-r04",
+            "checklist-backend-r05",
+            "checklist-backend-r06",
+            "checklist-backend-r07",
+            "checklist-backend-r08",
+            "checklist-backend-r09",
+            "checklist-backend-r10",
+            "checklist-backend-r11",
+            "checklist-backend-r12",
+            "checklist-backend-r13",
+            "checklist-backend-r14",
+            "checklist-backend-r15",
+            "checklist-backend-r16",
+            "checklist-backend-r17",
+            "checklist-backend-r18",
+            "checklist-backend-r19",
+            "checklist-backend-r20",
+            "checklist-backend-r21",
+            "checklist-backend-r22",
+            "checklist-backend-r23",
+            "checklist-backend-r24",
+            "checklist-backend-r25",
+            "checklist-backend-r26",
+            "checklist-backend-r27",
+            "checklist-backend-r28",
+            "checklist-backend-r29",
+            "checklist-backend-r30",
+            "checklist-backend-r31",
+            "checklist-backend-r32",
+            "checklist-backend-r33"
+          ]
+        },
+        {
+          "id": "common-periods",
+          "title": "Общие задачи по периодам",
+          "document_ids": [
+            "checklist-common-period-1",
+            "checklist-common-period-2",
+            "checklist-common-period-3",
+            "checklist-common-period-4",
+            "checklist-common-period-6"
+          ]
+        },
+        {
+          "id": "backend-periods",
+          "title": "Backend: задачи по периодам",
+          "document_ids": [
+            "checklist-backend-period-1",
+            "checklist-backend-period-2",
+            "checklist-backend-period-3",
+            "checklist-backend-period-4",
+            "checklist-backend-period-5",
+            "checklist-backend-period-6"
+          ]
+        },
+        {
+          "id": "mentor",
+          "title": "Задачи наставника",
+          "document_ids": [
+            "checklist-common-r02",
+            "checklist-common-r03",
+            "checklist-common-r07",
+            "checklist-common-r13",
+            "checklist-common-r14"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-access",
+      "title": "Доступы учебного приложения",
+      "topics": [
+        {
+          "id": "access-requests",
+          "title": "Заявки на доступ",
+          "document_ids": [
+            "project-cluster-space-access",
+            "project-vpn-access",
+            "project-wiki-access",
+            "project-jira-access",
+            "project-grafana-access",
+            "project-sentry-access",
+            "project-redash-access",
+            "project-learning-platform-access"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "intern-practice",
+      "title": "Практика стажёра",
+      "topics": [
+        {
+          "id": "intern-01",
+          "title": "Адаптация и самостоятельность",
+          "document_ids": [
+            "learn-i-map-team",
+            "learn-i-learning-goals",
+            "learn-i-week-review",
+            "learn-i-help-threshold",
+            "learn-i-learning-journal",
+            "learn-i-read-code-route",
+            "learn-i-notes-to-document",
+            "learn-i-context-switch",
+            "learn-i-feedback-request",
+            "learn-i-expectations-sync",
+            "learn-i-unknown-term",
+            "learn-i-learning-gap"
+          ]
+        },
+        {
+          "id": "intern-02",
+          "title": "Задачи и рабочая коммуникация",
+          "document_ids": [
+            "learn-i-acceptance",
+            "learn-i-decompose",
+            "learn-i-status-update",
+            "learn-i-estimate",
+            "learn-i-blocker",
+            "learn-i-change-scope",
+            "learn-i-async-question",
+            "learn-i-decision-log",
+            "learn-i-meeting-notes",
+            "learn-i-handoff-task",
+            "learn-i-demo-result",
+            "learn-i-priority-conflict"
+          ]
+        },
+        {
+          "id": "intern-03",
+          "title": "Git и проверка изменений",
+          "document_ids": [
+            "learn-i-clean-tree",
+            "learn-i-commit-scope",
+            "learn-i-pr-description",
+            "learn-i-review-response",
+            "learn-i-conflict-resolution",
+            "learn-i-review-small",
+            "learn-i-regression-diff",
+            "learn-i-revert-plan",
+            "learn-i-generated-files",
+            "learn-i-review-test-gap",
+            "learn-i-branch-sync",
+            "learn-i-merge-readiness"
+          ]
+        },
+        {
+          "id": "intern-04",
+          "title": "Тестирование и качество",
+          "document_ids": [
+            "learn-i-test-layers",
+            "learn-i-boundary-values",
+            "learn-i-negative-path",
+            "learn-i-fixtures",
+            "learn-i-flaky-tests",
+            "learn-i-time-tests",
+            "learn-i-contract-test",
+            "learn-i-concurrency-test",
+            "learn-i-coverage-meaning",
+            "learn-i-load-plan",
+            "learn-i-bug-report",
+            "learn-i-release-check"
+          ]
+        },
+        {
+          "id": "intern-05",
+          "title": "API и микросервисы",
+          "document_ids": [
+            "learn-i-request-path",
+            "learn-i-authn-authz",
+            "learn-i-error-contract",
+            "learn-i-timeout-chain",
+            "learn-i-retry-safety",
+            "learn-i-idempotency",
+            "learn-i-pagination",
+            "learn-i-versioning",
+            "learn-i-config-contract",
+            "learn-i-correlation",
+            "learn-i-queue-basics",
+            "learn-i-contract-owner"
+          ]
+        },
+        {
+          "id": "intern-06",
+          "title": "Данные и базы данных",
+          "document_ids": [
+            "learn-i-read-query",
+            "learn-i-null-semantics",
+            "learn-i-transaction",
+            "learn-i-schema-migration",
+            "learn-i-index-purpose",
+            "learn-i-query-plan",
+            "learn-i-unique-race",
+            "learn-i-connection-pool",
+            "learn-i-seed-data",
+            "learn-i-backup-restore",
+            "learn-i-data-pagination",
+            "learn-i-cache-consistency"
+          ]
+        },
+        {
+          "id": "intern-07",
+          "title": "Эксплуатация и диагностика",
+          "document_ids": [
+            "learn-i-local-start",
+            "learn-i-container-network",
+            "learn-i-health-ready",
+            "learn-i-log-reading",
+            "learn-i-metrics",
+            "learn-i-trace-reading",
+            "learn-i-incident-first",
+            "learn-i-rollback-observation",
+            "learn-i-resource-limit",
+            "learn-i-feature-flag",
+            "learn-i-runbook",
+            "learn-i-environment-diff"
+          ]
+        },
+        {
+          "id": "intern-08",
+          "title": "Безопасность и работа с информацией",
+          "document_ids": [
+            "learn-i-least-privilege",
+            "learn-i-secret-config",
+            "learn-i-secret-leak",
+            "learn-i-log-redaction",
+            "learn-i-external-ai",
+            "learn-i-prompt-injection",
+            "learn-i-source-verification",
+            "learn-i-privacy-task",
+            "learn-i-dependency-change",
+            "learn-i-unsafe-command",
+            "learn-i-access-end",
+            "learn-i-security-question"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mentor-practice",
+      "title": "Практика наставника",
+      "topics": [
+        {
+          "id": "mentor-01",
+          "title": "Старт и план наставничества",
+          "document_ids": [
+            "learn-m-prepare-start",
+            "learn-m-initial-dialog",
+            "learn-m-individual-plan",
+            "learn-m-mentor-capacity",
+            "learn-m-first-task-choice",
+            "learn-m-working-agreement",
+            "learn-m-plan-revision",
+            "learn-m-role-boundaries"
+          ]
+        },
+        {
+          "id": "mentor-02",
+          "title": "Постановка и дозирование задач",
+          "document_ids": [
+            "learn-m-learning-brief",
+            "learn-m-scaffold",
+            "learn-m-risk-ladder",
+            "learn-m-research-task",
+            "learn-m-acceptance-demo",
+            "learn-m-blocked-work",
+            "learn-m-parallel-tasks",
+            "learn-m-scope-mentor"
+          ]
+        },
+        {
+          "id": "mentor-03",
+          "title": "Встречи и обратная связь",
+          "document_ids": [
+            "learn-m-one-on-one-agenda",
+            "learn-m-feedback-facts",
+            "learn-m-positive-feedback",
+            "learn-m-feedback-check",
+            "learn-m-difficult-feedback",
+            "learn-m-written-feedback",
+            "learn-m-retrospective",
+            "learn-m-mentor-feedback"
+          ]
+        },
+        {
+          "id": "mentor-04",
+          "title": "Оценка прогресса",
+          "document_ids": [
+            "learn-m-evidence-map",
+            "learn-m-independence",
+            "learn-m-midpoint-review",
+            "learn-m-progress-stall",
+            "learn-m-fair-comparison",
+            "learn-m-review-summary",
+            "learn-m-assessment-change",
+            "learn-m-uncertain-evidence"
+          ]
+        },
+        {
+          "id": "mentor-05",
+          "title": "Сложные ситуации",
+          "document_ids": [
+            "learn-m-repeated-error",
+            "learn-m-missed-agreement",
+            "learn-m-conflict-review",
+            "learn-m-no-questions",
+            "learn-m-mentor-unavailable",
+            "learn-m-overwhelm",
+            "learn-m-unsafe-action",
+            "learn-m-communication-gap"
+          ]
+        },
+        {
+          "id": "mentor-06",
+          "title": "Техническое обучение и сопровождение",
+          "document_ids": [
+            "learn-m-pair-session",
+            "learn-m-debug-coaching",
+            "learn-m-code-reading-coach",
+            "learn-m-test-design-coach",
+            "learn-m-api-design-coach",
+            "learn-m-database-coach",
+            "learn-m-measurement-coach",
+            "learn-m-learning-ai-coach"
+          ]
+        },
+        {
+          "id": "mentor-07",
+          "title": "Командное наставничество",
+          "document_ids": [
+            "learn-m-review-queue",
+            "learn-m-shared-materials",
+            "learn-m-mentor-calibration",
+            "learn-m-backup-mentor",
+            "learn-m-team-expectations",
+            "learn-m-mentor-process-retro",
+            "learn-m-material-conflict",
+            "learn-m-onboarding-system"
+          ]
+        },
+        {
+          "id": "mentor-08",
+          "title": "Завершение и передача сопровождения",
+          "document_ids": [
+            "learn-m-final-evidence",
+            "learn-m-final-demo-coach",
+            "learn-m-result-handoff",
+            "learn-m-next-stage",
+            "learn-m-mentor-handoff",
+            "learn-m-archive-notes",
+            "learn-m-mentor-self-review",
+            "learn-m-completion-check"
+          ]
+        }
+      ]
+    }
+  ],
+  "files": {
+    "import_data": "documents.json",
+    "human_readable": "knowledge.md",
+    "evaluation": "eval_cases.json",
+    "instructions": "README.md",
+    "checklist": "intern_checklist.md",
+    "checklist_source": "sources/intern-checklist.json",
+    "learning_source": "sources/learning-expansion-v1.3.json",
+    "baseline_hashes": "sources/baseline-v1.2-hashes.json",
+    "builder": "build_learning_corpus.py",
+    "access_resources": "sources/access-resources.json"
+  },
+  "updated_on": "2026-11-16",
+  "content_origin": "mixed",
+  "content_counts": {
+    "synthetic": 85,
+    "checklist_rows": 47,
+    "checklist_summaries": 11,
+    "checklist_guide": 1,
+    "authored_learning": 160,
+    "project_access": 8
+  },
+  "source_documents": [
+    {
+      "id": "intern-checklist-xlsx",
+      "filename": "Чек-лист  стажера.xlsx",
+      "sha256": "eaa2cf72d532a94e375768b6cd820bf0c5fcf8048d510307a546c63b294d43bf",
+      "extraction": "sources/intern-checklist.json",
+      "sheets": [
+        "Материалы для всех",
+        "Чек-лист Backend"
+      ],
+      "task_rows": 48,
+      "unique_tasks": 47,
+      "duplicates": [
+        {
+          "sheet": "Материалы для всех",
+          "row": 17,
+          "duplicate_of": 16
+        }
+      ],
+      "actuality": "Дата утверждения и актуальность правил в файле не указаны; это содержание предоставленного документа, не проверка действующей политики компании."
+    },
+    {
+      "id": "authored-learning-v1.3",
+      "filename": "sources/learning-expansion-v1.3.json",
+      "type": "authored_demo",
+      "documents": 160,
+      "worked_examples": 48,
+      "actuality": "Авторские учебные рекомендации. Не утверждённая политика компании и не персональные результаты."
+    },
+    {
+      "id": "project-access-resources",
+      "filename": "sources/access-resources.json",
+      "type": "project_demo_configuration",
+      "documents": 8,
+      "document_ids": [
+        "project-cluster-space-access",
+        "project-vpn-access",
+        "project-wiki-access",
+        "project-jira-access",
+        "project-grafana-access",
+        "project-sentry-access",
+        "project-redash-access",
+        "project-learning-platform-access"
+      ],
+      "evaluation_case_ids": [
+        "qa-project-access-cluster",
+        "qa-project-access-team",
+        "qa-project-access-unsupported",
+        "qa-project-access-vpn-unspecified",
+        "qa-project-access-vpn-explicit",
+        "qa-project-access-vpn-unsupported",
+        "qa-project-access-vpn-negated",
+        "qa-project-access-wiki-unspecified",
+        "qa-project-access-wiki-explicit",
+        "qa-project-access-wiki-unsupported",
+        "qa-project-access-wiki-negated",
+        "qa-project-access-jira-unspecified",
+        "qa-project-access-jira-explicit",
+        "qa-project-access-jira-unsupported",
+        "qa-project-access-jira-negated",
+        "qa-project-access-grafana-unspecified",
+        "qa-project-access-grafana-explicit",
+        "qa-project-access-grafana-unsupported",
+        "qa-project-access-grafana-negated",
+        "qa-project-access-sentry-unspecified",
+        "qa-project-access-sentry-explicit",
+        "qa-project-access-sentry-unsupported",
+        "qa-project-access-sentry-negated",
+        "qa-project-access-redash-unspecified",
+        "qa-project-access-redash-explicit",
+        "qa-project-access-redash-unsupported",
+        "qa-project-access-redash-negated",
+        "qa-project-access-learning-platform-unspecified",
+        "qa-project-access-learning-platform-explicit",
+        "qa-project-access-learning-platform-unsupported",
+        "qa-project-access-learning-platform-negated"
+      ],
+      "section_id": "project-access",
+      "actuality": "Явная конфигурация правил учебного приложения. Не извлечена из Excel и не утверждена как корпоративная политика."
+    }
+  ],
+  "import_stats": {
+    "text_preparation_version": "hybrid-text-v2",
+    "chunks": 360,
+    "document_access_rows": 624,
+    "source_characters": 268390,
+    "json_bytes": 638543,
+    "multi_chunk_documents": 48,
+    "role_document_counts": {
+      "intern": 240,
+      "mentor": 312
+    },
+    "mentor_only_documents": 72,
+    "case_counts": {
+      "answerable": 527,
+      "insufficient_knowledge": 21,
+      "restricted_source": 72
+    }
+  }
+}

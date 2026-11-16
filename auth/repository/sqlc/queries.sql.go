@@ -7,7 +7,25 @@ package auth
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const createRefreshToken = `-- name: CreateRefreshToken :exec
+INSERT INTO auth.refresh_tokens (user_id, token_hash, expires_at)
+VALUES ($1, $2, $3)
+`
+
+type CreateRefreshTokenParams struct {
+	UserID    int64              `json:"user_id"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) error {
+	_, err := q.db.Exec(ctx, createRefreshToken, arg.UserID, arg.TokenHash, arg.ExpiresAt)
+	return err
+}
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO auth.users (email, password_hash)
@@ -33,6 +51,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUse
 	return i, err
 }
 
+const deleteRefreshToken = `-- name: DeleteRefreshToken :exec
+DELETE FROM auth.refresh_tokens
+WHERE token_hash = $1
+`
+
+func (q *Queries) DeleteRefreshToken(ctx context.Context, tokenHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteRefreshToken, tokenHash)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password_hash, created_at
 FROM auth.users
@@ -49,4 +77,32 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (AuthUser, e
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const rotateRefreshToken = `-- name: RotateRefreshToken :execrows
+UPDATE auth.refresh_tokens
+SET token_hash = $1, expires_at = $2
+WHERE token_hash = $3
+  AND user_id = $4
+  AND expires_at > now()
+`
+
+type RotateRefreshTokenParams struct {
+	NewHash      []byte             `json:"new_hash"`
+	NewExpiresAt pgtype.Timestamptz `json:"new_expires_at"`
+	OldHash      []byte             `json:"old_hash"`
+	UserID       int64              `json:"user_id"`
+}
+
+func (q *Queries) RotateRefreshToken(ctx context.Context, arg RotateRefreshTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rotateRefreshToken,
+		arg.NewHash,
+		arg.NewExpiresAt,
+		arg.OldHash,
+		arg.UserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
