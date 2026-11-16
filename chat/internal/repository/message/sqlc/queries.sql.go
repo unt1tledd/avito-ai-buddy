@@ -149,10 +149,14 @@ SELECT m.id, m.conversation_id, m.role, m.body, m.sources, m.created_at,
        coalesce(a.access_level, '')::text AS access_level,
        coalesce(a.task_id, '')::text AS task_id,
        coalesce(a.external_request_id, '')::text AS external_request_id,
-       coalesce(a.status, '')::text AS status
+       (CASE
+           WHEN a.status = 'pending_dispatch' AND o.status = 'FAILED' THEN 'failed'
+           ELSE coalesce(a.status, '')
+       END)::text AS status
 FROM chat.message q
 JOIN chat.message m ON m.id = q.assistant_message_id
 LEFT JOIN chat.action a ON a.message_id = m.id
+LEFT JOIN chat.outbox o ON o.idempotency_key = a.id::text
 WHERE q.id = $1
 `
 
@@ -201,9 +205,13 @@ SELECT m.id, m.conversation_id, m.role, m.body, m.sources, m.created_at,
        coalesce(a.access_level, '')::text AS access_level,
        coalesce(a.task_id, '')::text AS task_id,
        coalesce(a.external_request_id, '')::text AS external_request_id,
-       coalesce(a.status, '')::text AS status
+       (CASE
+           WHEN a.status = 'pending_dispatch' AND o.status = 'FAILED' THEN 'failed'
+           ELSE coalesce(a.status, '')
+       END)::text AS status
 FROM chat.message m
 LEFT JOIN chat.action a ON a.message_id = m.id
+LEFT JOIN chat.outbox o ON o.idempotency_key = a.id::text
 WHERE m.conversation_id = $1
   AND ($2::bigint = 0 OR (m.created_at, m.id) < (
       SELECT created_at, id

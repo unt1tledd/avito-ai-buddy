@@ -13,7 +13,12 @@ interface HistoryDto {messages?:MessageDto[];nextPageToken?:string}
 interface StepDto {id:string|number;title?:string;description?:string;period?:string;resource_id?:string;action_type?:string;status?:string;track?:string}
 interface PlanDto {steps?:StepDto[];track?:string}
 interface ContextDto {tracks?:{track:string;display_name?:string;current_step?:{id:string|number}|null}[]}
-interface TaskDto {taskId:string;proposalId:string;resourceId:string;accessLevel:string;status:string|number;createdAt?:string;externalRequestId?:string}
+interface TaskDto {
+  task_id?:string; proposal_id?:string; resource_id?:string; access_level?:string;
+  created_at?:string; external_request_id?:string; status?:string|number;
+  taskId?:string; proposalId?:string; resourceId?:string; accessLevel?:string;
+  createdAt?:string; externalRequestId?:string;
+}
 
 
 
@@ -318,9 +323,28 @@ export async function fetchUserRequests(userId:string):Promise<ConversationPropo
   for(;;) {
     const page=await request<TaskDto[]>(`/v1/tasks/${encodeURIComponent(userId)}?limit=100&after_id=${after}`);
     if(!Array.isArray(page))throw new Error('Invalid tasks response');
-    for(const task of page)items.push({conversationId:'',timestamp:task.createdAt || '',proposal:{proposal_id:String(task.proposalId),title:'Заявка на доступ',role_label:'',resource_id:task.resourceId,resource_label:task.resourceId,access_level:task.accessLevel,status:statuses[String(task.status)] || String(task.status || 'unknown'),tracker_issue_key:task.externalRequestId || String(task.taskId)}});
+    for (const task of page) {
+      const taskId = task.task_id ?? task.taskId ?? '';
+      const resourceId = task.resource_id ?? task.resourceId ?? '';
+      const status = String(task.status ?? 'unknown');
+      items.push({
+        conversationId:'',
+        timestamp:task.created_at ?? task.createdAt ?? '',
+        proposal:{
+          proposal_id:task.proposal_id ?? task.proposalId ?? taskId,
+          title:'Заявка на доступ',
+          role_label:'',
+          resource_id:resourceId,
+          resource_label:resourceId,
+          access_level:task.access_level ?? task.accessLevel ?? '',
+          status:statuses[status] ?? status,
+          tracker_issue_key:task.external_request_id || task.externalRequestId || taskId,
+        },
+      });
+    }
     if(page.length<100)break;
-    const next=String(page[page.length-1].taskId);
+    const last = page[page.length-1];
+    const next = last.task_id ?? last.taskId ?? '';
     if(!/^\d+$/.test(next) || BigInt(next)<=BigInt(after))throw new Error('Invalid tasks pagination');
     after=next;
   }

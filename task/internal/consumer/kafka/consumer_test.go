@@ -29,10 +29,16 @@ func (d testDLQ) WriteMessages(ctx context.Context, messages ...kafkago.Message)
 
 type testReader struct {
 	message kafkago.Message
+	fetch   func() error
 	commit  func(kafkago.Message)
 }
 
 func (r testReader) FetchMessage(context.Context) (kafkago.Message, error) {
+	if r.fetch != nil {
+		if err := r.fetch(); err != nil {
+			return kafkago.Message{}, err
+		}
+	}
 	return r.message, nil
 }
 
@@ -114,5 +120,42 @@ func TestConsumeCommitAfterProcessingOrDLQAck(t *testing.T) {
 				t.Fatalf("operations = %v, want %v", order, tc.want)
 			}
 		})
+	}
+}
+
+func TestConsumeRecoversAfterKafkaFetchEOF(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	var fetches, handled, committed int
+	reader := testReader{
+		message: kafkago.Message{Offset: 47},
+		fetch: func() error {
+			fetches++
+			if fetches <= 3 {
+				return io.EOF
+			}
+			return nil
+		},
+		commit: func(message kafkago.Message) {
+			if message.Offset != 47 || handled != 1 {
+				t.Errorf("committed offset %d after %d handler calls", message.Offset, handled)
+			}
+			committed++
+			cancel()
+		},
+	}
+	handler := testHandler(func(context.Context, []byte) error {
+		handled++
+		return nil
+	})
+	cfg := config.KafkaConsumerConfig{
+		MaxAttempts: 1, RetryBaseBackoff: time.Millisecond, RetryMaxBackoff: 2 * time.Millisecond,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := consume(ctx, logger, reader, nil, handler, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if fetches != 4 || handled != 1 || committed != 1 {
+		t.Fatalf("fetches=%d, handled=%d, committed=%d; want 4, 1, 1", fetches, handled, committed)
 	}
 }
