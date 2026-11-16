@@ -79,6 +79,6 @@ Thumbs.db
 .vscode/
 
 # Keep go.mod/go.sum, go.work/go.work.sum, easyp.lock and package lockfiles.
-# Generated API code and API specifications are not ignored.
+# Generated API code and API specifications are not ignored
 /.codex/agents/coder.toml
 /.codex/agents/reviewer.toml
