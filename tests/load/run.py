@@ -78,7 +78,15 @@ def api(url, payload=None, statuses=(200,), token=None):
     data = None if payload is None else json.dumps(payload).encode()
     try:
         with urlopen(
-            Request(url, data, {"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})}), timeout=15
+            Request(
+                url,
+                data,
+                {
+                    "Content-Type": "application/json",
+                    **({"Authorization": f"Bearer {token}"} if token else {}),
+                },
+            ),
+            timeout=15,
         ) as response:
             if response.status not in statuses:
                 raise RuntimeError(f"{url}: unexpected HTTP {response.status}")
@@ -101,7 +109,10 @@ def fixtures(prefix, group, count, start, team):
         if type(user_id) is not int or user_id <= 0:
             raise RuntimeError("Auth returned an invalid user_id")
         if group != "history":
-            token = api("http://127.0.0.1:8081/v1/auth/login", {"email": email, "password": password})["access_token"]
+            token = api(
+                "http://127.0.0.1:8081/v1/auth/login",
+                {"email": email, "password": password},
+            )["access_token"]
             today = date.today()
             api(
                 "http://127.0.0.1:8084/v1/user",
@@ -188,7 +199,8 @@ def seed_context(users):
     )
 
 
-def dashboard_link(prefix, start, end="now"):
+def dashboard_link(prefix, start, end="now", *, test="suite"):
+    uid = f"chat-load-{test}"
     query = urlencode(
         {
             "var-run_prefix": prefix,
@@ -197,7 +209,7 @@ def dashboard_link(prefix, start, end="now"):
             "refresh": "5s" if end == "now" else "",
         }
     )
-    return f"{GRAFANA}/d/chat-load-suite/chat-load-suite?{query}"
+    return f"{GRAFANA}/d/{uid}/{uid}?{query}"
 
 
 def report_index(directory, rows, local_links=()):
@@ -286,7 +298,8 @@ def compact_metrics(path, seconds):
     print(f"  Пропущено итераций: {dropped:.0f}", flush=True)
 
 
-def run_k6(mode, prefix, stage, config):
+def run_k6(mode, prefix, stage, config, *, dashboard_test=None):
+    test = "recovery" if mode in ("queue", "drain") else dashboard_test or mode
     stage.mkdir()
     config_path = stage / "fixtures.json"
     start = int(time.time() * 1000)
@@ -349,14 +362,14 @@ def run_k6(mode, prefix, stage, config):
             stats.join(timeout=11)
 
     end = int(time.time() * 1000)
-    link = dashboard_link(prefix, start, end)
+    link = dashboard_link(prefix, start, end, test=test)
     report_index(
         stage,
         [("Все запросы", link)]
         + [
             (
                 f"{group} · {user['index']} · Auth user {user['userId']}",
-                dashboard_link(prefix + f"{user['index']:04x}", start, end),
+                dashboard_link(prefix + f"{user['index']:04x}", start, end, test=test),
             )
             for group, members in config["users"].items()
             for user in members
@@ -723,6 +736,7 @@ def main():
                         prefix,
                         stage,
                         config,
+                        dashboard_test=test,
                     )
 
                 rows.append((f"{test} / {rate} — k6 {status}", link))
@@ -754,7 +768,9 @@ def main():
         print(f"Итог {test}: {result}", flush=True)
 
     end = int(time.time() * 1000)
-    suite_link = dashboard_link(suite, begin, end)
+    suite_link = dashboard_link(
+        suite, begin, end, test="suite" if args.test == "all" else args.test
+    )
     report_index(
         directory,
         [("Весь набор", suite_link), *rows],
