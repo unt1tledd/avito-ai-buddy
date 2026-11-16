@@ -42,7 +42,7 @@ run_docker compose --profile tools config --quiet
 printf '\n== Generate protobuf and build images ==\n'
 bash infra/scripts/generate-proto.sh
 run_docker compose build
-run_docker compose --profile tools build auth-migrate
+run_docker compose --profile tools build auth-migrate ai-migrate
 
 printf '\n== Prepare PostgreSQL ==\n'
 run_docker compose up --quiet-pull --wait db

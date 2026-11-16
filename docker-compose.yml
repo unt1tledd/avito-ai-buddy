@@ -76,7 +76,9 @@ services:
       - ./auth/migrations:/migrations:ro
 
   ai-migrate:
-    image: golang:1.27.3
+    build:
+      context: .
+      dockerfile: infra/postgres/Dockerfile.migrate
     profiles: ["tools"]
     environment:
       GOOSE_DRIVER: postgres
@@ -84,7 +86,7 @@ services:
       GOOSE_MIGRATION_DIR: /migrations
     volumes:
       - ./ai/migrations:/migrations:ro
-    command: ["go", "run", "github.com/pressly/goose/v3/cmd/goose@v3.27.0", "up"]
+    command: ["up"]
     depends_on:
       db:
         condition: service_healthy
